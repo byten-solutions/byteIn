@@ -1,0 +1,382 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --------------------------------------------------------
+// ENUMS
+// --------------------------------------------------------
+
+enum RoleName {
+  ADMIN
+  RECEPTIONIST
+}
+
+enum RoomStatus {
+  VACANT_CLEAN
+  VACANT_DIRTY
+  OCCUPIED
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum ReservationStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum AllocationStatus {
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum InvoiceItemType {
+  ROOM_CHARGE
+  EXTRA_CHARGE
+  DISCOUNT
+  TAX
+}
+
+enum PaymentStatus {
+  RECORDED
+  VOIDED
+}
+
+// --------------------------------------------------------
+// USERS & ROLES
+// --------------------------------------------------------
+
+model Role {
+  id          String   @id @default(cuid())
+  name        RoleName @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  roleId       String    @map("role_id")
+  status       String    @default("ACTIVE") // ACTIVE / DISABLED
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  role         Role          @relation(fields: [roleId], references: [id])
+  reservations Reservation[] @relation("CreatedReservations")
+  payments     Payment[]     @relation("RecordedPayments")
+  auditLogs    AuditLog[]
+
+  @@index([roleId])
+  @@map("users")
+}
+
+// --------------------------------------------------------
+// PROPERTIES & ROOMS
+// --------------------------------------------------------
+
+model Property {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  country   String?
+  phone     String?
+  email     String?
+  status    String   @default("ACTIVE") // ACTIVE / INACTIVE
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  buildings      Building[]
+  rooms          Room[]
+  roomCategories RoomCategory[]
+
+  @@map("properties")
+}
+
+model Building {
+  id          String   @id @default(cuid())
+  propertyId  String   @map("property_id")
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  floors   Floor[]
+  rooms    Room[]
+
+  @@index([propertyId])
+  @@map("buildings")
+}
+
+model Floor {
+  id         String   @id @default(cuid())
+  buildingId String   @map("building_id")
+  floorNo    Int      @map("floor_no")
+  name       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  rooms    Room[]
+
+  @@index([buildingId])
+  @@map("floors")
+}
+
+model RoomCategory {
+  id           String   @id @default(cuid())
+  propertyId   String?  @map("property_id")
+  name         String
+  description  String?
+  basePrice    Decimal  @map("base_price") @db.Decimal(10, 2)
+  maxOccupancy Int      @map("max_occupancy")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  property         Property?             @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  rooms            Room[]
+  amenities        RoomCategoryAmenity[]
+  reservationRooms ReservationRoom[]
+
+  @@index([propertyId])
+  @@map("room_categories")
+}
+
+model Amenity {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  categories RoomCategoryAmenity[]
+
+  @@map("amenities")
+}
+
+model RoomCategoryAmenity {
+  roomCategoryId String @map("room_category_id")
+  amenityId      String @map("amenity_id")
+
+  roomCategory RoomCategory @relation(fields: [roomCategoryId], references: [id], onDelete: Cascade)
+  amenity      Amenity      @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([roomCategoryId, amenityId])
+  @@map("room_category_amenities")
+}
+
+model Room {
+  id             String     @id @default(cuid())
+  propertyId     String     @map("property_id")
+  buildingId     String     @map("building_id")
+  floorId        String     @map("floor_id")
+  roomCategoryId String     @map("room_category_id")
+  roomNo         String     @map("room_no")
+  displayName    String?    @map("display_name")
+  capacity       Int
+  status         RoomStatus @default(VACANT_CLEAN)
+  priceOverride  Decimal?   @map("price_override") @db.Decimal(10, 2)
+  notes          String?
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  property         Property          @relation(fields: [propertyId], references: [id])
+  building         Building          @relation(fields: [buildingId], references: [id])
+  floor            Floor             @relation(fields: [floorId], references: [id])
+  category         RoomCategory      @relation(fields: [roomCategoryId], references: [id])
+  reservationRooms ReservationRoom[]
+
+  @@unique([buildingId, roomNo])
+  @@index([propertyId])
+  @@index([roomCategoryId])
+  @@index([status])
+  @@map("rooms")
+}
+
+// --------------------------------------------------------
+// CUSTOMERS & RESERVATIONS
+// --------------------------------------------------------
+
+model Customer {
+  id            String   @id @default(cuid())
+  firstName     String   @map("first_name")
+  lastName      String?  @map("last_name")
+  phone         String?
+  email         String?
+  nationality   String?
+  address       String?
+  idProofType   String?  @map("id_proof_type")
+  idProofNumber String?  @map("id_proof_number")
+  remarks       String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  reservations Reservation[]
+
+  @@index([phone])
+  @@index([email])
+  @@map("customers")
+}
+
+model Reservation {
+  id              String            @id @default(cuid())
+  reservationNo   String            @unique @map("reservation_no")
+  customerId      String            @map("customer_id")
+  status          ReservationStatus @default(CONFIRMED)
+  createdBy       String            @map("created_by")
+  specialRequests String?           @map("special_requests")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  customer Customer          @relation(fields: [customerId], references: [id])
+  creator  User              @relation("CreatedReservations", fields: [createdBy], references: [id])
+  rooms    ReservationRoom[]
+  invoices Invoice[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdBy])
+  @@map("reservations")
+}
+
+model ReservationRoom {
+  id                String           @id @default(cuid())
+  reservationId     String           @map("reservation_id")
+  roomId            String           @map("room_id")
+  roomCategoryId    String           @map("room_category_id")
+  arrivalDate       DateTime         @map("arrival_date") @db.Date
+  departureDate     DateTime         @map("departure_date") @db.Date
+  bookedNightlyRate Decimal          @map("booked_nightly_rate") @db.Decimal(10, 2)
+  adults            Int              @default(1)
+  children          Int              @default(0)
+  status            AllocationStatus @default(CONFIRMED)
+  checkedInAt       DateTime?        @map("checked_in_at")
+  checkedOutAt      DateTime?        @map("checked_out_at")
+  assignedAt        DateTime         @default(now()) @map("assigned_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  reservation  Reservation   @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  room         Room          @relation(fields: [roomId], references: [id])
+  roomCategory RoomCategory  @relation(fields: [roomCategoryId], references: [id])
+  invoiceItems InvoiceItem[]
+
+  @@index([reservationId])
+  @@index([roomId])
+  @@index([roomCategoryId])
+  @@index([arrivalDate, departureDate])
+  @@index([status])
+  @@map("reservation_rooms")
+}
+
+// --------------------------------------------------------
+// BILLING & PAYMENTS
+// --------------------------------------------------------
+
+model Invoice {
+  id            String        @id @default(cuid())
+  reservationId String        @map("reservation_id")
+  invoiceNumber String        @unique @map("invoice_number")
+  subtotal      Decimal       @db.Decimal(10, 2)
+  discountTotal Decimal       @default(0) @map("discount_total") @db.Decimal(10, 2)
+  taxTotal      Decimal       @default(0) @map("tax_total") @db.Decimal(10, 2)
+  grandTotal    Decimal       @map("grand_total") @db.Decimal(10, 2)
+  status        InvoiceStatus @default(DRAFT)
+  issuedAt      DateTime?     @map("issued_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  reservation Reservation   @relation(fields: [reservationId], references: [id])
+  items       InvoiceItem[]
+  payments    Payment[]
+
+  @@index([reservationId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id                String          @id @default(cuid())
+  invoiceId         String          @map("invoice_id")
+  reservationRoomId String?         @map("reservation_room_id")
+  description       String
+  quantity          Decimal         @default(1) @db.Decimal(10, 2)
+  unitPrice         Decimal         @map("unit_price") @db.Decimal(10, 2)
+  lineTotal         Decimal         @map("line_total") @db.Decimal(10, 2)
+  itemType          InvoiceItemType @default(ROOM_CHARGE) @map("item_type")
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  reservationRoom ReservationRoom? @relation(fields: [reservationRoomId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([reservationRoomId])
+  @@map("invoice_items")
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  invoiceId       String        @map("invoice_id")
+  amount          Decimal       @db.Decimal(10, 2)
+  paymentMethod   String        @map("payment_method")
+  referenceNumber String?       @map("reference_number")
+  status          PaymentStatus @default(RECORDED)
+  paidAt          DateTime      @map("paid_at")
+  createdBy       String        @map("created_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  creator User    @relation("RecordedPayments", fields: [createdBy], references: [id])
+
+  @@index([invoiceId])
+  @@index([createdBy])
+  @@map("payments")
+}
+
+// --------------------------------------------------------
+// AUDIT LOGS
+// --------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  action     String
+  oldData    Json?    @map("old_data")
+  newData    Json?    @map("new_data")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
