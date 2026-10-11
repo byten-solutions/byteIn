@@ -14,7 +14,7 @@ import {
 import { getSession } from "@/lib/auth-guard";
 import { ReservationService } from "@/modules/reservations/reservation.service";
 import { BillingService } from "@/modules/billing/billing.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -97,10 +97,8 @@ export default async function ReservationDetailPage({
   };
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-
-      <main className="container mx-auto max-w-5xl px-4 sm:px-6 py-8 flex-1 space-y-6">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         {/* Navigation & Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-6">
           <div className="flex items-center gap-3">
@@ -346,7 +344,7 @@ export default async function ReservationDetailPage({
             </Card>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { RoomService, RoomCategoryService } from "@/modules/rooms/room.service";
 import { PropertyService } from "@/modules/properties/property.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { RoomManager } from "./room-manager";
 
 export default async function RoomsPage() {
@@ -67,12 +67,13 @@ export default async function RoomsPage() {
     })),
   }));
 
-  return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
+  const cleanRooms = rooms.filter((r) => r.status === "VACANT_CLEAN").length;
+  const dirtyRooms = rooms.filter((r) => r.status === "VACANT_DIRTY").length;
 
-      <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
-        <div className="mb-6 space-y-1">
+  return (
+    <AppShell session={session} stats={{ cleanRooms, dirtyRooms }}>
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Room Inventory & Status</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
             Monitor physical room conditions, update operational statuses, and configure room allocations.
@@ -85,7 +86,7 @@ export default async function RoomsPage() {
           properties={serializedProperties}
           userRole={session.role}
         />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

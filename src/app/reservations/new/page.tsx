@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { RoomCategoryService } from "@/modules/rooms/room.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { NewReservationForm } from "./new-reservation-form";
 
 export default async function NewReservationPage() {
@@ -19,11 +19,10 @@ export default async function NewReservationPage() {
   }));
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-      <main className="container mx-auto max-w-5xl px-4 sm:px-6 py-8 flex-1">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
         <NewReservationForm categories={serializedCategories} />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

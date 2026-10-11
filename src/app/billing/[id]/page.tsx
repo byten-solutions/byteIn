@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { InvoiceDetailView } from "./invoice-detail-view";
 
 interface InvoicePageProps {
@@ -23,11 +23,10 @@ export default async function InvoiceDetailPage({ params }: InvoicePageProps) {
   }
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-      <main className="container mx-auto max-w-5xl px-4 sm:px-6 py-8 flex-1">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
         <InvoiceDetailView initialInvoice={invoice} />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

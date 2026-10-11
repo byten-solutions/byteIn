@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { CustomerService } from "@/modules/customers/customer.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { CustomerDetailView } from "./customer-detail-view";
 
 export default async function CustomerDetailPage({
@@ -52,11 +52,10 @@ export default async function CustomerDetailPage({
   };
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-      <main className="container mx-auto max-w-5xl px-4 sm:px-6 py-8 flex-1">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
         <CustomerDetailView customer={serializedCustomer} />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

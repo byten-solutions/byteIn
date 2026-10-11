@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { ReservationService } from "@/modules/reservations/reservation.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { ReservationList } from "./reservation-list";
 
 export default async function ReservationsPage() {
@@ -50,14 +50,13 @@ export default async function ReservationsPage() {
   }));
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-      <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         <ReservationList
           initialReservations={serializedReservations}
           initialPagination={result.pagination}
         />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

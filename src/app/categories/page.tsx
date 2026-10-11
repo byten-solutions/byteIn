@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-guard";
 import { RoomCategoryService, AmenityService } from "@/modules/rooms/room.service";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { CategoryManager } from "./category-manager";
 
 export default async function CategoriesPage() {
@@ -34,11 +34,9 @@ export default async function CategoriesPage() {
   }));
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-
-      <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
-        <div className="mb-6 space-y-1">
+    <AppShell session={session}>
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Room Categories & Amenities</h1>
           <p className="text-xs sm:text-sm text-muted-foreground">
             Manage category configurations, snapshotted base nightly rates, occupancy limits, and attached amenities.
@@ -50,7 +48,7 @@ export default async function CategoriesPage() {
           amenities={amenities}
           userRole={session.role}
         />
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

@@ -3,7 +3,7 @@ import { Bed, Tag, ShieldCheck, ArrowRight, CheckCircle2, Clock, Wrench, Calenda
 import { RoomStatus, ReservationStatus } from "@prisma/client";
 import { getSession } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
-import { Navbar } from "@/components/navbar";
+import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -53,10 +53,11 @@ export default async function Page() {
   }
 
   return (
-    <div className="min-h-svh bg-muted/15 flex flex-col">
-      <Navbar />
-
-      <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
+    <AppShell
+      session={session}
+      stats={session ? { cleanRooms: counts.clean, dirtyRooms: counts.dirty } : undefined}
+    >
+      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
         {session ? (
           <div className="space-y-8">
             {/* Welcome banner */}
@@ -268,7 +269,7 @@ export default async function Page() {
             </Card>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
