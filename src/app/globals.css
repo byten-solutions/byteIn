@@ -130,3 +130,18 @@
     @apply font-sans;
     }
 }
+
+@media print {
+  [data-sonner-toaster],
+  [data-sonner-toast],
+  .toaster,
+  nextjs-portal,
+  [data-nextjs-toast],
+  [data-nextjs-dialog-overlay],
+  [data-nextjs-portal],
+  header,
+  aside,
+  .print\:hidden {
+    display: none !important;
+  }
+}

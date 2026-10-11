@@ -1,25 +1,25 @@
-import { notFound, redirect } from "next/navigation";
-import { getSession } from "@/lib/auth-guard";
-import { CustomerService } from "@/modules/customers/customer.service";
-import { AppShell } from "@/components/app-shell";
-import { CustomerDetailView } from "./customer-detail-view";
+import { notFound, redirect } from "next/navigation"
+import { getSession } from "@/lib/auth-guard"
+import { CustomerService } from "@/modules/customers/customer.service"
+import { AppShell } from "@/components/app-shell"
+import { CustomerDetailView } from "./customer-detail-view"
 
 export default async function CustomerDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }) {
-  const session = await getSession();
+  const session = await getSession()
   if (!session) {
-    redirect("/login");
+    redirect("/login")
   }
 
-  const { id } = await params;
-  let customer;
+  const { id } = await params
+  let customer
   try {
-    customer = await CustomerService.getCustomerById(id);
+    customer = await CustomerService.getCustomerById(id)
   } catch {
-    notFound();
+    notFound()
   }
 
   const serializedCustomer = {
@@ -43,19 +43,19 @@ export default async function CustomerDetailPage({
         id: rm.id,
         roomNo: rm.room.roomNo,
         categoryName: rm.roomCategory.name,
-        arrivalDate: rm.arrivalDate.toISOString().split("T")[0],
-        departureDate: rm.departureDate.toISOString().split("T")[0],
+        arrivalDate: rm.arrivalDate.toISOString().split("T")[0]!,
+        departureDate: rm.departureDate.toISOString().split("T")[0]!,
         bookedNightlyRate: rm.bookedNightlyRate.toString(),
         status: rm.status,
       })),
     })),
-  };
+  }
 
   return (
     <AppShell session={session}>
-      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
         <CustomerDetailView customer={serializedCustomer} />
       </div>
     </AppShell>
-  );
+  )
 }

@@ -1,290 +1,290 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
-import { InvoiceStatus } from "@prisma/client";
-import { InvoiceDetailDTO, InvoiceListResponse } from "@/modules/billing/billing.types";
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import type { InvoiceDetailDTO, InvoiceListResponse } from "@/modules/billing/billing.types"
 import {
-  CreditCard,
   Search,
   Receipt,
-  ArrowUpRight,
-  Filter,
-  DollarSign,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-} from "lucide-react";
+  ChevronRight,
+} from "lucide-react"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  PageHeader,
+  StatusBadge,
+  DataTableShell,
+  MobileCardList,
+  EmptyState,
+  MoneyText,
+} from "@/components/ui-kit"
+import { formatDate } from "@/lib/date-format"
+import { cn } from "@/lib/utils"
 
 interface InvoiceListProps {
-  initialData: InvoiceListResponse;
+  initialData: InvoiceListResponse
 }
 
+const STATUS_FILTERS = [
+  { value: "ALL", label: "All" },
+  { value: "ISSUED", label: "Issued" },
+  { value: "PARTIALLY_PAID", label: "Partial" },
+  { value: "PAID", label: "Paid" },
+  { value: "DRAFT", label: "Draft" },
+  { value: "VOID", label: "Void" },
+]
+
 export function InvoiceList({ initialData }: InvoiceListProps) {
-  const [data, setData] = useState<InvoiceListResponse>(initialData);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [loading, setLoading] = useState(false);
+  const router = useRouter()
+  const [data, setData] = React.useState<InvoiceListResponse>(initialData)
+  const [search, setSearch] = React.useState("")
+  const [statusFilter, setStatusFilter] = React.useState<string>("ALL")
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const isInitialMount = React.useRef(true)
 
-  const fetchInvoices = async (searchTerm = search, status = statusFilter) => {
-    setLoading(true);
+  const fetchInvoices = React.useCallback(async (searchTerm = search, status = statusFilter) => {
+    setLoading(true)
+    setError(null)
     try {
-      const params = new URLSearchParams();
-      if (searchTerm) params.set("search", searchTerm);
-      if (status !== "ALL") params.set("status", status);
+      const params = new URLSearchParams()
+      if (searchTerm.trim()) params.set("search", searchTerm.trim())
+      if (status !== "ALL") params.set("status", status)
 
-      const res = await fetch(`/api/invoices?${params.toString()}`);
-      const json = await res.json();
+      const res = await fetch(`/api/invoices?${params.toString()}`)
+      const json = await res.json()
       if (json.success) {
-        setData(json.data);
+        setData(json.data)
+      } else {
+        throw new Error(json.error || "Failed to fetch invoices")
       }
-    } catch (err) {
-      console.error("Error fetching invoices:", err);
+    } catch (err: unknown) {
+      console.error("Error fetching invoices:", err)
+      setError("Unable to load invoices. Please retry.")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }, [search, statusFilter])
 
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearch(val);
-    fetchInvoices(val, statusFilter);
-  };
-
-  const handleStatusFilterChange = (status: string) => {
-    setStatusFilter(status);
-    fetchInvoices(search, status);
-  };
-
-  const getStatusBadge = (status: InvoiceStatus) => {
-    switch (status) {
-      case InvoiceStatus.PAID:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="size-3" />
-            Paid
-          </span>
-        );
-      case InvoiceStatus.PARTIALLY_PAID:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-            <Clock className="size-3" />
-            Partial
-          </span>
-        );
-      case InvoiceStatus.ISSUED:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20">
-            <AlertCircle className="size-3" />
-            Issued
-          </span>
-        );
-      case InvoiceStatus.DRAFT:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-zinc-500/15 text-zinc-700 dark:text-zinc-400 border border-zinc-500/20">
-            <FileText className="size-3" />
-            Draft
-          </span>
-        );
-      case InvoiceStatus.VOID:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/20">
-            Void
-          </span>
-        );
+  React.useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
     }
-  };
+
+    const timer = setTimeout(() => {
+      fetchInvoices(search, statusFilter)
+    }, 250)
+
+    return () => clearTimeout(timer)
+  }, [fetchInvoices, search, statusFilter])
+
+  const totalOutstandingNum = parseFloat(data.summary.totalOutstanding || "0")
 
   return (
-    <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <CreditCard className="size-6 text-primary" />
-            Billing & Invoicing
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Manage reservation invoices, extra charges, payment recording, and receipts.
-          </p>
+    <div className="space-y-8">
+      {/* Page Header */}
+      <PageHeader
+        title="Billing"
+        description="Reservation invoices, folios, payment recording, and receipts"
+      />
+
+      {/* Slim Summary Strip (Replaces big KPI cards) */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-card p-4 px-6 text-xs shadow-xs">
+        <div className="flex items-center gap-6 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Invoiced:</span>
+            <MoneyText value={data.summary.totalInvoiced} className="font-bold text-foreground text-sm" />
+          </div>
+          <span className="text-muted-foreground/30">•</span>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Collected:</span>
+            <MoneyText value={data.summary.totalCollected} className="font-bold text-emerald-600 dark:text-emerald-400 text-sm" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">Outstanding:</span>
+          <MoneyText
+            value={data.summary.totalOutstanding}
+            className={cn(
+              "text-sm font-bold",
+              totalOutstandingNum > 0
+                ? "text-amber-600 dark:text-amber-400 font-extrabold"
+                : "text-foreground"
+            )}
+          />
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-card border rounded-xl p-4 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider block">
-              Total Invoiced
-            </span>
-            <span className="text-2xl font-bold text-foreground mt-1 block">
-              ${data.summary.totalInvoiced}
-            </span>
-          </div>
-          <div className="p-3 bg-primary/10 text-primary rounded-xl">
-            <Receipt className="size-5" />
-          </div>
-        </div>
-
-        <div className="bg-card border rounded-xl p-4 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
-              Total Collected
-            </span>
-            <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 block">
-              ${data.summary.totalCollected}
-            </span>
-          </div>
-          <div className="p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
-            <DollarSign className="size-5" />
-          </div>
-        </div>
-
-        <div className="bg-card border rounded-xl p-4 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wider block">
-              Outstanding Balance
-            </span>
-            <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1 block">
-              ${data.summary.totalOutstanding}
-            </span>
-          </div>
-          <div className="p-3 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl">
-            <Clock className="size-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-card border rounded-xl p-3 shadow-xs flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <div className="relative flex-1">
+      {/* Toolbar: Search + Status Chips */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search by invoice #, reservation #, guest name, or phone..."
+          <Input
+            placeholder="Search invoice #, guest, or phone..."
+            className="pl-9 h-10 text-xs sm:text-sm bg-card"
             value={search}
-            onChange={handleSearchChange}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-muted/30 border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition"
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
-          <Filter className="size-4 text-muted-foreground shrink-0 hidden sm:block" />
-          {(["ALL", "ISSUED", "PARTIALLY_PAID", "PAID", "DRAFT", "VOID"] as const).map(
-            (status) => (
+        {/* Status filter chips */}
+        <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shrink-0 overflow-x-auto">
+          {STATUS_FILTERS.map((tab) => {
+            const active = statusFilter === tab.value
+            return (
               <button
-                key={status}
+                key={tab.value}
                 type="button"
-                onClick={() => handleStatusFilterChange(status)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer shrink-0 ${
-                  statusFilter === status
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
-                }`}
+                onClick={() => setStatusFilter(tab.value)}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
+                  active
+                    ? "bg-card text-foreground shadow-xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
               >
-                {status.replace("_", " ")}
+                {tab.label}
               </button>
             )
-          )}
+          })}
         </div>
       </div>
 
-      {/* Invoices Table */}
-      <div className="bg-card border rounded-xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-muted/40 border-b text-xs uppercase tracking-wider text-muted-foreground font-semibold">
-              <tr>
-                <th className="py-3 px-4">Invoice #</th>
-                <th className="py-3 px-4">Guest & Reservation</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Grand Total</th>
-                <th className="py-3 px-4 text-right">Collected</th>
-                <th className="py-3 px-4 text-right">Balance Due</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {loading ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    Loading invoices...
-                  </td>
-                </tr>
-              ) : data.invoices.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                    <Receipt className="size-8 mx-auto mb-2 opacity-40" />
-                    No invoices match your search or filter.
-                  </td>
-                </tr>
-              ) : (
-                data.invoices.map((inv: InvoiceDetailDTO) => (
-                  <tr
-                    key={inv.id}
-                    className="hover:bg-muted/20 transition-colors group"
-                  >
-                    <td className="py-3.5 px-4">
-                      <div className="font-semibold text-foreground font-mono">
-                        {inv.invoiceNumber}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {new Date(inv.createdAt).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </div>
-                    </td>
+      {/* Table & Mobile Cards */}
+      <DataTableShell
+        isLoading={loading}
+        error={error}
+        onRetry={() => fetchInvoices()}
+        isEmpty={data.invoices.length === 0}
+        emptyState={
+          <EmptyState
+            icon={<Receipt className="size-6" />}
+            title="No invoices yet"
+            description="Invoices appear once a reservation generates one."
+          />
+        }
+        mobileView={
+          <MobileCardList
+            items={data.invoices}
+            keyExtractor={(inv) => inv.id}
+            renderCard={(inv) => {
+              const balanceNum = parseFloat(inv.balanceDue || "0")
+              return (
+                <div
+                  onClick={() => router.push(`/billing/${inv.id}`)}
+                  className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-sm text-foreground">
+                      #{inv.invoiceNumber}
+                    </span>
+                    <StatusBadge status={inv.status} size="sm" />
+                  </div>
 
-                    <td className="py-3.5 px-4">
-                      <div className="font-medium text-foreground">
-                        {inv.customerName}
-                      </div>
-                      <div className="text-xs text-muted-foreground font-mono">
-                        Res #{inv.reservationNo}
-                      </div>
-                    </td>
+                  <div className="text-xs">
+                    <div className="font-medium text-foreground">{inv.customerName}</div>
+                    <div className="text-muted-foreground text-[11px]">
+                      Reservation #{inv.reservationNo}
+                    </div>
+                  </div>
 
-                    <td className="py-3.5 px-4">{getStatusBadge(inv.status)}</td>
+                  <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs">
+                    <div>
+                      <div className="text-[11px] text-muted-foreground">Total: <MoneyText value={inv.grandTotal} /></div>
+                      <div className="text-[11px] text-muted-foreground">Paid: <MoneyText value={inv.totalPaid} /></div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[11px] text-muted-foreground">Balance Due</div>
+                      <MoneyText
+                        value={inv.balanceDue}
+                        className={cn(
+                          "text-sm font-bold",
+                          balanceNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                        )}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )
+            }}
+          />
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-[170px] text-xs font-semibold">Invoice</TableHead>
+              <TableHead className="text-xs font-semibold">Guest & Reservation</TableHead>
+              <TableHead className="text-xs font-semibold">Status</TableHead>
+              <TableHead className="text-xs font-semibold">Total</TableHead>
+              <TableHead className="text-right text-xs font-semibold">Balance Due</TableHead>
+              <TableHead className="w-[44px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.invoices.map((inv: InvoiceDetailDTO) => {
+              const balanceNum = parseFloat(inv.balanceDue || "0")
+              return (
+                <TableRow
+                  key={inv.id}
+                  onClick={() => router.push(`/billing/${inv.id}`)}
+                  className="h-16 text-xs hover:bg-muted/40 cursor-pointer transition-colors group"
+                >
+                  <TableCell className="font-medium">
+                    <span className="font-mono font-semibold text-foreground text-xs block">
+                      #{inv.invoiceNumber}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatDate(inv.createdAt)}
+                    </span>
+                  </TableCell>
 
-                    <td className="py-3.5 px-4 text-right font-medium font-mono text-foreground">
-                      ${inv.grandTotal}
-                    </td>
+                  <TableCell>
+                    <span className="font-medium text-foreground block">{inv.customerName}</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      #{inv.reservationNo}
+                    </span>
+                  </TableCell>
 
-                    <td className="py-3.5 px-4 text-right font-medium font-mono text-emerald-600 dark:text-emerald-400">
-                      ${inv.totalPaid}
-                    </td>
+                  <TableCell>
+                    <StatusBadge status={inv.status} size="sm" />
+                  </TableCell>
 
-                    <td className="py-3.5 px-4 text-right font-semibold font-mono text-amber-600 dark:text-amber-400">
-                      ${inv.balanceDue}
-                    </td>
+                  <TableCell>
+                    <MoneyText value={inv.grandTotal} className="font-semibold text-foreground block" />
+                    <span className="text-[11px] text-muted-foreground">
+                      Paid <MoneyText value={inv.totalPaid} />
+                    </span>
+                  </TableCell>
 
-                    <td className="py-3.5 px-4 text-right">
-                      <Link
-                        href={`/billing/${inv.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition cursor-pointer"
-                      >
-                        View Hub
-                        <ArrowUpRight className="size-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                  <TableCell className="text-right">
+                    <MoneyText
+                      value={inv.balanceDue}
+                      className={cn(
+                        "font-bold text-xs",
+                        balanceNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                      )}
+                    />
+                  </TableCell>
 
-        {/* Footer info */}
-        <div className="p-3 bg-muted/20 border-t flex items-center justify-between text-xs text-muted-foreground">
-          <span>
-            Showing {data.invoices.length} of {data.total} invoice{data.total === 1 ? "" : "s"}
-          </span>
-          <span>Page {data.page} of {data.totalPages}</span>
-        </div>
-      </div>
+                  <TableCell className="text-right p-0 pr-4">
+                    <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors ml-auto" />
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </DataTableShell>
     </div>
-  );
+  )
 }

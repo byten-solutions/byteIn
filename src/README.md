@@ -23,10 +23,13 @@ src/
 │   ├── layout.tsx         # Root HTML layout and font definitions
 │   └── page.tsx           # Application reception dashboard view
 ├── components/            # UI Components
+│   ├── app-shell.tsx      # Application layout shell (desktop sidebar + mobile drawer)
+│   ├── app-sidebar.tsx    # Collapsible sidebar with navigation groups
+│   ├── app-header.tsx     # Top header bar with quick stats and theme toggle
 │   ├── logo.tsx           # Brand Logo component
-│   ├── navbar.tsx         # Responsive navigation bar
 │   ├── sign-out-button.tsx# Client sign-out button component
-│   └── ui/                # Installed shadcn/ui primitives (button, card, input, label, badge, dialog, tabs, etc.)
+│   ├── ui-kit/            # Reusable UI kit (PageHeader, StatusBadge, DataTableShell, EmptyState, etc.)
+│   └── ui/                # Installed shadcn/ui primitives (button, card, input, label, badge, dialog, etc.)
 ├── lib/                   # Shared singletons and low-level helpers
 │   ├── auth-guard.ts      # Server authentication and role authorization guards
 │   ├── prisma.ts          # Global PrismaClient singleton instance

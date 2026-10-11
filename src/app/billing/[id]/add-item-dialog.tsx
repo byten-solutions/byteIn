@@ -1,25 +1,38 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { InvoiceDetailDTO } from "@/modules/billing/billing.types";
-import { InvoiceItemType } from "@prisma/client";
-import { Plus, X, AlertCircle } from "lucide-react";
+import * as React from "react"
+import { toast } from "sonner"
+import type { InvoiceDetailDTO } from "@/modules/billing/billing.types"
+import { InvoiceItemType } from "@prisma/client"
+import { Plus, Loader2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { MoneyText } from "@/components/ui-kit"
 
 interface AddItemDialogProps {
-  invoice: InvoiceDetailDTO;
-  isOpen: boolean;
-  onClose: () => void;
-  onSuccess: (updated: InvoiceDetailDTO) => void;
+  invoice: InvoiceDetailDTO
+  isOpen: boolean
+  onClose: () => void
+  onSuccess: (updated: InvoiceDetailDTO) => void
 }
 
 const COMMON_PRESETS = [
-  { name: "Minibar Charges", price: 15.0 },
-  { name: "Room Service", price: 35.0 },
-  { name: "Laundry Service", price: 20.0 },
-  { name: "Airport Transfer", price: 45.0 },
-  { name: "Late Checkout Fee", price: 30.0 },
-  { name: "Extra Bedding / Linen", price: 25.0 },
-];
+  { name: "Minibar Charges", price: 500.0 },
+  { name: "Room Service", price: 800.0 },
+  { name: "Laundry Service", price: 400.0 },
+  { name: "Airport Transfer", price: 1500.0 },
+  { name: "Late Checkout Fee", price: 1000.0 },
+  { name: "Extra Bedding / Linen", price: 600.0 },
+]
 
 export function AddItemDialog({
   invoice,
@@ -27,23 +40,39 @@ export function AddItemDialog({
   onClose,
   onSuccess,
 }: AddItemDialogProps) {
-  const [description, setDescription] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [unitPrice, setUnitPrice] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!isOpen) return null;
+  const [description, setDescription] = React.useState("")
+  const [quantity, setQuantity] = React.useState("1")
+  const [unitPrice, setUnitPrice] = React.useState("")
+  const [submitting, setSubmitting] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
 
   const handlePresetClick = (preset: { name: string; price: number }) => {
-    setDescription(preset.name);
-    setUnitPrice(preset.price.toFixed(2));
-  };
+    setDescription(preset.name)
+    setUnitPrice(preset.price.toFixed(2))
+  }
+
+  const qtyNum = parseFloat(quantity) || 0
+  const priceNum = parseFloat(unitPrice) || 0
+  const calculatedTotal = qtyNum * priceNum
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSubmitting(true);
+    e.preventDefault()
+    setError(null)
+
+    if (!description.trim()) {
+      setError("Item description is required.")
+      return
+    }
+    if (qtyNum <= 0) {
+      setError("Quantity must be greater than zero.")
+      return
+    }
+    if (priceNum < 0) {
+      setError("Unit price cannot be negative.")
+      return
+    }
+
+    setSubmitting(true)
 
     try {
       const res = await fetch(`/api/invoices/${invoice.id}/items`, {
@@ -51,152 +80,148 @@ export function AddItemDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: description.trim(),
-          quantity: parseFloat(quantity),
-          unitPrice: parseFloat(unitPrice),
+          quantity: qtyNum,
+          unitPrice: priceNum,
           itemType: InvoiceItemType.EXTRA_CHARGE,
         }),
-      });
+      })
 
-      const json = await res.json();
+      const json = await res.json()
       if (!res.ok) {
-        throw new Error(json.error || "Failed to add charge");
+        throw new Error(json.error || "Failed to add charge")
       }
 
-      onSuccess(json.data);
-      onClose();
+      toast.success("Extra charge added to invoice")
+      onSuccess(json.data)
+      onClose()
+      setDescription("")
+      setUnitPrice("")
+      setQuantity("1")
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      const msg = err instanceof Error ? err.message : "An unexpected error occurred"
+      setError(msg)
+      toast.error(msg)
     } finally {
-      setSubmitting(false);
+      setSubmitting(false)
     }
-  };
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
-      <div className="bg-card border rounded-2xl max-w-md w-full shadow-2xl p-6 relative">
-        <button
-          onClick={onClose}
-          type="button"
-          disabled={submitting}
-          className="absolute right-4 top-4 text-muted-foreground hover:text-foreground p-1 rounded-lg hover:bg-muted transition"
-        >
-          <X className="size-5" />
-        </button>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Extra Charge</DialogTitle>
+          <DialogDescription>
+            Add supplementary items or services to Invoice #{invoice.invoiceNumber}.
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="flex items-center gap-3 mb-5">
-          <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-            <Plus className="size-6" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Add Extra Charge</h2>
-            <p className="text-xs text-muted-foreground">
-              Add supplementary items or services to Invoice #{invoice.invoiceNumber}
-            </p>
-          </div>
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 py-2 text-xs">
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive font-medium">
+              {error}
+            </div>
+          )}
 
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
+          {/* Quick Presets as chips */}
+          <div className="space-y-1.5">
+            <Label className="text-[11px] text-muted-foreground">Quick Presets</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {COMMON_PRESETS.map((preset) => (
+                <button
+                  key={preset.name}
+                  type="button"
+                  onClick={() => handlePresetClick(preset)}
+                  className="rounded-full border border-border/70 bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-muted hover:border-primary/40 transition-colors cursor-pointer"
+                >
+                  {preset.name} (₹{preset.price.toLocaleString("en-IN")})
+                </button>
+              ))}
+            </div>
           </div>
-        )}
 
-        {/* Quick presets */}
-        <div className="mb-4">
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1.5">
-            Quick Presets
-          </span>
-          <div className="flex flex-wrap gap-1.5">
-            {COMMON_PRESETS.map((p) => (
-              <button
-                key={p.name}
-                type="button"
-                onClick={() => handlePresetClick(p)}
-                className="px-2.5 py-1 text-xs rounded-md bg-muted/50 hover:bg-muted text-foreground border border-border/60 transition cursor-pointer"
-              >
-                {p.name} (${p.price})
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-foreground mb-1">
-              Description *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Minibar beverages, Laundry, Airport shuttle"
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Item Description *</Label>
+            <Input
+              placeholder="e.g. Minibar, Room Service, Laundry..."
+              className="h-10 text-xs sm:text-sm"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-muted/30 border rounded-lg focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
-                Quantity *
-              </label>
-              <input
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Quantity *</Label>
+              <Input
                 type="number"
-                step="1"
-                min="1"
-                required
+                min="0.01"
+                step="any"
+                className="h-10 text-xs sm:text-sm font-mono"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-muted/30 border rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
-                Unit Price ($) *
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.00"
                 required
-                placeholder="0.00"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-muted/30 border rounded-lg font-mono focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary"
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Unit Price *</Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground select-none">
+                  ₹
+                </span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="pl-7 h-10 text-xs sm:text-sm font-mono"
+                  value={unitPrice}
+                  onChange={(e) => setUnitPrice(e.target.value)}
+                  required
+                />
+              </div>
             </div>
           </div>
 
-          <div className="p-3 bg-muted/20 border rounded-lg flex items-center justify-between text-xs">
-            <span className="text-muted-foreground font-medium">Estimated Line Total:</span>
-            <span className="font-bold font-mono text-primary text-sm">
-              ${(
-                (parseFloat(quantity) || 0) * (parseFloat(unitPrice) || 0)
-              ).toFixed(2)}
-            </span>
+          {/* Calculated Line Total */}
+          <div className="rounded-lg border border-border/70 bg-muted/20 p-3 flex items-center justify-between">
+            <span className="text-muted-foreground text-xs font-medium">Line Total:</span>
+            <MoneyText value={calculatedTotal} className="text-sm font-bold text-foreground" />
           </div>
 
-          <div className="pt-2 flex items-center justify-end gap-3 border-t">
-            <button
+          <DialogFooter className="pt-2">
+            <Button
               type="button"
-              disabled={submitting}
+              variant="outline"
+              size="sm"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium rounded-lg border hover:bg-muted transition cursor-pointer"
+              disabled={submitting}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              disabled={submitting || !description.trim() || !unitPrice}
-              className="px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 transition cursor-pointer disabled:opacity-50"
+              size="sm"
+              disabled={submitting}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {submitting ? "Adding..." : "Add to Invoice"}
-            </button>
-          </div>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="mr-1.5 size-3.5" />
+                  Add Charge
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
-  );
+      </DialogContent>
+    </Dialog>
+  )
 }

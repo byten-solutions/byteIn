@@ -1,279 +1,186 @@
-import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
+import { notFound, redirect } from "next/navigation"
+import Link from "next/link"
 import {
-  User,
-  Bed,
-  CheckCircle2,
-  Clock,
-  XCircle,
   ArrowLeft,
+  User,
   ShieldCheck,
   FileText,
-  PlusCircle,
-} from "lucide-react";
-import { getSession } from "@/lib/auth-guard";
-import { ReservationService } from "@/modules/reservations/reservation.service";
-import { BillingService } from "@/modules/billing/billing.service";
-import { AppShell } from "@/components/app-shell";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+  CreditCard,
+  BedDouble,
+  ChevronRight,
+} from "lucide-react"
+import { getSession } from "@/lib/auth-guard"
+import { ReservationService } from "@/modules/reservations/reservation.service"
+import { BillingService } from "@/modules/billing/billing.service"
+import { AppShell } from "@/components/app-shell"
+import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { AllocationActionRow } from "./allocation-action-row";
-import { ReservationBillingCard } from "./reservation-billing-card";
+  StatusBadge,
+  MoneyText,
+} from "@/components/ui-kit"
+import { formatDate, formatStayRange } from "@/lib/date-format"
+import { AllocationActionRow } from "./allocation-action-row"
+import { ReservationBillingCard } from "./reservation-billing-card"
 
 export default async function ReservationDetailPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ id: string }>
 }) {
-  const session = await getSession();
+  const session = await getSession()
   if (!session) {
-    redirect("/login");
+    redirect("/login")
   }
 
-  const { id } = await params;
-  let reservation;
+  const { id } = await params
+  let reservation
   try {
-    reservation = await ReservationService.getReservationById(id);
+    reservation = await ReservationService.getReservationById(id)
   } catch {
-    notFound();
+    notFound()
   }
 
-  const invoice = await BillingService.getInvoiceByReservationId(reservation.id);
-
-  const guestFullName = `${reservation.customer.firstName} ${reservation.customer.lastName || ""}`.trim();
+  const invoice = await BillingService.getInvoiceByReservationId(reservation.id)
+  const guestFullName = `${reservation.customer.firstName} ${reservation.customer.lastName || ""}`.trim()
 
   const getNights = (arrival: Date, departure: Date) => {
     return Math.max(
       1,
       Math.round((departure.getTime() - arrival.getTime()) / (1000 * 60 * 60 * 24))
-    );
-  };
+    )
+  }
 
   const totalNights = reservation.rooms.reduce(
     (sum, r) => sum + getNights(r.arrivalDate, r.departureDate),
     0
-  );
+  )
 
   const totalBookingValue = reservation.rooms.reduce(
     (sum, r) =>
       sum +
       getNights(r.arrivalDate, r.departureDate) * parseFloat(r.bookedNightlyRate.toString()),
     0
-  );
+  )
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "CONFIRMED":
-        return (
-          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-            Confirmed
-          </Badge>
-        );
-      case "COMPLETED":
-        return (
-          <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
-            <Clock className="h-3.5 w-3.5 mr-1" />
-            Completed
-          </Badge>
-        );
-      case "CANCELLED":
-        return (
-          <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30">
-            <XCircle className="h-3.5 w-3.5 mr-1" />
-            Cancelled
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  // Calculate stay dates range
+  const arrivalDates = reservation.rooms.map((r) => r.arrivalDate.getTime()).sort()
+  const departureDates = reservation.rooms.map((r) => r.departureDate.getTime()).sort()
+  const earliestArrival = new Date(arrivalDates[0]!)
+  const latestDeparture = new Date(departureDates[departureDates.length - 1]!)
+
+  const stayRangeStr = formatStayRange(earliestArrival, latestDeparture)
+
+  // Contextual primary button selection
+  const nextConfirmedRoom = reservation.rooms.find((r) => r.status === "CONFIRMED")
+  const nextCheckedInRoom = reservation.rooms.find((r) => r.status === "CHECKED_IN")
 
   return (
     <AppShell session={session}>
-      <div className="container mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        {/* Navigation & Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b pb-6">
-          <div className="flex items-center gap-3">
-            <Link href="/reservations">
-              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                All Reservations
-              </Button>
-            </Link>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight font-mono">
-                  {reservation.reservationNo}
-                </h1>
-                {getStatusBadge(reservation.status)}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Booked on {reservation.createdAt.toLocaleDateString()} at{" "}
-                {reservation.createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-              </p>
+      <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10 space-y-8">
+        {/* Top Navigation Back link */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/reservations"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="size-3.5" />
+            <span>Back to Reservations</span>
+          </Link>
+        </div>
+
+        {/* Summary Header */}
+        <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card p-6 shadow-xs lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="font-mono text-2xl font-bold tracking-tight text-foreground">
+                #{reservation.reservationNo}
+              </h1>
+              <StatusBadge status={reservation.status} />
+              <span className="text-muted-foreground/40">•</span>
+              <Link
+                href={`/customers/${reservation.customer.id}`}
+                className="text-sm font-semibold text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <span>{guestFullName}</span>
+                <ChevronRight className="size-3.5" />
+              </Link>
+            </div>
+
+            <div className="flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
+              <span>{stayRangeStr}</span>
+              <span>•</span>
+              <span>{totalNights} night{totalNights === 1 ? "" : "s"} total</span>
+              <span>•</span>
+              <span>
+                Balance Due:{" "}
+                <MoneyText
+                  value={invoice ? invoice.balanceDue : totalBookingValue}
+                  className="font-bold text-foreground"
+                />
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Link href="/reservations/new">
-              <Button size="sm" variant="outline" className="text-xs">
-                <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
-                New Reservation
-              </Button>
-            </Link>
+          {/* ONE Contextual Primary Action */}
+          <div className="shrink-0 self-start lg:self-center">
+            {invoice ? (
+              <Link href={`/billing/${invoice.id}`}>
+                <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 text-xs font-semibold gap-1.5">
+                  <CreditCard className="size-3.5" />
+                  <span>Open Invoice</span>
+                </Button>
+              </Link>
+            ) : nextConfirmedRoom ? (
+              <a href={`#room-${nextConfirmedRoom.id}`}>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-xs font-semibold gap-1.5">
+                  <BedDouble className="size-3.5" />
+                  <span>Check In Room {nextConfirmedRoom.room.roomNo}</span>
+                </Button>
+              </a>
+            ) : nextCheckedInRoom ? (
+              <a href={`#room-${nextCheckedInRoom.id}`}>
+                <Button variant="outline" className="h-10 text-xs font-semibold gap-1.5">
+                  <span>Check Out Room {nextCheckedInRoom.room.roomNo}</span>
+                </Button>
+              </a>
+            ) : (
+              <Link href="/reservations/new">
+                <Button variant="outline" className="h-10 text-xs">
+                  New Reservation
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Left Column: Primary Guest & Booking Metadata (1 Col) */}
-          <div className="space-y-6">
-            {/* Primary Guest Card */}
-            <Card className="shadow-xs">
-              <CardHeader className="p-4 border-b bg-muted/20">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <User className="h-4 w-4 text-primary" />
-                  Primary Guest
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-3 text-xs">
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Full Name</span>
-                  <span className="font-semibold text-sm">{guestFullName}</span>
+        {/* 2-Column Content Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+          {/* Main Column: Rooms List (2 Cols on lg) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-border/60 flex items-center justify-between bg-muted/10">
+                <div className="flex items-center gap-2">
+                  <BedDouble className="size-4 text-primary" />
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Allocated Rooms ({reservation.rooms.length})
+                  </h2>
                 </div>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {totalNights} night{totalNights === 1 ? "" : "s"}
+                </span>
+              </div>
 
-                {reservation.customer.phone && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Phone</span>
-                    <span>{reservation.customer.phone}</span>
-                  </div>
-                )}
+              <div className="divide-y divide-border/60">
+                {reservation.rooms.map((allocation) => {
+                  const arrStr = allocation.arrivalDate.toISOString().split("T")[0]!
+                  const depStr = allocation.departureDate.toISOString().split("T")[0]!
+                  const nights = getNights(allocation.arrivalDate, allocation.departureDate)
+                  const nightlyRate = parseFloat(allocation.bookedNightlyRate.toString())
+                  const roomSubtotal = nights * nightlyRate
 
-                {reservation.customer.email && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Email</span>
-                    <span>{reservation.customer.email}</span>
-                  </div>
-                )}
-
-                {reservation.customer.nationality && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Nationality</span>
-                    <span>{reservation.customer.nationality}</span>
-                  </div>
-                )}
-
-                {reservation.customer.idProofNumber && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">
-                      ID Proof ({reservation.customer.idProofType || "Document"})
-                    </span>
-                    <span className="font-mono">{reservation.customer.idProofNumber}</span>
-                  </div>
-                )}
-
-                {reservation.customer.address && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Address</span>
-                    <span>{reservation.customer.address}</span>
-                  </div>
-                )}
-
-                {reservation.customer.remarks && (
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Guest Notes</span>
-                    <span className="italic">{reservation.customer.remarks}</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Reception Staff & Audit Card */}
-            <Card className="shadow-xs">
-              <CardHeader className="p-4 border-b bg-muted/20">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary" />
-                  Reception Desk Record
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Booked By:</span>
-                  <span className="font-medium">{reservation.creator.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Role:</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {reservation.creator.role.name}
-                  </Badge>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Staff Email:</span>
-                  <span className="text-muted-foreground">{reservation.creator.email}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Special Requests */}
-            {reservation.specialRequests && (
-              <Card className="shadow-xs">
-                <CardHeader className="p-4 border-b bg-muted/20">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-primary" />
-                    Special Requests
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-4 text-xs italic text-muted-foreground">
-                  &quot;{reservation.specialRequests}&quot;
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Billing & Invoicing Card */}
-            <ReservationBillingCard
-              reservationId={reservation.id}
-              initialInvoice={invoice}
-              estimatedTotal={totalBookingValue}
-            />
-          </div>
-
-          {/* Right Column: Room Allocations & Monetary Snapshots (2 Cols) */}
-          <div className="md:col-span-2 space-y-6">
-            <Card className="shadow-xs">
-              <CardHeader className="p-4 border-b bg-muted/20 flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Bed className="h-4 w-4 text-primary" />
-                    Physical Room Allocations ({reservation.rooms.length})
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Assigned physical rooms with independent stay dates and snapshotted rates.
-                  </CardDescription>
-                </div>
-                <Badge variant="outline" className="font-mono text-xs">
-                  {totalNights} Night{totalNights === 1 ? "" : "s"} Total
-                </Badge>
-              </CardHeader>
-
-              <CardContent className="p-0">
-                <div className="divide-y">
-                  {reservation.rooms.map((allocation) => {
-                    const arrStr = allocation.arrivalDate.toISOString().split("T")[0];
-                    const depStr = allocation.departureDate.toISOString().split("T")[0];
-                    const nights = getNights(allocation.arrivalDate, allocation.departureDate);
-                    const nightlyRate = parseFloat(allocation.bookedNightlyRate.toString());
-                    const roomSubtotal = nights * nightlyRate;
-
-                    return (
+                  return (
+                    <div key={allocation.id} id={`room-${allocation.id}`}>
                       <AllocationActionRow
-                        key={allocation.id}
                         allocation={{
                           id: allocation.id,
                           roomId: allocation.roomId,
@@ -306,45 +213,123 @@ export default async function ReservationDetailPage({
                           idProofNumber: reservation.customer.idProofNumber,
                         }}
                       />
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                    </div>
+                  )
+                })}
+              </div>
 
-            {/* Booking Cost Summary Card */}
-            <Card className="shadow-xs bg-muted/10">
-              <CardHeader className="p-4 border-b">
-                <CardTitle className="text-sm font-semibold flex items-center justify-between">
-                  <span>Financial Breakdown</span>
-                  <span className="text-xs font-normal text-muted-foreground font-mono">
-                    PostgreSQL Fixed-Precision Decimal(10, 2)
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-2 text-xs">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Total Allocated Rooms:</span>
-                  <span className="font-medium text-foreground">{reservation.rooms.length}</span>
+              {/* Rooms list footer with totals */}
+              <div className="p-4 border-t border-border/60 bg-muted/15 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+                <span className="text-muted-foreground">
+                  Total booking value ({reservation.rooms.length} room{reservation.rooms.length === 1 ? "" : "s"}, {totalNights} night{totalNights === 1 ? "" : "s"})
+                </span>
+                <MoneyText value={totalBookingValue} className="text-base font-bold text-foreground" />
+              </div>
+            </div>
+          </div>
+
+          {/* Side Rail (Quiet, no heavy cards) */}
+          <div className="space-y-6 rounded-xl border border-border/80 bg-card p-5 text-xs shadow-xs">
+            {/* Primary Guest Details */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                <span className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                  <User className="size-3.5 text-muted-foreground" />
+                  Primary Guest
+                </span>
+                <Link
+                  href={`/customers/${reservation.customer.id}`}
+                  className="text-[11px] text-primary hover:underline"
+                >
+                  Profile
+                </Link>
+              </div>
+
+              <div className="space-y-2">
+                <div>
+                  <div className="font-medium text-foreground text-sm">{guestFullName}</div>
+                  {reservation.customer.phone && (
+                    <div className="text-muted-foreground">{reservation.customer.phone}</div>
+                  )}
+                  {reservation.customer.email && (
+                    <div className="text-muted-foreground">{reservation.customer.email}</div>
+                  )}
                 </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Cumulative Nights:</span>
-                  <span className="font-medium text-foreground">{totalNights}</span>
-                </div>
-                <div className="flex justify-between text-base font-bold pt-2 border-t text-foreground">
-                  <span>Estimated Total Booking Value:</span>
-                  <span className="text-primary font-mono text-lg">
-                    ${totalBookingValue.toFixed(2)}
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted-foreground pt-1">
-                  * Snapshotted at booking time. Invoicing and payment recording occur in subsequent operations.
+
+                {reservation.customer.nationality && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Nationality:</span>
+                    <span className="text-foreground">{reservation.customer.nationality}</span>
+                  </div>
+                )}
+
+                {reservation.customer.idProofNumber && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>ID ({reservation.customer.idProofType || "Document"}):</span>
+                    <span className="font-mono text-foreground">{reservation.customer.idProofNumber}</span>
+                  </div>
+                )}
+
+                {reservation.customer.address && (
+                  <div className="text-muted-foreground pt-1 border-t border-border/40">
+                    <span className="block text-[11px]">Address:</span>
+                    <span className="text-foreground">{reservation.customer.address}</span>
+                  </div>
+                )}
+
+                {reservation.customer.remarks && (
+                  <div className="text-muted-foreground pt-1 border-t border-border/40">
+                    <span className="block text-[11px]">Guest Notes:</span>
+                    <span className="italic text-foreground">{reservation.customer.remarks}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Special Requests */}
+            {reservation.specialRequests && (
+              <div className="space-y-2 pt-3 border-t border-border/60">
+                <span className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                  <FileText className="size-3.5 text-muted-foreground" />
+                  Special Requests
+                </span>
+                <p className="text-muted-foreground italic leading-relaxed">
+                  &quot;{reservation.specialRequests}&quot;
                 </p>
-              </CardContent>
-            </Card>
+              </div>
+            )}
+
+            {/* Booked By Record */}
+            <div className="space-y-2 pt-3 border-t border-border/60">
+              <span className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                <ShieldCheck className="size-3.5 text-muted-foreground" />
+                Booked By
+              </span>
+              <div className="space-y-1 text-muted-foreground">
+                <div className="flex justify-between">
+                  <span>Staff:</span>
+                  <span className="font-medium text-foreground">{reservation.creator.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Role:</span>
+                  <span className="text-foreground">{reservation.creator.role.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Created:</span>
+                  <span className="text-foreground">{formatDate(reservation.createdAt)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Billing & Invoicing Section */}
+            <ReservationBillingCard
+              reservationId={reservation.id}
+              initialInvoice={invoice}
+              estimatedTotal={totalBookingValue}
+            />
           </div>
         </div>
       </div>
     </AppShell>
-  );
+  )
 }

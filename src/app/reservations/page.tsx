@@ -1,16 +1,16 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth-guard";
-import { ReservationService } from "@/modules/reservations/reservation.service";
-import { AppShell } from "@/components/app-shell";
-import { ReservationList } from "./reservation-list";
+import { redirect } from "next/navigation"
+import { getSession } from "@/lib/auth-guard"
+import { ReservationService } from "@/modules/reservations/reservation.service"
+import { AppShell } from "@/components/app-shell"
+import { ReservationList } from "./reservation-list"
 
 export default async function ReservationsPage() {
-  const session = await getSession();
+  const session = await getSession()
   if (!session) {
-    redirect("/login");
+    redirect("/login")
   }
 
-  const result = await ReservationService.getReservations({ page: 1, limit: 20 });
+  const result = await ReservationService.getReservations({ page: 1, limit: 20 })
 
   // Serialize Decimal objects and Date objects for client component
   const serializedReservations = result.reservations.map((r) => ({
@@ -47,16 +47,16 @@ export default async function ReservationsPage() {
       children: rm.children,
       status: rm.status,
     })),
-  }));
+  }))
 
   return (
     <AppShell session={session}>
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
         <ReservationList
           initialReservations={serializedReservations}
           initialPagination={result.pagination}
         />
       </div>
     </AppShell>
-  );
+  )
 }

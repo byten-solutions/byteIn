@@ -1,107 +1,134 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
-import { InvoiceStatus, InvoiceItemType, PaymentStatus } from "@prisma/client";
-import {
+import * as React from "react"
+import Link from "next/link"
+import { toast } from "sonner"
+import { InvoiceStatus, InvoiceItemType, PaymentStatus } from "@prisma/client"
+import type {
   InvoiceDetailDTO,
   PaymentDTO,
   PaymentReceiptDTO,
-} from "@/modules/billing/billing.types";
-import { RecordPaymentDialog } from "./record-payment-dialog";
-import { AddItemDialog } from "./add-item-dialog";
-import { ReceiptModal } from "./receipt-modal";
+} from "@/modules/billing/billing.types"
 import {
   ArrowLeft,
-  CreditCard,
   Plus,
   Printer,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  FileText,
-  Trash2,
   Receipt,
-  User,
-  Calendar,
-  DollarSign,
+  Trash2,
   Ban,
-} from "lucide-react";
+  CreditCard,
+  Send,
+  Loader2,
+  Check,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  StatusBadge,
+  MoneyText,
+  ConfirmDialog,
+  RowActionsMenu,
+} from "@/components/ui-kit"
+import { formatDate, formatDateTime } from "@/lib/date-format"
+import { formatQuantity, getPaymentMethodLabel, formatStaffName } from "@/lib/currency"
+import { AddItemDialog } from "./add-item-dialog"
+import { RecordPaymentDialog } from "./record-payment-dialog"
+import { ReceiptModal } from "./receipt-modal"
+import { cn } from "@/lib/utils"
 
 interface InvoiceDetailViewProps {
-  initialInvoice: InvoiceDetailDTO;
+  initialInvoice: InvoiceDetailDTO
 }
 
 export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
-  const [invoice, setInvoice] = useState<InvoiceDetailDTO>(initialInvoice);
-  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [isAddItemOpen, setIsAddItemOpen] = useState(false);
-  const [receiptData, setReceiptData] = useState<PaymentReceiptDTO | null>(null);
-  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [invoice, setInvoice] = React.useState<InvoiceDetailDTO>(initialInvoice)
+  const [isPaymentOpen, setIsPaymentOpen] = React.useState(false)
+  const [isAddItemOpen, setIsAddItemOpen] = React.useState(false)
+  const [receiptData, setReceiptData] = React.useState<PaymentReceiptDTO | null>(null)
+  const [isReceiptOpen, setIsReceiptOpen] = React.useState(false)
+  const [actionLoading, setActionLoading] = React.useState(false)
+
+  // ConfirmDialog States
+  const [itemToDelete, setItemToDelete] = React.useState<string | null>(null)
+  const [paymentToVoid, setPaymentToVoid] = React.useState<string | null>(null)
+
+  const balanceDueNum = parseFloat(invoice.balanceDue || "0")
+  const discountTotalNum = parseFloat(invoice.discountTotal || "0")
+  const taxTotalNum = parseFloat(invoice.taxTotal || "0")
 
   const handleIssueInvoice = async () => {
-    setActionLoading(true);
-    setErrorMessage(null);
+    setActionLoading(true)
     try {
       const res = await fetch(`/api/invoices/${invoice.id}/issue`, {
         method: "POST",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to issue invoice");
-      setInvoice(json.data);
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to issue invoice")
+      setInvoice(json.data)
+      toast.success("Invoice issued successfully")
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to issue invoice");
+      const msg = err instanceof Error ? err.message : "Failed to issue invoice"
+      toast.error(msg)
     } finally {
-      setActionLoading(false);
+      setActionLoading(false)
     }
-  };
+  }
 
-  const handleRemoveItem = async (itemId: string) => {
-    if (!confirm("Are you sure you want to remove this line item?")) return;
-    setActionLoading(true);
-    setErrorMessage(null);
+  const handleConfirmRemoveItem = async () => {
+    if (!itemToDelete) return
+    setActionLoading(true)
     try {
-      const res = await fetch(`/api/invoices/${invoice.id}/items/${itemId}`, {
+      const res = await fetch(`/api/invoices/${invoice.id}/items/${itemToDelete}`, {
         method: "DELETE",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to remove item");
-      setInvoice(json.data);
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to remove item")
+      setInvoice(json.data)
+      toast.success("Line item removed")
+      setItemToDelete(null)
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to remove item");
+      const msg = err instanceof Error ? err.message : "Failed to remove item"
+      toast.error(msg)
     } finally {
-      setActionLoading(false);
+      setActionLoading(false)
     }
-  };
+  }
 
-  const handleVoidPayment = async (paymentId: string) => {
-    if (!confirm("Are you sure you want to void this recorded payment?")) return;
-    setActionLoading(true);
-    setErrorMessage(null);
+  const handleConfirmVoidPayment = async () => {
+    if (!paymentToVoid) return
+    setActionLoading(true)
     try {
-      const res = await fetch(`/api/invoices/${invoice.id}/payments/${paymentId}/void`, {
+      const res = await fetch(`/api/invoices/${invoice.id}/payments/${paymentToVoid}/void`, {
         method: "POST",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to void payment");
-      setInvoice(json.data);
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || "Failed to void payment")
+      setInvoice(json.data)
+      toast.success("Payment voided")
+      setPaymentToVoid(null)
     } catch (err: unknown) {
-      setErrorMessage(err instanceof Error ? err.message : "Failed to void payment");
+      const msg = err instanceof Error ? err.message : "Failed to void payment"
+      toast.error(msg)
     } finally {
-      setActionLoading(false);
+      setActionLoading(false)
     }
-  };
+  }
 
   const handlePaymentSuccess = (
     updatedInvoice: InvoiceDetailDTO,
     receipt: PaymentReceiptDTO
   ) => {
-    setInvoice(updatedInvoice);
-    setReceiptData(receipt);
-    setIsReceiptOpen(true);
-  };
+    setInvoice(updatedInvoice)
+    setReceiptData(receipt)
+    setIsReceiptOpen(true)
+  }
 
   const handleViewReceipt = (payment: PaymentDTO) => {
     setReceiptData({
@@ -121,451 +148,377 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
       invoiceTotalPaid: invoice.totalPaid,
       remainingBalance: invoice.balanceDue,
       invoiceStatus: invoice.status,
-    });
-    setIsReceiptOpen(true);
-  };
+    })
+    setIsReceiptOpen(true)
+  }
 
-  const getStatusBadge = (status: InvoiceStatus) => {
-    switch (status) {
-      case InvoiceStatus.PAID:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="size-3.5" />
-            Fully Paid
-          </span>
-        );
-      case InvoiceStatus.PARTIALLY_PAID:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-            <Clock className="size-3.5" />
-            Partially Paid
-          </span>
-        );
-      case InvoiceStatus.ISSUED:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20">
-            <AlertCircle className="size-3.5" />
-            Issued (Unpaid)
-          </span>
-        );
-      case InvoiceStatus.DRAFT:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-zinc-500/15 text-zinc-700 dark:text-zinc-400 border border-zinc-500/20">
-            <FileText className="size-3.5" />
-            Draft
-          </span>
-        );
-      case InvoiceStatus.VOID:
-        return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/20">
-            Void
-          </span>
-        );
-    }
-  };
-
-  const canRecordPayment =
-    invoice.status !== InvoiceStatus.VOID &&
-    parseFloat(invoice.balanceDue) > 0;
+  const isDraft = invoice.status === InvoiceStatus.DRAFT
 
   return (
-    <div className="space-y-6">
-      {/* Top Navigation & Status */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/billing"
-            className="p-2 rounded-lg border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition cursor-pointer"
-          >
-            <ArrowLeft className="size-4" />
-          </Link>
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground font-mono">
-                {invoice.invoiceNumber}
-              </h1>
-              {getStatusBadge(invoice.status)}
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Created on {new Date(invoice.createdAt).toLocaleDateString()} •{" "}
-              <Link
-                href={`/reservations/${invoice.reservationId}`}
-                className="text-primary hover:underline font-mono"
-              >
-                Reservation #{invoice.reservationNo}
-              </Link>
-            </p>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          {invoice.status === InvoiceStatus.DRAFT && (
-            <button
-              type="button"
-              disabled={actionLoading}
-              onClick={handleIssueInvoice}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition cursor-pointer disabled:opacity-50"
-            >
-              <CheckCircle2 className="size-3.5" />
-              Issue Invoice
-            </button>
-          )}
-
-          <button
-            type="button"
-            disabled={invoice.status === InvoiceStatus.VOID}
-            onClick={() => setIsAddItemOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold border bg-card hover:bg-muted text-foreground transition cursor-pointer disabled:opacity-50"
-          >
-            <Plus className="size-3.5" />
-            Add Extra Charge
-          </button>
-
-          {canRecordPayment && (
-            <button
-              type="button"
-              onClick={() => setIsPaymentOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition cursor-pointer"
-            >
-              <DollarSign className="size-4" />
-              Record Payment
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition cursor-pointer"
-          >
-            <Printer className="size-3.5" />
-            Print
-          </button>
-        </div>
+    <div className="space-y-8">
+      {/* Top Navigation */}
+      <div className="flex items-center gap-2">
+        <Link
+          href="/billing"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-3.5" />
+          <span>Back to Invoices</span>
+        </Link>
       </div>
 
-      {errorMessage && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Items and Payments */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Itemized Table */}
-          <div className="bg-card border rounded-2xl overflow-hidden shadow-xs">
-            <div className="p-4 border-b flex items-center justify-between bg-muted/20">
-              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <Receipt className="size-4 text-primary" />
-                Billed Items & Room Charges
-              </h2>
-              <span className="text-xs text-muted-foreground font-mono">
-                {invoice.items.length} item{invoice.items.length === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/40 border-b uppercase text-[10px] tracking-wider text-muted-foreground font-semibold">
-                  <tr>
-                    <th className="py-2.5 px-4">Item & Description</th>
-                    <th className="py-2.5 px-4 text-center">Type</th>
-                    <th className="py-2.5 px-4 text-right">Qty</th>
-                    <th className="py-2.5 px-4 text-right">Unit Rate</th>
-                    <th className="py-2.5 px-4 text-right">Line Total</th>
-                    <th className="py-2.5 px-2 text-right"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {invoice.items.map((item) => (
-                    <tr key={item.id} className="hover:bg-muted/15 transition-colors">
-                      <td className="py-3 px-4">
-                        <span className="font-medium text-foreground block">
-                          {item.description}
-                        </span>
-                        {item.reservationRoomId && (
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            Allocation #{item.reservationRoomId.slice(-6)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            item.itemType === InvoiceItemType.ROOM_CHARGE
-                              ? "bg-blue-500/10 text-blue-700 dark:text-blue-400"
-                              : "bg-purple-500/10 text-purple-700 dark:text-purple-400"
-                          }`}
-                        >
-                          {item.itemType === InvoiceItemType.ROOM_CHARGE
-                            ? "Room Stay"
-                            : "Extra"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-medium">
-                        {parseFloat(item.quantity)}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono text-muted-foreground">
-                        ${item.unitPrice}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-foreground">
-                        ${item.lineTotal}
-                      </td>
-                      <td className="py-3 px-2 text-right">
-                        {item.itemType !== InvoiceItemType.ROOM_CHARGE &&
-                          invoice.status !== InvoiceStatus.VOID && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItem(item.id)}
-                              className="text-muted-foreground hover:text-red-600 p-1 rounded-md hover:bg-red-500/10 transition cursor-pointer"
-                              title="Remove extra charge"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {/* Invoice Header Card */}
+      <div className="flex flex-col gap-6 rounded-xl border border-border/80 bg-card p-6 shadow-xs lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="font-mono text-2xl font-bold tracking-tight text-foreground">
+              Invoice #{invoice.invoiceNumber}
+            </h1>
+            <StatusBadge status={invoice.status} />
           </div>
 
-          {/* Payment History */}
-          <div className="bg-card border rounded-2xl overflow-hidden shadow-xs">
-            <div className="p-4 border-b flex items-center justify-between bg-muted/20">
-              <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <CreditCard className="size-4 text-emerald-600" />
-                Payments & Receipts
-              </h2>
-              {canRecordPayment && (
-                <button
-                  type="button"
-                  onClick={() => setIsPaymentOpen(true)}
-                  className="text-xs text-primary font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="size-3" />
-                  Record New
-                </button>
-              )}
-            </div>
-
-            {invoice.payments.length === 0 ? (
-              <div className="py-10 text-center text-xs text-muted-foreground">
-                <Clock className="size-6 mx-auto mb-2 opacity-40" />
-                No payments recorded yet for this invoice.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-muted/40 border-b uppercase text-[10px] tracking-wider text-muted-foreground font-semibold">
-                    <tr>
-                      <th className="py-2.5 px-4">Date & Time</th>
-                      <th className="py-2.5 px-4">Method & Ref</th>
-                      <th className="py-2.5 px-4 text-center">Status</th>
-                      <th className="py-2.5 px-4 text-right">Amount</th>
-                      <th className="py-2.5 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {invoice.payments.map((p) => (
-                      <tr key={p.id} className="hover:bg-muted/15 transition-colors">
-                        <td className="py-3 px-4">
-                          <span className="font-medium text-foreground block">
-                            {new Date(p.paidAt).toLocaleDateString()}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {new Date(p.paidAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-foreground">
-                            {p.paymentMethod}
-                          </span>
-                          {p.referenceNumber && (
-                            <span className="text-[10px] text-muted-foreground block font-mono">
-                              Ref: {p.referenceNumber}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {p.status === PaymentStatus.RECORDED ? (
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                              Recorded
-                            </span>
-                          ) : (
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-700 dark:text-red-400">
-                              Voided
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-foreground">
-                          ${p.amount}
-                        </td>
-                        <td className="py-3 px-4 text-right space-x-1">
-                          {p.status === PaymentStatus.RECORDED && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleViewReceipt(p)}
-                                className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground transition cursor-pointer"
-                              >
-                                Receipt
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleVoidPayment(p.id)}
-                                className="px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-red-600 hover:bg-red-500/10 transition cursor-pointer"
-                                title="Void Payment"
-                              >
-                                <Ban className="size-3.5 inline" />
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Customer Info & Financial Summary */}
-        <div className="space-y-6">
-          {/* Financial Breakdown Card */}
-          <div className="bg-card border rounded-2xl p-5 shadow-xs space-y-4">
-            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-              <DollarSign className="size-4 text-primary" />
-              Financial Summary
-            </h3>
-
-            <div className="space-y-2 text-xs divide-y divide-border/60">
-              <div className="flex justify-between py-1">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono font-medium text-foreground">
-                  ${invoice.subtotal}
-                </span>
-              </div>
-
-              {parseFloat(invoice.discountTotal) > 0 && (
-                <div className="flex justify-between py-1 text-emerald-600">
-                  <span>Discount</span>
-                  <span className="font-mono font-medium">
-                    -${invoice.discountTotal}
-                  </span>
-                </div>
-              )}
-
-              {parseFloat(invoice.taxTotal) > 0 && (
-                <div className="flex justify-between py-1 text-muted-foreground">
-                  <span>Tax Total</span>
-                  <span className="font-mono font-medium text-foreground">
-                    +${invoice.taxTotal}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex justify-between py-2 text-sm font-bold">
-                <span className="text-foreground">Grand Total</span>
-                <span className="font-mono text-primary text-base">
-                  ${invoice.grandTotal}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-1 text-emerald-600 dark:text-emerald-400">
-                <span className="font-medium">Total Paid</span>
-                <span className="font-mono font-bold">${invoice.totalPaid}</span>
-              </div>
-
-              <div className="flex justify-between py-2.5 font-bold text-sm bg-muted/20 px-2 rounded-lg mt-2">
-                <span className="text-foreground">Balance Due</span>
-                <span
-                  className={`font-mono text-base ${
-                    parseFloat(invoice.balanceDue) === 0
-                      ? "text-emerald-600"
-                      : "text-amber-600"
-                  }`}
-                >
-                  ${invoice.balanceDue}
-                </span>
-              </div>
-            </div>
-
-            {canRecordPayment && (
-              <button
-                type="button"
-                onClick={() => setIsPaymentOpen(true)}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+          <div className="flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground flex-wrap">
+            <span>
+              Reservation:{" "}
+              <Link
+                href={`/reservations/${invoice.reservationId}`}
+                className="font-mono font-medium text-primary hover:underline"
               >
-                <DollarSign className="size-4" />
-                Pay Balance (${invoice.balanceDue})
-              </button>
-            )}
-          </div>
-
-          {/* Billed Customer Card */}
-          <div className="bg-card border rounded-2xl p-5 shadow-xs space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <User className="size-3.5 text-primary" />
-              Billed Guest
-            </h3>
-            <div>
+                #{invoice.reservationNo}
+              </Link>
+            </span>
+            <span>•</span>
+            <span>
+              Guest:{" "}
               <Link
                 href={`/customers/${invoice.customerId}`}
-                className="text-base font-bold text-foreground hover:text-primary transition"
+                className="font-medium text-primary hover:underline"
               >
                 {invoice.customerName}
               </Link>
-              {invoice.customerEmail && (
-                <div className="text-xs text-muted-foreground mt-0.5">
-                  {invoice.customerEmail}
-                </div>
-              )}
-              {invoice.customerPhone && (
-                <div className="text-xs text-muted-foreground">
-                  {invoice.customerPhone}
-                </div>
-              )}
-            </div>
+            </span>
+            <span>•</span>
+            <span>
+              Created {formatDate(invoice.createdAt)}
+            </span>
           </div>
+        </div>
 
-          {/* Reservation Card */}
-          <div className="bg-card border rounded-2xl p-5 shadow-xs space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Calendar className="size-3.5 text-primary" />
-              Linked Reservation
-            </h3>
-            <div>
-              <Link
-                href={`/reservations/${invoice.reservationId}`}
-                className="font-mono font-bold text-primary hover:underline"
-              >
-                Reservation #{invoice.reservationNo}
-              </Link>
-              <div className="text-xs text-muted-foreground mt-1">
-                Room allocations and stay dates are locked to this booking.
+        {/* Balance Due / Paid in Full & Primary Actions */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 shrink-0">
+          {balanceDueNum === 0 && invoice.status === InvoiceStatus.PAID ? (
+            <div className="flex items-center gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-left sm:text-right">
+              <Check className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div>
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 block">
+                  Paid in full
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  Total <MoneyText value={invoice.grandTotal} className="font-semibold text-foreground" /> (Paid <MoneyText value={invoice.totalPaid} className="font-semibold text-foreground" />)
+                </span>
               </div>
+            </div>
+          ) : (
+            <div className="text-left sm:text-right">
+              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">
+                Balance Due
+              </span>
+              <MoneyText
+                value={invoice.balanceDue}
+                className={cn(
+                  "text-2xl font-extrabold tracking-tight block",
+                  balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
+                )}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {balanceDueNum > 0 && invoice.status !== InvoiceStatus.PAID && (
+              <Button
+                size="sm"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 font-semibold gap-1.5"
+                onClick={() => setIsPaymentOpen(true)}
+              >
+                <CreditCard className="size-4" />
+                <span>Record Payment</span>
+              </Button>
+            )}
+
+            {isDraft && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 text-xs gap-1.5"
+                onClick={handleIssueInvoice}
+                disabled={actionLoading}
+              >
+                {actionLoading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                <span>Issue</span>
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 text-xs gap-1.5"
+              onClick={() => window.open(`/billing/${invoice.id}/print`, "_blank")}
+            >
+              <Printer className="size-4" />
+              <span>Print</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Line Items Table */}
+      <div className="rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-border/60 bg-muted/10 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">
+            Folio Line Items ({invoice.items.length})
+          </h2>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => setIsAddItemOpen(true)}
+            disabled={invoice.status === InvoiceStatus.VOID}
+          >
+            <Plus className="size-3.5" />
+            <span>Add charge</span>
+          </Button>
+        </div>
+
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="text-xs font-semibold">Description</TableHead>
+              <TableHead className="text-xs font-semibold">Type</TableHead>
+              <TableHead className="text-right text-xs font-semibold">Qty</TableHead>
+              <TableHead className="text-right text-xs font-semibold">Unit Price</TableHead>
+              <TableHead className="text-right text-xs font-semibold">Total</TableHead>
+              <TableHead className="w-[44px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {invoice.items.map((item) => {
+              const isRoom = item.itemType === InvoiceItemType.ROOM_CHARGE
+              return (
+                <TableRow key={item.id} className="text-xs h-14 hover:bg-muted/30">
+                  <TableCell className="font-medium">
+                    <span className="text-foreground font-semibold block">{item.description}</span>
+                  </TableCell>
+
+                  <TableCell>
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium border",
+                        isRoom
+                          ? "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20"
+                          : "bg-muted text-muted-foreground border-border/60"
+                      )}
+                    >
+                      {item.itemType === InvoiceItemType.ROOM_CHARGE ? "Room Charge" : "Extra Charge"}
+                    </span>
+                  </TableCell>
+
+                  <TableCell className="text-right font-mono text-muted-foreground">
+                    {formatQuantity(item.quantity)}
+                  </TableCell>
+
+                  <TableCell className="text-right font-mono">
+                    <MoneyText value={item.unitPrice} />
+                  </TableCell>
+
+                  <TableCell className="text-right font-mono font-semibold text-foreground">
+                    <MoneyText value={item.lineTotal} />
+                  </TableCell>
+
+                  <TableCell className="text-right p-0 pr-3">
+                    {!isRoom ? (
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: "Remove item",
+                            icon: <Trash2 className="size-3.5" />,
+                            variant: "destructive",
+                            onClick: () => setItemToDelete(item.id),
+                          },
+                        ]}
+                      />
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+
+        {/* Totals Block Aligned Right */}
+        <div className="p-5 border-t border-border/60 bg-muted/10 flex justify-end">
+          <div className="w-72 space-y-2 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Subtotal:</span>
+              <MoneyText value={invoice.subtotal} className="font-mono text-foreground font-medium" />
+            </div>
+
+            {discountTotalNum > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Discount:</span>
+                <MoneyText value={invoice.discountTotal} sign="always" className="text-emerald-600 dark:text-emerald-400 font-mono" />
+              </div>
+            )}
+
+            {taxTotalNum > 0 && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Tax:</span>
+                <MoneyText value={invoice.taxTotal} sign="always" className="font-mono text-foreground" />
+              </div>
+            )}
+
+            <div className="flex justify-between font-bold text-sm pt-2 border-t border-border/60 text-foreground">
+              <span>Grand Total:</span>
+              <MoneyText value={invoice.grandTotal} className="font-bold text-base text-foreground" />
+            </div>
+
+            <div className="flex justify-between text-muted-foreground">
+              <span>Total Paid:</span>
+              <MoneyText value={invoice.totalPaid} className="text-emerald-600 dark:text-emerald-400 font-medium" />
+            </div>
+
+            <div className="flex justify-between font-bold pt-2 border-t text-foreground">
+              <span>Balance Due:</span>
+              <MoneyText
+                value={invoice.balanceDue}
+                className={cn(
+                  "font-bold text-base",
+                  balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                )}
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Dialogs */}
-      <RecordPaymentDialog
-        invoice={invoice}
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        onPaymentSuccess={handlePaymentSuccess}
+      {/* Recorded Payments List */}
+      <div className="rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-border/60 bg-muted/10 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">
+            Recorded Payments ({invoice.payments.length})
+          </h2>
+          {balanceDueNum > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs text-primary"
+              onClick={() => setIsPaymentOpen(true)}
+            >
+              <CreditCard className="size-3.5 mr-1" />
+              Record Payment
+            </Button>
+          )}
+        </div>
+
+        {invoice.payments.length === 0 ? (
+          <div className="p-8 text-center text-xs text-muted-foreground">
+            No payments recorded yet for this invoice.
+          </div>
+        ) : (
+          <div className="divide-y divide-border/60">
+            {invoice.payments.map((p) => {
+              const isVoid = p.status === PaymentStatus.VOIDED
+              return (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 text-xs gap-3 transition-colors",
+                    isVoid ? "opacity-60 bg-muted/30" : "hover:bg-muted/20"
+                  )}
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-foreground">
+                        {getPaymentMethodLabel(p.paymentMethod)}
+                      </span>
+                      {p.referenceNumber && (
+                        <span className="font-mono text-muted-foreground text-[11px]">
+                          Ref {p.referenceNumber}
+                        </span>
+                      )}
+                      <StatusBadge status={p.status} size="sm" />
+                    </div>
+
+                    <div className="text-[11px] text-muted-foreground">
+                      {formatDateTime(p.paidAt)}
+                      {p.creatorName && ` • Processed by ${formatStaffName(p.creatorName)}`}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                    <MoneyText
+                      value={p.amount}
+                      className={cn(
+                        "text-sm font-bold",
+                        isVoid ? "line-through text-muted-foreground" : "text-foreground"
+                      )}
+                    />
+
+                    {!isVoid && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs gap-1.5"
+                        onClick={() => handleViewReceipt(p)}
+                      >
+                        <Receipt className="size-3.5" />
+                        <span>Receipt</span>
+                      </Button>
+                    )}
+
+                    {!isVoid && (
+                      <RowActionsMenu
+                        items={[
+                          {
+                            label: "Void payment",
+                            icon: <Ban className="size-3.5" />,
+                            variant: "destructive",
+                            onClick: () => setPaymentToVoid(p.id),
+                          },
+                        ]}
+                      />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* CONFIRM DIALOGS */}
+      <ConfirmDialog
+        open={itemToDelete !== null}
+        onOpenChange={(open) => !open && setItemToDelete(null)}
+        title="Remove Line Item"
+        description="Are you sure you want to remove this extra charge from the invoice? The totals will be recomputed immediately."
+        confirmText="Remove Item"
+        variant="destructive"
+        isPending={actionLoading}
+        onConfirm={handleConfirmRemoveItem}
       />
 
+      <ConfirmDialog
+        open={paymentToVoid !== null}
+        onOpenChange={(open) => !open && setPaymentToVoid(null)}
+        title="Void Payment Record"
+        description="Are you sure you want to void this recorded payment? The outstanding invoice balance will be restored immediately."
+        confirmText="Void Payment"
+        variant="destructive"
+        isPending={actionLoading}
+        onConfirm={handleConfirmVoidPayment}
+      />
+
+      {/* MODALS */}
       <AddItemDialog
         invoice={invoice}
         isOpen={isAddItemOpen}
@@ -573,11 +526,19 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
         onSuccess={(updated) => setInvoice(updated)}
       />
 
+      <RecordPaymentDialog
+        invoice={invoice}
+        isOpen={isPaymentOpen}
+        onClose={() => setIsPaymentOpen(false)}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
+
       <ReceiptModal
         receipt={receiptData}
+        invoiceId={invoice.id}
         isOpen={isReceiptOpen}
         onClose={() => setIsReceiptOpen(false)}
       />
     </div>
-  );
+  )
 }

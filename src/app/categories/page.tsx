@@ -35,14 +35,7 @@ export default async function CategoriesPage() {
 
   return (
     <AppShell session={session}>
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Room Categories & Amenities</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Manage category configurations, snapshotted base nightly rates, occupancy limits, and attached amenities.
-          </p>
-        </div>
-
+      <div className="container mx-auto max-w-6xl px-6 py-8 lg:px-10 space-y-6">
         <CategoryManager
           initialCategories={serializedCategories}
           amenities={amenities}

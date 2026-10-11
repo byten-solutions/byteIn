@@ -1,415 +1,412 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
+import * as React from "react"
+import Link from "next/link"
+import { toast } from "sonner"
 import {
-  User,
-  FileText,
-  Calendar,
   ArrowLeft,
-  Bed,
-  CheckCircle2,
-  Clock,
-  XCircle,
+  CalendarDays,
+  Plus,
   Loader2,
-  AlertCircle,
-  Save,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+  ChevronRight,
+  BedDouble,
+  Check,
+  Undo2,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  PageHeader,
+  StatusBadge,
+  FormSection,
+  EmptyState,
+} from "@/components/ui-kit"
+import { getIdProofOptions } from "@/lib/constants"
+import { formatDate, formatStayRange } from "@/lib/date-format"
 
 interface SerializedCustomerDetail {
-  id: string;
-  firstName: string;
-  lastName: string | null;
-  phone: string | null;
-  email: string | null;
-  nationality: string | null;
-  address: string | null;
-  idProofType: string | null;
-  idProofNumber: string | null;
-  remarks: string | null;
-  createdAt: string;
+  id: string
+  firstName: string
+  lastName: string | null
+  phone: string | null
+  email: string | null
+  nationality: string | null
+  address: string | null
+  idProofType: string | null
+  idProofNumber: string | null
+  remarks: string | null
+  createdAt: string
   reservations: {
-    id: string;
-    reservationNo: string;
-    status: string;
-    createdAt: string;
+    id: string
+    reservationNo: string
+    status: string
+    createdAt: string
     rooms: {
-      id: string;
-      roomNo: string;
-      categoryName: string;
-      arrivalDate: string;
-      departureDate: string;
-      bookedNightlyRate: string;
-      status: string;
-    }[];
-  }[];
+      id: string
+      roomNo: string
+      categoryName: string
+      arrivalDate: string
+      departureDate: string
+      bookedNightlyRate: string
+      status: string
+    }[]
+  }[]
 }
 
 export function CustomerDetailView({
   customer: initialCustomer,
 }: {
-  customer: SerializedCustomerDetail;
+  customer: SerializedCustomerDetail
 }) {
-  const [customer, setCustomer] = useState(initialCustomer);
-  const [formData, setFormData] = useState({
-    firstName: initialCustomer.firstName,
-    lastName: initialCustomer.lastName || "",
-    phone: initialCustomer.phone || "",
-    email: initialCustomer.email || "",
-    nationality: initialCustomer.nationality || "",
-    address: initialCustomer.address || "",
-    idProofType: initialCustomer.idProofType || "Passport",
-    idProofNumber: initialCustomer.idProofNumber || "",
-    remarks: initialCustomer.remarks || "",
-  });
+  const [customer, setCustomer] = React.useState(initialCustomer)
 
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(
-    null
-  );
+  const initialFormData = React.useMemo(
+    () => ({
+      firstName: initialCustomer.firstName,
+      lastName: initialCustomer.lastName || "",
+      phone: initialCustomer.phone || "",
+      email: initialCustomer.email || "",
+      nationality: initialCustomer.nationality || "",
+      address: initialCustomer.address || "",
+      idProofType: initialCustomer.idProofType || "Passport",
+      idProofNumber: initialCustomer.idProofNumber || "",
+      remarks: initialCustomer.remarks || "",
+    }),
+    [initialCustomer]
+  )
+
+  const [formData, setFormData] = React.useState(initialFormData)
+  const [savedData, setSavedData] = React.useState(initialFormData)
+  const [saving, setSaving] = React.useState(false)
+
+  // Compute dirty state
+  const isDirty = React.useMemo(() => {
+    return (
+      formData.firstName !== savedData.firstName ||
+      formData.lastName !== savedData.lastName ||
+      formData.phone !== savedData.phone ||
+      formData.email !== savedData.email ||
+      formData.nationality !== savedData.nationality ||
+      formData.address !== savedData.address ||
+      formData.idProofType !== savedData.idProofType ||
+      formData.idProofNumber !== savedData.idProofNumber ||
+      formData.remarks !== savedData.remarks
+    )
+  }, [formData, savedData])
+
+  const handleDiscard = () => {
+    setFormData(savedData)
+  }
 
   const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMessage(null);
+    e.preventDefault()
 
     if (!formData.firstName.trim()) {
-      setMessage({ type: "error", text: "First name is required." });
-      return;
+      toast.error("First name is required.")
+      return
     }
 
-    setSaving(true);
+    setSaving(true)
     try {
       const res = await fetch(`/api/customers/${customer.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
-      });
+      })
 
-      const data = await res.json();
+      const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to update guest");
+        throw new Error(data.error || "Failed to update guest details")
       }
 
       setCustomer((prev) => ({
         ...prev,
         ...data.customer,
-      }));
-      setMessage({ type: "success", text: "Guest details updated successfully." });
+      }))
+      setSavedData(formData)
+      toast.success("Guest profile updated successfully")
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to update guest details";
-      setMessage({ type: "error", text: msg });
+      const msg = err instanceof Error ? err.message : "Failed to update guest details"
+      toast.error(msg)
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "CONFIRMED":
-        return (
-          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
-            <CheckCircle2 className="h-3 w-3 mr-1" />
-            Confirmed
-          </Badge>
-        );
-      case "COMPLETED":
-        return (
-          <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
-            <Clock className="h-3 w-3 mr-1" />
-            Completed
-          </Badge>
-        );
-      case "CANCELLED":
-        return (
-          <Badge variant="destructive" className="bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30">
-            <XCircle className="h-3 w-3 mr-1" />
-            Cancelled
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  const fullName = `${customer.firstName} ${customer.lastName || ""}`.trim()
+  const registeredDateStr = formatDate(customer.createdAt)
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b pb-4">
-        <div className="flex items-center gap-3">
-          <Link href="/customers">
-            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              All Guests
+    <div className="space-y-8 pb-24">
+      {/* Top Navigation */}
+      <div className="flex items-center gap-2">
+        <Link
+          href="/customers"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-3.5" />
+          <span>Back to Guests</span>
+        </Link>
+      </div>
+
+      {/* Profile Page Header */}
+      <PageHeader
+        title={fullName}
+        description={`Registered ${registeredDateStr} • ${customer.reservations.length} total stay${customer.reservations.length === 1 ? "" : "s"}`}
+        action={
+          <Link href="/reservations/new">
+            <Button size="sm" className="h-9 bg-primary text-primary-foreground hover:bg-primary/90 font-medium gap-1.5">
+              <Plus className="size-4" />
+              <span>Book a Stay</span>
             </Button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-              <User className="h-5 w-5 text-primary" />
-              {customer.firstName} {customer.lastName || ""}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Guest since {new Date(customer.createdAt).toLocaleDateString()} • {customer.reservations.length} total bookings
-            </p>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
-      {message && (
-        <div
-          className={`rounded-md border p-3 text-xs flex items-start gap-2.5 ${
-            message.type === "success"
-              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-800 dark:text-emerald-300"
-              : "bg-destructive/10 border-destructive/30 text-destructive"
-          }`}
-        >
-          {message.type === "success" ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          )}
-          <span>{message.text}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Left Column: Guest Profile & Edit Form (1 Col) */}
-        <div className="md:col-span-1 space-y-6">
-          <Card className="shadow-xs">
-            <CardHeader className="p-4 border-b bg-muted/20">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="h-4 w-4 text-primary" />
-                Guest Profile
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Edit contact and identification details.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="p-4">
-              <form onSubmit={handleUpdate} className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[11px]">First Name</Label>
-                    <Input
-                      className="h-8 text-xs"
-                      value={formData.firstName}
-                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px]">Last Name</Label>
-                    <Input
-                      className="h-8 text-xs"
-                      value={formData.lastName}
-                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Phone</Label>
+      {/* 2 Columns on lg: Left = Edit Profile, Right = Reservation History */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left Column: Form in 3 FormSections (7 cols on lg) */}
+        <div className="lg:col-span-7">
+          <form onSubmit={handleUpdate} className="space-y-6 rounded-xl border border-border/80 bg-card p-6 shadow-xs">
+            {/* FormSection 1: Contact */}
+            <FormSection
+              title="Contact Information"
+              description="Primary name and reachability channels"
+              withSeparator
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">First Name *</Label>
                   <Input
-                    className="h-8 text-xs"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="h-10 text-xs sm:text-sm"
+                    value={formData.firstName}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, firstName: e.target.value }))}
+                    required
                   />
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Email</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Last Name</Label>
+                  <Input
+                    className="h-10 text-xs sm:text-sm"
+                    value={formData.lastName}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, lastName: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Phone</Label>
+                  <Input
+                    placeholder="+91 98765 43210"
+                    className="h-10 text-xs sm:text-sm font-mono"
+                    value={formData.phone}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Email</Label>
                   <Input
                     type="email"
-                    className="h-8 text-xs"
+                    placeholder="e.g. guest@example.com"
+                    className="h-10 text-xs sm:text-sm"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                   />
                 </div>
+              </div>
+            </FormSection>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Nationality</Label>
+            {/* FormSection 2: Identity */}
+            <FormSection
+              title="Identity & Address"
+              description="Legal identification documents and home residence"
+              withSeparator
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Nationality</Label>
                   <Input
-                    className="h-8 text-xs"
+                    placeholder="e.g. Indian"
+                    className="h-10 text-xs sm:text-sm"
                     value={formData.nationality}
-                    onChange={(e) => setFormData({ ...formData, nationality: e.target.value })}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, nationality: e.target.value }))}
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-[11px]">ID Type</Label>
-                    <select
-                      className="w-full text-xs h-8 rounded-md border border-input bg-transparent px-2 shadow-xs"
-                      value={formData.idProofType}
-                      onChange={(e) => setFormData({ ...formData, idProofType: e.target.value })}
-                    >
-                      <option value="Passport">Passport</option>
-                      <option value="National ID">National ID</option>
-                      <option value="Driving License">Driving License</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px]">ID Number</Label>
-                    <Input
-                      className="h-8 text-xs font-mono"
-                      value={formData.idProofNumber}
-                      onChange={(e) =>
-                        setFormData({ ...formData, idProofNumber: e.target.value })
-                      }
-                    />
-                  </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">ID Proof Type</Label>
+                  <select
+                    className="h-10 w-full rounded-md border border-input bg-card px-3 text-xs"
+                    value={formData.idProofType}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, idProofType: e.target.value }))}
+                  >
+                    {getIdProofOptions(formData.idProofType).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Address</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">ID Proof Number</Label>
                   <Input
-                    className="h-8 text-xs"
+                    placeholder="e.g. Pass No or National ID"
+                    className="h-10 text-xs sm:text-sm font-mono"
+                    value={formData.idProofNumber}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, idProofNumber: e.target.value }))}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-medium">Residential Address</Label>
+                  <Input
+                    placeholder="City, State"
+                    className="h-10 text-xs sm:text-sm"
                     value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                   />
                 </div>
+              </div>
+            </FormSection>
 
-                <div className="space-y-1">
-                  <Label className="text-[11px]">Remarks / Preferences</Label>
-                  <Textarea
-                    className="text-xs resize-none"
-                    rows={2}
-                    value={formData.remarks}
-                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                  />
-                </div>
-
-                <Button type="submit" size="sm" className="w-full h-8 text-xs mt-2" disabled={saving}>
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-3.5 w-3.5 mr-1.5" />
-                      Update Guest Details
-                    </>
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+            {/* FormSection 3: Notes & Preferences */}
+            <FormSection
+              title="Notes & Preferences"
+              description="VIP status, special accommodations, or staff observations"
+            >
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Remarks</Label>
+                <Textarea
+                  rows={3}
+                  className="text-xs"
+                  placeholder="Guest preferences, frequent requests, notes..."
+                  value={formData.remarks}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
+                />
+              </div>
+            </FormSection>
+          </form>
         </div>
 
-        {/* Right Column: Reservation History (2 Cols) */}
-        <div className="md:col-span-2 space-y-6">
-          <Card className="shadow-xs overflow-hidden">
-            <CardHeader className="p-4 border-b bg-muted/20">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    Reservation History ({customer.reservations.length})
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    Past and current bookings associated with this guest.
-                  </CardDescription>
-                </div>
+        {/* Right Column: Reservation History (5 cols on lg) */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="flex items-center justify-between pb-2">
+            <h2 className="text-sm font-semibold text-foreground">
+              Stay History ({customer.reservations.length})
+            </h2>
+            <Link
+              href="/reservations/new"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              + New Stay
+            </Link>
+          </div>
+
+          {customer.reservations.length === 0 ? (
+            <EmptyState
+              icon={<CalendarDays className="size-6" />}
+              title="No stays recorded"
+              description="This guest has not booked any reservations yet."
+              action={
                 <Link href="/reservations/new">
-                  <Button size="sm" variant="outline" className="text-xs h-7">
-                    Book Stay
+                  <Button size="sm" variant="outline">
+                    Book First Stay
                   </Button>
                 </Link>
-              </div>
-            </CardHeader>
+              }
+            />
+          ) : (
+            <div className="space-y-3">
+              {customer.reservations.map((res) => {
+                const earliestArrival = res.rooms.map((r) => r.arrivalDate).sort()[0]
+                const latestDeparture = res.rooms.map((r) => r.departureDate).sort().slice(-1)[0]
+                const dateStr = earliestArrival && latestDeparture
+                  ? formatStayRange(earliestArrival, latestDeparture)
+                  : formatDate(res.createdAt)
 
-            <CardContent className="p-0">
-              {customer.reservations.length === 0 ? (
-                <div className="text-center py-8 text-xs text-muted-foreground">
-                  No reservations recorded for this guest.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="text-xs font-semibold">Reservation #</TableHead>
-                        <TableHead className="text-xs font-semibold">Rooms</TableHead>
-                        <TableHead className="text-xs font-semibold">Stay Dates</TableHead>
-                        <TableHead className="text-xs font-semibold">Status</TableHead>
-                        <TableHead className="text-right text-xs font-semibold">Details</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {customer.reservations.map((res) => {
-                        const earliestArrival = res.rooms.map((r) => r.arrivalDate).sort()[0];
-                        const latestDeparture = res.rooms.map((r) => r.departureDate).sort().slice(-1)[0];
+                return (
+                  <Link
+                    key={res.id}
+                    href={`/reservations/${res.id}`}
+                    className="block rounded-xl border border-border/80 bg-card p-4 hover:border-primary/40 transition-colors shadow-xs group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-sm text-foreground">
+                        #{res.reservationNo}
+                      </span>
+                      <StatusBadge status={res.status} size="sm" />
+                    </div>
 
-                        return (
-                          <TableRow key={res.id} className="text-xs hover:bg-muted/30">
-                            <TableCell className="font-mono font-medium">
-                              <Link
-                                href={`/reservations/${res.id}`}
-                                className="text-primary hover:underline"
-                              >
-                                {res.reservationNo}
-                              </Link>
-                            </TableCell>
+                    <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                      {res.rooms.map((rm) => (
+                        <span
+                          key={rm.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/80 text-[11px] font-mono text-foreground border border-border/60"
+                        >
+                          <BedDouble className="size-3 text-muted-foreground" />
+                          <span>Room {rm.roomNo}</span>
+                        </span>
+                      ))}
+                    </div>
 
-                            <TableCell>
-                              <div className="flex flex-wrap gap-1">
-                                {res.rooms.map((rm) => (
-                                  <Badge key={rm.id} variant="outline" className="text-[10px] font-mono py-0">
-                                    <Bed className="h-2.5 w-2.5 mr-1" />
-                                    {rm.roomNo} ({rm.categoryName})
-                                  </Badge>
-                                ))}
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="font-medium text-xs">
-                              {earliestArrival} → {latestDeparture}
-                            </TableCell>
-
-                            <TableCell>
-                              {getStatusBadge(res.status)}
-                            </TableCell>
-
-                            <TableCell className="text-right">
-                              <Link href={`/reservations/${res.id}`}>
-                                <Button variant="ghost" size="sm" className="h-7 text-xs px-2">
-                                  View
-                                </Button>
-                              </Link>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground pt-2 border-t border-border/40">
+                      <span>{dateStr}</span>
+                      <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Sticky Save Bar (only visible when isDirty) */}
+      {isDirty && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-background/95 border-t border-border p-4 backdrop-blur shadow-2xl animate-in slide-in-from-bottom-2">
+          <div className="mx-auto max-w-6xl flex items-center justify-between gap-4">
+            <span className="text-xs text-muted-foreground font-medium">
+              You have unsaved changes to this guest profile.
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDiscard}
+                disabled={saving}
+                className="h-9 gap-1.5"
+              >
+                <Undo2 className="size-3.5" />
+                <span>Discard</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleUpdate}
+                disabled={saving}
+                className="h-9 bg-primary text-primary-foreground hover:bg-primary/90 font-semibold gap-1.5"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Check className="size-3.5" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }

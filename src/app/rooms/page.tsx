@@ -5,11 +5,25 @@ import { PropertyService } from "@/modules/properties/property.service";
 import { AppShell } from "@/components/app-shell";
 import { RoomManager } from "./room-manager";
 
-export default async function RoomsPage() {
+const VALID_STATUSES = new Set([
+  "VACANT_CLEAN",
+  "VACANT_DIRTY",
+  "OCCUPIED",
+  "MAINTENANCE",
+  "OUT_OF_SERVICE",
+]);
+
+export default async function RoomsPage(props: {
+  searchParams?: Promise<{ status?: string }>;
+}) {
   const session = await getSession();
   if (!session) {
     redirect("/login");
   }
+
+  const searchParams = props.searchParams ? await props.searchParams : undefined;
+  const rawStatus = searchParams?.status;
+  const initialStatus = rawStatus && VALID_STATUSES.has(rawStatus) ? rawStatus : undefined;
 
   const [rooms, categories, properties] = await Promise.all([
     RoomService.getRooms(),
@@ -72,19 +86,13 @@ export default async function RoomsPage() {
 
   return (
     <AppShell session={session} stats={{ cleanRooms, dirtyRooms }}>
-      <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Room Inventory & Status</h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Monitor physical room conditions, update operational statuses, and configure room allocations.
-          </p>
-        </div>
-
+      <div className="container mx-auto max-w-6xl px-6 py-8 lg:px-10 space-y-6">
         <RoomManager
           initialRooms={serializedRooms}
           categories={serializedCategories}
           properties={serializedProperties}
           userRole={session.role}
+          initialStatus={initialStatus}
         />
       </div>
     </AppShell>
