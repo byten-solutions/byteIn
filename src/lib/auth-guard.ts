@@ -1,6 +1,5 @@
 import { AuthService } from "@/modules/auth/auth.service";
-import type { SessionPayload } from "@/modules/auth/auth.types";
-import { RoleName } from "@/modules/auth/auth.types";
+import { RoleName, type SessionPayload } from "@/modules/auth/auth.types";
 import { getSessionCookie } from "./session";
 
 export class AuthError extends Error {

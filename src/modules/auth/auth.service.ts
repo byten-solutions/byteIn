@@ -2,12 +2,12 @@ import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 import { loginSchema } from "./auth.validation";
-import { RoleName } from "./auth.types";
-import type {
-  AuthResult,
-  LoginInput,
-  SafeUser,
-  SessionPayload,
+import {
+  RoleName,
+  type AuthResult,
+  type LoginInput,
+  type SafeUser,
+  type SessionPayload,
 } from "./auth.types";
 
 const SESSION_SECRET = new TextEncoder().encode(

@@ -12,7 +12,35 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "prisma/migrations/**",
   ]),
+  {
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+      "no-console": [
+        "warn",
+        {
+          allow: ["warn", "error"],
+        },
+      ],
+      "prefer-const": "error",
+      "no-duplicate-imports": "error",
+    },
+  },
+  {
+    files: ["prisma/seed.ts", "scripts/**/*.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

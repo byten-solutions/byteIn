@@ -9,8 +9,10 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts",
+    "validate": "npm run typecheck && npm run lint && npm test"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"

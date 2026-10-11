@@ -45,6 +45,7 @@ The primary source of truth resides under `docs/`. Always consult the relevant d
 | **Database Schema, Models, Types & Indexes** | [docs/byteInn_Database_Design_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Database_Design_v1.md) |
 | **Request Flow, Module Logic & API Endpoints** | [docs/byteInn_Low_Level_Architecture_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Low_Level_Architecture_v1.md) |
 | **Phased Roadmap & Acceptance Criteria** | [docs/byteInn_Implementation_Plan_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Implementation_Plan_v1.md) |
+| **Coding Standards & Quality Foundation** | [docs/CODING_STANDARDS.md](file:///Users/apple/Byten/byteInn/docs/CODING_STANDARDS.md) |
 | **Database Operations & Migrations** | [prisma/README.md](file:///Users/apple/Byten/byteInn/prisma/README.md) |
 | **Source Organization & API Patterns** | [src/README.md](file:///Users/apple/Byten/byteInn/src/README.md) |
 
@@ -65,9 +66,60 @@ Whenever working on the codebase, follow this engineering loop:
 
 ## 6. Architectural Safeguards & Git Discipline
 - **Ambiguities & Conflicts**: If documentation conflicts with active code or requirements are ambiguous, **stop and ask the user** rather than silently inventing business rules or architectural patterns.
-- **Git Safety**: Never run destructive Git commands (`git reset --hard`, `git clean -fd`, destructive checkout) that modify git history or discard uncommitted user changes. Never commit, push, merge, or deploy without explicit user approval.
+- **Git Safety**: Never run destructive Git commands (`git reset --hard`, `git clean -fd`, destructive checkout) that modify git history or discard uncommitted user changes. Never commit, push, merge, or deploy without explicit user approval. Always inspect `git status` before and after operations.
 - **Database Rules**: Never use `prisma db push` as a substitute for migrations. Always create and apply versioned Prisma migrations. Always use PostgreSQL `numeric` / Prisma `Decimal` for financial values.
 - **Data Operations**: Search, sorting, filtering, and pagination must be handled **backend-first** in the database query via Prisma, never in frontend client memory.
+
+---
+
+## 7. Actionable Coding Standards & Quality Foundation
+
+Every AI agent and software engineer must adhere strictly to the conventions detailed in [docs/CODING_STANDARDS.md](file:///Users/apple/Byten/byteInn/docs/CODING_STANDARDS.md):
+
+1. **Required Verification Command**:
+   - Before completing any task, execute:
+     ```bash
+     npm run validate
+     ```
+   - This verifies strict TypeScript (`tsc --noEmit`), ESLint rules (`eslint`), and the test suite (`npm test`). All checks must pass with zero errors.
+
+2. **TypeScript & Type Safety**:
+   - `any` is strictly prohibited (`@typescript-eslint/no-explicit-any: "error"`). Use explicit domain types, `unknown`, or type guards.
+   - Avoid non-null assertions (`!`) and unsafe casts. Use runtime guards and early returns.
+   - Explicitly type public API contracts, service signatures, and exported DTOs.
+   - Never weaken compiler flags in `tsconfig.json` or rule severity in `eslint.config.mjs` to bypass type or lint errors.
+
+3. **Naming & File Organization**:
+   - Variables, functions, and properties: `camelCase`.
+   - Components, classes, types, interfaces, enums: `PascalCase`.
+   - Constants: `SCREAMING_SNAKE_CASE` (global limits/configs) or `camelCase` (locally scoped).
+   - Booleans: descriptive positive prefixes (`isActive`, `hasPermission`, `canCheckOut`).
+   - Domain modules strictly located in `src/modules/<feature>/` with standard triple files: `<feature>.service.ts`, `<feature>.types.ts`, `<feature>.validation.ts`.
+
+4. **React & Next.js App Router**:
+   - Server Components by default. Use `"use client"` only when interactive state, hooks, or browser APIs are required.
+   - Keep UI components focused and thin; extract complex dialogs and table rows into separate focused components.
+   - Preserve existing branding, theme tokens, Base UI primitives, and Tailwind CSS v4 styling.
+
+5. **Backend Architecture & Service Boundaries**:
+   - Thin Route Handlers: `NextRequest` → `requireAuth(roles)` → Zod validation → Domain Service method → `NextResponse.json()`.
+   - Never query Prisma directly inside Route Handlers; keep all database operations in domain services.
+   - Enforce authorization exclusively on the server with `requireAuth()`. Never rely on client-side hiding.
+   - Never introduce unnecessary abstraction layers (generic repositories, CQRS, external microservices).
+
+6. **Database Integrity & Monetary Precision**:
+   - Use PostgreSQL `numeric(10, 2)` and Prisma `Decimal` for all financial figures. Never use JavaScript floating-point arithmetic for currency.
+   - Enforce room availability, allocation dates, and double-booking prevention atomically at the database transaction level (`prisma.$transaction`).
+
+7. **Error Handling & Security**:
+   - Distinguish client validation (`ZodError` → 400), authentication/authorization (`AuthError` → 401/403), expected business domain errors (400/404), and unhandled server errors (500).
+   - Never leak passwords, password hashes, secrets, JWT tokens, or internal stack traces in responses or logs.
+
+8. **Scope Protection & Toolchain Constraints**:
+   - Do NOT introduce tRPC, Redux, Zustand, message queues, microservices, or third-party payment gateways.
+   - Do NOT install redundant dependencies or linters/formatters.
+   - Always read the authoritative feature specification in `docs/` before beginning implementation.
+   - Inspect git working state before starting work and preserve all unrelated user changes.
 
 ---
 

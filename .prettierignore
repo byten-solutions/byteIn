@@ -3,5 +3,7 @@ node_modules/
 .next/
 .turbo/
 coverage/
+package-lock.json
 pnpm-lock.yaml
 .pnpm-store/
+prisma/migrations/
