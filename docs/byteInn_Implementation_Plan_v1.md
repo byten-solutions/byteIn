@@ -36,7 +36,7 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Add basic centralized validation, error handling, and logging.
 - Add a simple audit log for important actions; improve coverage during stabilization.
 
-### Phase 2 — Property and Room Setup
+### Phase 2 — Property and Room Setup (Completed)
 - Properties
 - Buildings and floors
 - Room categories and amenities

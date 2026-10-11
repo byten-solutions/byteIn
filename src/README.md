@@ -10,22 +10,32 @@ This directory contains the primary application codebase for **byteInn**.
 src/
 ├── app/                   # Next.js App Router (Pages, Layouts, API Route Handlers)
 │   ├── api/               # REST API Route Handlers
-│   │   └── auth/          # Authentication endpoints (/api/auth/login, /logout, /me, /verify-role)
+│   │   ├── auth/          # Authentication endpoints (/api/auth/login, /logout, /me, /verify-role)
+│   │   ├── properties/    # Property & building endpoints (/api/properties, /api/properties/[id]/buildings)
+│   │   ├── buildings/     # Building & floor endpoints (/api/buildings/[id]/floors)
+│   │   ├── room-categories/# Category endpoints (/api/room-categories, /api/room-categories/[id])
+│   │   ├── amenities/     # Amenity endpoints (/api/amenities)
+│   │   └── rooms/         # Room inventory & status endpoints (/api/rooms, /api/rooms/[id]/status)
+│   ├── categories/        # Room Categories & Setup view (/categories)
+│   ├── rooms/             # Room Inventory & Status Board (/rooms)
 │   ├── login/             # Login view (/login)
 │   ├── globals.css        # Tailwind CSS v4 styling & shadcn design tokens
 │   ├── layout.tsx         # Root HTML layout and font definitions
-│   └── page.tsx           # Application landing view
+│   └── page.tsx           # Application reception dashboard view
 ├── components/            # UI Components
 │   ├── logo.tsx           # Brand Logo component
+│   ├── navbar.tsx         # Responsive navigation bar
 │   ├── sign-out-button.tsx# Client sign-out button component
-│   └── ui/                # Installed shadcn/ui primitives (button, card, input, label)
+│   └── ui/                # Installed shadcn/ui primitives (button, card, input, label, badge, dialog, tabs, etc.)
 ├── lib/                   # Shared singletons and low-level helpers
 │   ├── auth-guard.ts      # Server authentication and role authorization guards
 │   ├── prisma.ts          # Global PrismaClient singleton instance
 │   ├── session.ts         # Session cookie serialization and parsing helpers
 │   └── utils.ts           # Class merge helper (cn)
 ├── modules/               # Domain services and business logic
-│   └── auth/              # AuthService, validation schemas, and types
+│   ├── auth/              # AuthService, validation schemas, and types
+│   ├── properties/        # PropertyService, validations, and types
+│   └── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
 └── README.md              # Source architecture guide
 ```
 
