@@ -1,5 +1,9 @@
 # byteInn
 
+<p align="center">
+  <img src="public/logo.png" alt="byteInn Logo" width="128" />
+</p>
+
 byteInn is an internal, reception-operated room management application (Property Management System). Reception staff create bookings, manage guests and room allocations, handle check-in/check-out workflows, and record payments. There is no customer-facing booking portal in V1.
 
 ---

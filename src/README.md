@@ -14,6 +14,7 @@ src/
 │   ├── layout.tsx         # Root HTML layout and font definitions
 │   └── page.tsx           # Application landing view
 ├── components/            # UI Components
+│   ├── logo.tsx           # Brand Logo component
 │   └── ui/                # Installed shadcn/ui primitives (button, etc.)
 ├── lib/                   # Shared singletons and low-level helpers
 │   ├── prisma.ts          # Global PrismaClient singleton instance
