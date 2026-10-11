@@ -46,12 +46,47 @@ The primary source of truth resides under `docs/`. Always consult the relevant d
 | **Request Flow, Module Logic & API Endpoints** | [docs/byteInn_Low_Level_Architecture_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Low_Level_Architecture_v1.md) |
 | **Phased Roadmap & Acceptance Criteria** | [docs/byteInn_Implementation_Plan_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Implementation_Plan_v1.md) |
 | **Coding Standards & Quality Foundation** | [docs/CODING_STANDARDS.md](file:///Users/apple/Byten/byteInn/docs/CODING_STANDARDS.md) |
+| **UI/UX Design System & Shell Guidelines** | [docs/UI_UX_GUIDELINES.md](file:///Users/apple/Byten/byteInn/docs/UI_UX_GUIDELINES.md) |
+| **Agent System Workflow & Lifecycle** | [docs/AGENT_WORKFLOW.md](file:///Users/apple/Byten/byteInn/docs/AGENT_WORKFLOW.md) |
 | **Database Operations & Migrations** | [prisma/README.md](file:///Users/apple/Byten/byteInn/prisma/README.md) |
 | **Source Organization & API Patterns** | [src/README.md](file:///Users/apple/Byten/byteInn/src/README.md) |
 
 ---
 
-## 5. Living Documentation Protocol
+## 5. Five-Layer Context Hierarchy & Native Specialist Skills
+
+To prevent token waste and architectural drift, project context is structured into 5 layers:
+1. **Layer 1: Global Rules (`AGENTS.md`)**: Mandatory invariants, orchestrator behavior, git safety.
+2. **Layer 2: Product Specifications (`docs/`)**: Architecture, database design, API flows, coding standards.
+3. **Layer 3: Design System (`docs/UI_UX_GUIDELINES.md`)**: Visual tokens, application shell, component patterns.
+4. **Layer 4: Specialist Skills (`.agents/skills/`)**: On-demand procedural runbooks:
+   - [`design-system`](file:///Users/apple/Byten/byteInn/.agents/skills/design-system/SKILL.md): Visual design, layout, theme parity, accessibility.
+   - [`implement-spec`](file:///Users/apple/Byten/byteInn/.agents/skills/implement-spec/SKILL.md): Spec implementation, modular monolith boundaries, thin route handlers.
+   - [`code-review`](file:///Users/apple/Byten/byteInn/.agents/skills/code-review/SKILL.md): Independent diff inspection, severity ranking, invariant checks.
+   - [`testing`](file:///Users/apple/Byten/byteInn/.agents/skills/testing/SKILL.md): Node test runner, database fixtures, adversarial coverage.
+   - [`diagnosing-bugs`](file:///Users/apple/Byten/byteInn/.agents/skills/diagnosing-bugs/SKILL.md): Minimal reproduction, root-cause isolation, regression prevention.
+   - [`security-review`](file:///Users/apple/Byten/byteInn/.agents/skills/security-review/SKILL.md): Auth guards, token cryptography, rate limiting, error masking.
+   - [`context-maintenance`](file:///Users/apple/Byten/byteInn/.agents/skills/context-maintenance/SKILL.md): Living documentation synchronization.
+   - [`handoff`](file:///Users/apple/Byten/byteInn/.agents/skills/handoff/SKILL.md): Structured engineering summaries for multi-turn sessions.
+5. **Layer 5: Task-Specific Context**: Specific files, DTOs, and test suites inspected for the active task.
+
+*Precedence*: Layer 1 (`AGENTS.md`) > Layer 2 (`docs/*`) > Layer 3 (`UI_UX_GUIDELINES.md`) > Layer 4 (`skills/*`) > Layer 5. Approved V1 specifications govern business rules and boundaries.
+
+---
+
+## 6. Design & Implementation Orchestrator Protocol
+
+Every AI agent acts as a senior lead engineer responsible for delivering complete, verified work:
+1. **Understand & Inspect**: Review acceptance criteria, inspect relevant files, schemas, and git status.
+2. **Map Impact & Invariants**: Trace routes, components, APIs, database models, permissions, and tests.
+3. **Plan Non-Trivial Work**: Formulate a concise plan and obtain user approval before modifying code.
+4. **Implement in Stages**: Make minimal, coherent edits following modular monolith patterns.
+5. **Enforce Gate Verification**: Execute `npm run validate` (`tsc --noEmit`, `eslint`, `npm test`) and `npm run build`. Never claim success without command output.
+6. **Produce Concise Handoffs**: Detail what changed, files affected, commands run, and git status.
+
+---
+
+## 7. Living Documentation Protocol
 Whenever working on the codebase, follow this engineering loop:
 
 1. **Understand Scope**: Identify task acceptance criteria and verify boundaries against V1 rules.
@@ -64,7 +99,7 @@ Whenever working on the codebase, follow this engineering loop:
 
 ---
 
-## 6. Architectural Safeguards & Git Discipline
+## 8. Architectural Safeguards & Git Discipline
 - **Ambiguities & Conflicts**: If documentation conflicts with active code or requirements are ambiguous, **stop and ask the user** rather than silently inventing business rules or architectural patterns.
 - **Git Safety**: Never run destructive Git commands (`git reset --hard`, `git clean -fd`, destructive checkout) that modify git history or discard uncommitted user changes. Never commit, push, merge, or deploy without explicit user approval. Always inspect `git status` before and after operations.
 - **Database Rules**: Never use `prisma db push` as a substitute for migrations. Always create and apply versioned Prisma migrations. Always use PostgreSQL `numeric` / Prisma `Decimal` for financial values.
@@ -72,7 +107,7 @@ Whenever working on the codebase, follow this engineering loop:
 
 ---
 
-## 7. Actionable Coding Standards & Quality Foundation
+## 9. Actionable Coding Standards & Quality Foundation
 
 Every AI agent and software engineer must adhere strictly to the conventions detailed in [docs/CODING_STANDARDS.md](file:///Users/apple/Byten/byteInn/docs/CODING_STANDARDS.md):
 
