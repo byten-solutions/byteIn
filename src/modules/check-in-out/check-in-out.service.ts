@@ -4,6 +4,11 @@ import {
   ReservationStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from "@/lib/errors";
 import type {
   CheckInInput,
   CheckOutInput,
@@ -43,26 +48,26 @@ export class CheckInOutService {
       });
 
       if (!allocation) {
-        throw new Error("Room allocation not found");
+        throw new NotFoundError("Room allocation not found");
       }
 
       // 2. Validate reservation state
       if (allocation.reservation.status === ReservationStatus.CANCELLED) {
-        throw new Error("Cannot check in allocation for a cancelled reservation");
+        throw new BadRequestError("Cannot check in allocation for a cancelled reservation");
       }
 
       // 3. Validate allocation state
       if (allocation.status === AllocationStatus.CHECKED_IN) {
-        throw new Error("Room allocation is already checked in");
+        throw new ConflictError("Room allocation is already checked in");
       }
       if (allocation.status === AllocationStatus.CHECKED_OUT) {
-        throw new Error("Room allocation has already been checked out");
+        throw new BadRequestError("Room allocation has already been checked out");
       }
       if (allocation.status === AllocationStatus.CANCELLED) {
-        throw new Error("Room allocation is cancelled");
+        throw new BadRequestError("Room allocation is cancelled");
       }
       if (allocation.status !== AllocationStatus.CONFIRMED) {
-        throw new Error(
+        throw new BadRequestError(
           `Cannot check in allocation in ${allocation.status} status`
         );
       }
@@ -194,23 +199,23 @@ export class CheckInOutService {
       });
 
       if (!allocation) {
-        throw new Error("Room allocation not found");
+        throw new NotFoundError("Room allocation not found");
       }
 
       // 2. Validate allocation state
       if (allocation.status === AllocationStatus.CONFIRMED) {
-        throw new Error(
+        throw new BadRequestError(
           "Cannot check out allocation that has not been checked in"
         );
       }
       if (allocation.status === AllocationStatus.CHECKED_OUT) {
-        throw new Error("Room allocation has already been checked out");
+        throw new ConflictError("Room allocation has already been checked out");
       }
       if (allocation.status === AllocationStatus.CANCELLED) {
-        throw new Error("Room allocation is cancelled");
+        throw new BadRequestError("Room allocation is cancelled");
       }
       if (allocation.status !== AllocationStatus.CHECKED_IN) {
-        throw new Error(
+        throw new BadRequestError(
           `Cannot check out allocation in ${allocation.status} status`
         );
       }

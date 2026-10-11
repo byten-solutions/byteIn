@@ -10,10 +10,56 @@ import {
   type SessionPayload,
 } from "./auth.types";
 
-const SESSION_SECRET = new TextEncoder().encode(
-  process.env.SESSION_SECRET ||
-    "byteinn-super-secret-development-key-min-32-characters"
-);
+export const MIN_SESSION_SECRET_LENGTH = 32;
+
+export const INSECURE_DEFAULT_SECRETS = new Set([
+  "byteinn-super-secret-development-key-min-32-characters",
+  "your-secret-key-at-least-32-characters-long",
+  "changeme-changeme-changeme-changeme",
+  "placeholder-secret-key-at-least-32-characters",
+]);
+
+/**
+ * Validates a candidate session secret string.
+ * Fails securely if the secret is missing, empty, shorter than 32 characters,
+ * or configured with a known insecure placeholder string.
+ */
+export function validateSessionSecret(secret: string | undefined): Uint8Array {
+  if (secret === undefined) {
+    throw new Error(
+      "Authentication configuration error: SESSION_SECRET environment variable is missing."
+    );
+  }
+
+  const trimmed = secret.trim();
+  if (trimmed.length === 0) {
+    throw new Error(
+      "Authentication configuration error: SESSION_SECRET cannot be empty."
+    );
+  }
+
+  if (trimmed.length < MIN_SESSION_SECRET_LENGTH) {
+    throw new Error(
+      `Authentication configuration error: SESSION_SECRET must be at least ${MIN_SESSION_SECRET_LENGTH} characters long (provided secret length: ${trimmed.length}).`
+    );
+  }
+
+  if (INSECURE_DEFAULT_SECRETS.has(trimmed)) {
+    throw new Error(
+      "Authentication configuration error: SESSION_SECRET is set to an insecure default or placeholder. Generate and configure a cryptographically secure random secret."
+    );
+  }
+
+  return new TextEncoder().encode(trimmed);
+}
+
+/**
+ * Retrieves and validates the JWT signing key from environment configuration.
+ */
+export function getSessionSecretKey(): Uint8Array {
+  return validateSessionSecret(process.env.SESSION_SECRET);
+}
+
 
 const SESSION_DURATION_SECONDS = 8 * 60 * 60; // 8 hours (standard shift)
 
@@ -37,6 +83,7 @@ export class AuthService {
    * Signs a stateless session JWT using the configured secret key.
    */
   static async createSessionToken(payload: SessionPayload): Promise<string> {
+    const key = getSessionSecretKey();
     return new SignJWT({
       email: payload.email,
       name: payload.name,
@@ -46,7 +93,7 @@ export class AuthService {
       .setSubject(payload.sub)
       .setIssuedAt()
       .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
-      .sign(SESSION_SECRET);
+      .sign(key);
   }
 
   /**
@@ -54,7 +101,10 @@ export class AuthService {
    */
   static async verifySessionToken(token: string): Promise<SessionPayload | null> {
     try {
-      const { payload } = await jwtVerify(token, SESSION_SECRET);
+      const key = getSessionSecretKey();
+      const { payload } = await jwtVerify(token, key, {
+        algorithms: ["HS256"],
+      });
       if (
         !payload.sub ||
         !payload.email ||
@@ -100,16 +150,26 @@ export class AuthService {
       },
     });
 
-    if (!user) {
-      await this.recordAuditLog(null, "LOGIN_FAILED", {
-        reason: "User not found",
+    // Dummy hash for constant-time comparison against nonexistent users
+    const DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+    const passwordHash = user ? user.passwordHash : DUMMY_HASH;
+
+    // 3. Verify password before evaluating account status to eliminate user enumeration side channels
+    const isPasswordValid = await this.verifyPassword(
+      validated.password,
+      passwordHash
+    );
+
+    if (!user || !isPasswordValid) {
+      await this.recordAuditLog(user?.id || null, "LOGIN_FAILED", {
+        reason: user ? "Invalid password" : "User not found",
         email: validated.email,
         ...metadata,
       });
       throw new Error("Invalid email or password");
     }
 
-    // 3. Verify account status
+    // 4. Verify account status only after password validation succeeds
     if (user.status !== "ACTIVE") {
       await this.recordAuditLog(user.id, "LOGIN_BLOCKED", {
         reason: "Account disabled",
@@ -117,20 +177,6 @@ export class AuthService {
         ...metadata,
       });
       throw new Error("Account is disabled. Please contact an administrator.");
-    }
-
-    // 4. Verify password
-    const isPasswordValid = await this.verifyPassword(
-      validated.password,
-      user.passwordHash
-    );
-
-    if (!isPasswordValid) {
-      await this.recordAuditLog(user.id, "LOGIN_FAILED", {
-        reason: "Invalid password",
-        ...metadata,
-      });
-      throw new Error("Invalid email or password");
     }
 
     // 5. Update last_login_at timestamp

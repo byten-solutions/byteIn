@@ -49,12 +49,6 @@ export default function LoginPage() {
     }
   };
 
-  const fillCredentials = (userEmail: string, userPass: string) => {
-    setEmail(userEmail);
-    setPassword(userPass);
-    setError(null);
-  };
-
   return (
     <div className="flex min-h-svh items-center justify-center p-4 bg-muted/30">
       <Card className="w-full max-w-sm shadow-md">
@@ -104,32 +98,6 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
               />
-            </div>
-
-            <div className="pt-2 border-t text-xs text-muted-foreground space-y-1.5">
-              <p className="font-medium text-foreground">Quick Fill (Development):</p>
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() =>
-                    fillCredentials("admin@byteinn.local", "Admin@123456")
-                  }
-                >
-                  Admin
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() =>
-                    fillCredentials("reception@byteinn.local", "Reception@123456")
-                  }
-                >
-                  Receptionist
-                </Button>
-              </div>
             </div>
           </CardContent>
           <CardFooter>

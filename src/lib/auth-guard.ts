@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { AuthService } from "@/modules/auth/auth.service";
 import { RoleName, type SessionPayload } from "@/modules/auth/auth.types";
 import { getSessionCookie } from "./session";
@@ -13,12 +14,35 @@ export class AuthError extends Error {
 }
 
 /**
- * Reads the current session from incoming request cookies and verifies the token.
+ * Reads the current session from incoming request cookies, verifies the JWT signature,
+ * and validates that the user exists and is ACTIVE in the database.
+ * Returns null if the token is missing, invalid, expired, or if the account is disabled/deleted.
  */
-export async function getSession(): Promise<SessionPayload | null> {
-  const token = await getSessionCookie();
+export async function getSession(explicitToken?: string | null): Promise<SessionPayload | null> {
+  const token = explicitToken !== undefined ? explicitToken : await getSessionCookie();
   if (!token) return null;
-  return AuthService.verifySessionToken(token);
+  const payload = await AuthService.verifySessionToken(token);
+  if (!payload) return null;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { role: true },
+    });
+
+    if (!user || user.status !== "ACTIVE") {
+      return null;
+    }
+
+    return {
+      ...payload,
+      role: user.role.name as RoleName,
+      name: user.name,
+      email: user.email,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -46,10 +70,47 @@ export function enforceRole(
 }
 
 /**
- * Enforces authentication and optional role-based access control.
- * Throws AuthError(401) if unauthenticated, or AuthError(403) if unauthorized.
+ * Enforces authentication and role-based access control with database-level freshness.
+ * - Cryptographically verifies session token.
+ * - Validates user existence and ACTIVE status in PostgreSQL.
+ * - Enforces permissions against the user's current database role.
+ * - Throws AuthError(401) if unauthenticated or user deleted.
+ * - Throws AuthError(403) if user account is disabled or lacks permitted role.
  */
-export async function requireAuth(allowedRoles?: RoleName[]): Promise<SessionPayload> {
-  const session = await getSession();
-  return enforceRole(session, allowedRoles);
+export async function requireAuth(
+  allowedRoles?: RoleName[],
+  explicitToken?: string | null
+): Promise<SessionPayload> {
+  const token = explicitToken !== undefined ? explicitToken : await getSessionCookie();
+  if (!token) {
+    throw new AuthError("Authentication required", 401);
+  }
+
+  const payload = await AuthService.verifySessionToken(token);
+  if (!payload) {
+    throw new AuthError("Authentication required", 401);
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    include: { role: true },
+  });
+
+  if (!user) {
+    throw new AuthError("User account not found or deleted", 401);
+  }
+
+  if (user.status !== "ACTIVE") {
+    throw new AuthError("User account is disabled", 403);
+  }
+
+  const verifiedSession: SessionPayload = {
+    ...payload,
+    role: user.role.name as RoleName,
+    name: user.name,
+    email: user.email,
+  };
+
+  return enforceRole(verifiedSession, allowedRoles);
 }
+

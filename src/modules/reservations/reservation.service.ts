@@ -1,6 +1,12 @@
 import crypto from "crypto";
 import { Prisma, RoomStatus, AllocationStatus, ReservationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from "@/lib/errors";
+import { sanitizePagination } from "@/lib/pagination";
 import type {
   CheckAvailabilityInput,
   CreateReservationInput,
@@ -9,8 +15,7 @@ import type {
 } from "./reservation.types";
 import { normalizeDate } from "./reservation.validation";
 
-export class ReservationConflictError extends Error {
-  statusCode = 409;
+export class ReservationConflictError extends ConflictError {
   constructor(message: string) {
     super(message);
     this.name = "ReservationConflictError";
@@ -197,10 +202,10 @@ export class ReservationService {
               where: { id: customerId },
             });
             if (!customer) {
-              throw new Error("Customer not found");
+              throw new NotFoundError("Customer not found");
             }
           } else {
-            throw new Error(
+            throw new BadRequestError(
               "Either an existing customerId or newCustomer details must be provided"
             );
           }
@@ -216,7 +221,7 @@ export class ReservationService {
           });
 
           if (rooms.length !== sortedRoomIds.length) {
-            throw new Error("One or more selected rooms do not exist");
+            throw new NotFoundError("One or more selected rooms do not exist");
           }
 
           const roomMap = new Map(rooms.map((r) => [r.id, r]));
@@ -226,7 +231,7 @@ export class ReservationService {
               room.status === RoomStatus.MAINTENANCE ||
               room.status === RoomStatus.OUT_OF_SERVICE
             ) {
-              throw new Error(
+              throw new BadRequestError(
                 `Room ${room.roomNo} is currently under ${room.status.replace("_", " ")} and cannot be booked`
               );
             }
@@ -362,8 +367,8 @@ export class ReservationService {
    * Retrieves paginated list of reservations with primary customer, room allocations, and creator.
    */
   static async getReservations(options: ReservationFilterOptions = {}) {
-    const { search, status, page = 1, limit = 20 } = options;
-    const skip = (Math.max(1, page) - 1) * limit;
+    const { search, status } = options;
+    const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
 
     const where: Prisma.ReservationWhereInput = {};
 
@@ -452,7 +457,7 @@ export class ReservationService {
     });
 
     if (!reservation) {
-      throw new Error("Reservation not found");
+      throw new NotFoundError("Reservation not found");
     }
 
     return reservation;

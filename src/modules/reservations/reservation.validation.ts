@@ -1,33 +1,38 @@
 import { z } from "zod";
+import { BadRequestError } from "@/lib/errors";
 import { createCustomerSchema } from "../customers/customer.validation";
 
 // Helper to normalize and validate dates
 export function normalizeDate(value: unknown): Date {
   if (value instanceof Date) {
     if (isNaN(value.getTime())) {
-      throw new Error("Invalid date");
+      throw new BadRequestError("Invalid date");
     }
     return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
   }
   if (typeof value === "string") {
-    // Check YYYY-MM-DD or ISO string format
     const trimmed = value.trim();
-    const parts = trimmed.split("T")[0].split("-");
-    if (parts.length === 3) {
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
-      const day = parseInt(parts[2], 10);
+    const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(trimmed);
+    if (match) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+      if (month < 0 || month > 11 || day < 1 || day > 31) {
+        throw new BadRequestError("Invalid calendar date. The specified date does not exist.");
+      }
       const d = new Date(Date.UTC(year, month, day));
-      if (!isNaN(d.getTime())) {
+      if (
+        !isNaN(d.getTime()) &&
+        d.getUTCFullYear() === year &&
+        d.getUTCMonth() === month &&
+        d.getUTCDate() === day
+      ) {
         return d;
       }
-    }
-    const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) {
-      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      throw new BadRequestError("Invalid calendar date. The specified date does not exist.");
     }
   }
-  throw new Error("Invalid date format. Expected YYYY-MM-DD");
+  throw new BadRequestError("Invalid date format. Expected YYYY-MM-DD");
 }
 
 export const dateSchema = z

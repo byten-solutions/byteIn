@@ -28,12 +28,22 @@ async function main() {
   console.log(`Roles ensured: ${adminRole.name}, ${receptionistRole.name}`);
 
   // 2. Seed Initial Users
-  const salt = await bcrypt.genSalt(10);
-  const defaultAdminPassword = process.env.SEED_ADMIN_PASSWORD || "Admin@123456";
-  const defaultReceptionistPassword = process.env.SEED_RECEPTIONIST_PASSWORD || "Reception@123456";
+  const isProduction = process.env.NODE_ENV === "production";
+  const seedAdminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const seedReceptionistPassword = process.env.SEED_RECEPTIONIST_PASSWORD;
 
-  const adminPasswordHash = await bcrypt.hash(defaultAdminPassword, salt);
-  const receptionistPasswordHash = await bcrypt.hash(defaultReceptionistPassword, salt);
+  if (isProduction && (!seedAdminPassword || !seedReceptionistPassword)) {
+    throw new Error(
+      "Production seed aborted: SEED_ADMIN_PASSWORD and SEED_RECEPTIONIST_PASSWORD environment variables are mandatory in production. Insecure default passwords are prohibited."
+    );
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  const adminPassword = seedAdminPassword || "Admin@123456";
+  const receptionistPassword = seedReceptionistPassword || "Reception@123456";
+
+  const adminPasswordHash = await bcrypt.hash(adminPassword, salt);
+  const receptionistPasswordHash = await bcrypt.hash(receptionistPassword, salt);
 
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@byteinn.local" },

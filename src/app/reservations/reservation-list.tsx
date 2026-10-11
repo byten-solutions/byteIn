@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Calendar,
@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   Clock,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { ReservationStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
@@ -70,37 +73,141 @@ export interface SerializedReservation {
   }[];
 }
 
-interface ReservationListProps {
-  initialReservations: SerializedReservation[];
+export interface ReservationPagination {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
-export function ReservationList({ initialReservations }: ReservationListProps) {
+interface ReservationListProps {
+  initialReservations: SerializedReservation[];
+  initialPagination?: ReservationPagination;
+}
+
+export function ReservationList({
+  initialReservations,
+  initialPagination,
+}: ReservationListProps) {
+  const [reservations, setReservations] = useState<SerializedReservation[]>(initialReservations);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [currentPage, setCurrentPage] = useState(initialPagination?.page || 1);
+  const [pagination, setPagination] = useState<ReservationPagination>(
+    initialPagination || {
+      total: initialReservations.length,
+      page: 1,
+      limit: 20,
+      totalPages: Math.max(1, Math.ceil(initialReservations.length / 20)),
+    }
+  );
+  const [loading, setLoading] = useState(false);
+  const isInitialMount = useRef(true);
 
-  const filteredReservations = useMemo(() => {
-    return initialReservations.filter((res) => {
-      // Status filter
-      if (statusFilter !== "ALL" && res.status !== statusFilter) {
-        return false;
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (searchTerm.trim()) params.set("search", searchTerm.trim());
+        if (statusFilter !== "ALL") params.set("status", statusFilter);
+        params.set("page", String(currentPage));
+        params.set("limit", "20");
+
+        const res = await fetch(`/api/reservations?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch reservations");
+        const data = await res.json();
+
+        if (isMounted && data.success) {
+          const mapped: SerializedReservation[] = data.reservations.map((r: {
+            id: string;
+            reservationNo: string;
+            status: ReservationStatus;
+            specialRequests: string | null;
+            createdAt: string;
+            customer: { id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null };
+            creator: { id: string; name: string; email: string; role: { name: string } | string };
+            rooms: Array<{
+              id: string;
+              roomId: string;
+              room: { roomNo: string; displayName: string | null; building?: { name: string }; floor?: { floorNo: number } };
+              roomCategory?: { name: string };
+              arrivalDate: string;
+              departureDate: string;
+              bookedNightlyRate: string | number;
+              adults: number;
+              children: number;
+              status: string;
+            }>;
+          }) => ({
+            id: r.id,
+            reservationNo: r.reservationNo,
+            status: r.status,
+            specialRequests: r.specialRequests,
+            createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
+            customer: {
+              id: r.customer.id,
+              firstName: r.customer.firstName,
+              lastName: r.customer.lastName,
+              phone: r.customer.phone,
+              email: r.customer.email,
+            },
+            creator: {
+              id: r.creator.id,
+              name: r.creator.name,
+              email: r.creator.email,
+              role: typeof r.creator.role === "object" && r.creator.role !== null ? (r.creator.role as { name: string }).name : String(r.creator.role),
+            },
+            rooms: r.rooms.map((rm) => ({
+              id: rm.id,
+              roomId: rm.roomId,
+              roomNo: rm.room.roomNo,
+              displayName: rm.room.displayName,
+              buildingName: rm.room.building?.name || "",
+              floorNo: rm.room.floor?.floorNo || 0,
+              categoryName: rm.roomCategory?.name || "",
+              arrivalDate: typeof rm.arrivalDate === "string" ? rm.arrivalDate.split("T")[0]! : new Date(rm.arrivalDate).toISOString().split("T")[0]!,
+              departureDate: typeof rm.departureDate === "string" ? rm.departureDate.split("T")[0]! : new Date(rm.departureDate).toISOString().split("T")[0]!,
+              bookedNightlyRate: String(rm.bookedNightlyRate),
+              adults: rm.adults,
+              children: rm.children,
+              status: rm.status,
+            })),
+          }));
+
+          setReservations(mapped);
+          if (data.pagination) {
+            setPagination(data.pagination);
+          }
+        }
+      } catch (err) {
+        console.error("Error searching reservations:", err);
+      } finally {
+        if (isMounted) setLoading(false);
       }
+    }, 250);
 
-      // Search term filter
-      if (searchTerm.trim() !== "") {
-        const q = searchTerm.toLowerCase();
-        const guestFullName = `${res.customer.firstName} ${res.customer.lastName || ""}`.toLowerCase();
-        const matchesNo = res.reservationNo.toLowerCase().includes(q);
-        const matchesName = guestFullName.includes(q);
-        const matchesPhone = res.customer.phone?.toLowerCase().includes(q) ?? false;
-        const matchesEmail = res.customer.email?.toLowerCase().includes(q) ?? false;
-        const matchesRoom = res.rooms.some((r) => r.roomNo.toLowerCase().includes(q));
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [searchTerm, statusFilter, currentPage]);
 
-        return matchesNo || matchesName || matchesPhone || matchesEmail || matchesRoom;
-      }
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
 
-      return true;
-    });
-  }, [initialReservations, searchTerm, statusFilter]);
+  const handleStatusChange = (value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+  };
 
   const getStatusBadge = (status: ReservationStatus) => {
     switch (status) {
@@ -179,7 +286,7 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
                 placeholder="Search by reservation #, guest name, phone, or room..."
                 className="pl-9 text-xs sm:text-sm"
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
               />
             </div>
 
@@ -191,7 +298,7 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
                   variant={statusFilter === status ? "default" : "outline"}
                   size="sm"
                   className="text-xs capitalize h-8"
-                  onClick={() => setStatusFilter(status)}
+                  onClick={() => handleStatusChange(status)}
                 >
                   {status === "ALL" ? "All Statuses" : status.toLowerCase()}
                 </Button>
@@ -205,8 +312,9 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
       <Card className="shadow-xs overflow-hidden">
         <CardHeader className="p-4 border-b bg-muted/20 flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-sm font-semibold">
-              All Bookings ({filteredReservations.length})
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              All Bookings ({pagination.total})
+              {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </CardTitle>
             <CardDescription className="text-xs">
               Showing active and historical reservations created by reception staff.
@@ -215,7 +323,7 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
         </CardHeader>
 
         <CardContent className="p-0">
-          {filteredReservations.length === 0 ? (
+          {reservations.length === 0 ? (
             <div className="text-center py-12 px-4">
               <Calendar className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
               <h3 className="text-sm font-semibold">No reservations found</h3>
@@ -248,7 +356,7 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredReservations.map((res) => {
+                  {reservations.map((res) => {
                     const guestName = `${res.customer.firstName} ${res.customer.lastName || ""}`.trim();
                     const totalRateSnapshot = res.rooms.reduce(
                       (sum, r) => sum + parseFloat(r.bookedNightlyRate) * getTotalNights(r.arrivalDate, r.departureDate),
@@ -331,6 +439,48 @@ export function ReservationList({ initialReservations }: ReservationListProps) {
               </Table>
             </div>
           )}
+
+          {/* Bounded Pagination Controls */}
+          <div className="p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div>
+              Showing{" "}
+              <span className="font-medium text-foreground">
+                {pagination.total === 0 ? 0 : (currentPage - 1) * pagination.limit + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium text-foreground">
+                {Math.min(currentPage * pagination.limit, pagination.total)}
+              </span>{" "}
+              of{" "}
+              <span className="font-medium text-foreground">{pagination.total}</span> bookings
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                Previous
+              </Button>
+              <span className="px-2">
+                Page {currentPage} of {pagination.totalPages || 1}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={currentPage >= pagination.totalPages || loading}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

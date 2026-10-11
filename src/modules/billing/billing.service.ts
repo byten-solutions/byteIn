@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   InvoiceStatus,
@@ -35,7 +36,7 @@ type InvoiceWithRelations = Prisma.InvoiceGetPayload<{
 
 export class BillingService {
   /**
-   * Generates a unique, human-readable invoice number.
+   * Generates a unique, collision-resistant human-readable invoice number.
    * Format: INV-YYYYMMDD-XXXX (e.g. INV-20261011-A89F)
    */
   private static generateInvoiceNumber(): string {
@@ -43,7 +44,7 @@ export class BillingService {
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     const dd = String(today.getDate()).padStart(2, "0");
-    const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const randomHex = crypto.randomBytes(2).toString("hex").toUpperCase();
     return `INV-${yyyy}${mm}${dd}-${randomHex}`;
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -14,6 +14,8 @@ import {
   Loader2,
   AlertCircle,
   Globe,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,13 +60,35 @@ export interface SerializedCustomer {
   createdAt: string;
 }
 
-interface CustomerListProps {
-  initialCustomers: SerializedCustomer[];
+export interface CustomerPagination {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 }
 
-export function CustomerList({ initialCustomers }: CustomerListProps) {
+interface CustomerListProps {
+  initialCustomers: SerializedCustomer[];
+  initialPagination?: CustomerPagination;
+}
+
+export function CustomerList({
+  initialCustomers,
+  initialPagination,
+}: CustomerListProps) {
   const [customers, setCustomers] = useState<SerializedCustomer[]>(initialCustomers);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(initialPagination?.page || 1);
+  const [pagination, setPagination] = useState<CustomerPagination>(
+    initialPagination || {
+      total: initialCustomers.length,
+      page: 1,
+      limit: 20,
+      totalPages: Math.max(1, Math.ceil(initialCustomers.length / 20)),
+    }
+  );
+  const [loading, setLoading] = useState(false);
+  const isInitialMount = useRef(true);
 
   // Modal State
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
@@ -83,21 +107,77 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
     remarks: "",
   });
 
-  const filteredCustomers = useMemo(() => {
-    if (!searchTerm.trim()) return customers;
-    const q = searchTerm.toLowerCase();
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
 
-    return customers.filter((c) => {
-      const fullName = `${c.firstName} ${c.lastName || ""}`.toLowerCase();
-      const matchesName = fullName.includes(q);
-      const matchesPhone = c.phone?.toLowerCase().includes(q) ?? false;
-      const matchesEmail = c.email?.toLowerCase().includes(q) ?? false;
-      const matchesId = c.idProofNumber?.toLowerCase().includes(q) ?? false;
-      const matchesNationality = c.nationality?.toLowerCase().includes(q) ?? false;
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (searchTerm.trim()) params.set("search", searchTerm.trim());
+        params.set("page", String(currentPage));
+        params.set("limit", "20");
 
-      return matchesName || matchesPhone || matchesEmail || matchesId || matchesNationality;
-    });
-  }, [customers, searchTerm]);
+        const res = await fetch(`/api/customers?${params.toString()}`);
+        if (!res.ok) throw new Error("Failed to fetch customers");
+        const data = await res.json();
+
+        if (isMounted && data.success) {
+          const mapped: SerializedCustomer[] = data.customers.map((c: {
+            id: string;
+            firstName: string;
+            lastName: string | null;
+            phone: string | null;
+            email: string | null;
+            nationality: string | null;
+            address: string | null;
+            idProofType: string | null;
+            idProofNumber: string | null;
+            remarks: string | null;
+            _count?: { reservations: number };
+            reservationsCount?: number;
+            createdAt: string | Date;
+          }) => ({
+            id: c.id,
+            firstName: c.firstName,
+            lastName: c.lastName,
+            phone: c.phone,
+            email: c.email,
+            nationality: c.nationality,
+            address: c.address,
+            idProofType: c.idProofType,
+            idProofNumber: c.idProofNumber,
+            remarks: c.remarks,
+            reservationsCount: c._count?.reservations ?? c.reservationsCount ?? 0,
+            createdAt: typeof c.createdAt === "string" ? c.createdAt : new Date(c.createdAt).toISOString(),
+          }));
+
+          setCustomers(mapped);
+          if (data.pagination) {
+            setPagination(data.pagination);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching customers:", err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [searchTerm, currentPage]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
 
   const handleRegisterGuest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +217,10 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
       };
 
       setCustomers((prev) => [newCustomer, ...prev]);
+      setPagination((prev) => ({
+        ...prev,
+        total: prev.total + 1,
+      }));
       setIsRegisterOpen(false);
       setFormData({
         firstName: "",
@@ -192,7 +276,7 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
               placeholder="Search by name, phone, email, nationality, or ID proof #..."
               className="pl-9 text-xs sm:text-sm"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
           </div>
         </CardContent>
@@ -201,8 +285,9 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
       {/* Guest Table */}
       <Card className="shadow-xs overflow-hidden">
         <CardHeader className="p-4 border-b bg-muted/20">
-          <CardTitle className="text-sm font-semibold">
-            Registered Guests ({filteredCustomers.length})
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            Registered Guests ({pagination.total})
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </CardTitle>
           <CardDescription className="text-xs">
             Reception guest registry with verified identification details.
@@ -210,7 +295,7 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
         </CardHeader>
 
         <CardContent className="p-0">
-          {filteredCustomers.length === 0 ? (
+          {customers.length === 0 ? (
             <div className="text-center py-12 px-4">
               <Users className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
               <h3 className="text-sm font-semibold">No guests found</h3>
@@ -241,7 +326,7 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCustomers.map((c) => {
+                  {customers.map((c) => {
                     const fullName = `${c.firstName} ${c.lastName || ""}`.trim();
 
                     return (
@@ -333,6 +418,48 @@ export function CustomerList({ initialCustomers }: CustomerListProps) {
               </Table>
             </div>
           )}
+
+          {/* Bounded Pagination Controls */}
+          <div className="p-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground">
+            <div>
+              Showing{" "}
+              <span className="font-medium text-foreground">
+                {pagination.total === 0 ? 0 : (currentPage - 1) * pagination.limit + 1}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium text-foreground">
+                {Math.min(currentPage * pagination.limit, pagination.total)}
+              </span>{" "}
+              of{" "}
+              <span className="font-medium text-foreground">{pagination.total}</span> guests
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                Previous
+              </Button>
+              <span className="px-2">
+                Page {currentPage} of {pagination.totalPages || 1}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                disabled={currentPage >= pagination.totalPages || loading}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

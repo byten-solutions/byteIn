@@ -1,16 +1,13 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
-import { AuthService } from "../src/modules/auth/auth.service";
+import { AuthService, getSessionSecretKey } from "../src/modules/auth/auth.service";
 import { loginSchema } from "../src/modules/auth/auth.validation";
 import { RoleName } from "../src/modules/auth/auth.types";
 import { AuthError, enforceRole } from "../src/lib/auth-guard";
 import { prisma } from "../src/lib/prisma";
 
-const TEST_SECRET = new TextEncoder().encode(
-  process.env.SESSION_SECRET ||
-    "byteinn-super-secret-development-key-min-32-characters"
-);
+const TEST_SECRET = getSessionSecretKey();
 
 describe("Phase 1: Authentication & Access Control Tests", () => {
   describe("1. Password Hashing & Verification", () => {

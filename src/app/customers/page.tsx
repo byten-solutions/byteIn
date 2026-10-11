@@ -10,7 +10,7 @@ export default async function CustomersPage() {
     redirect("/login");
   }
 
-  const result = await CustomerService.getCustomers({ page: 1, limit: 50 });
+  const result = await CustomerService.getCustomers({ page: 1, limit: 20 });
 
   const serializedCustomers = result.customers.map((c) => ({
     id: c.id,
@@ -31,7 +31,10 @@ export default async function CustomersPage() {
     <div className="min-h-svh bg-muted/15 flex flex-col">
       <Navbar />
       <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
-        <CustomerList initialCustomers={serializedCustomers} />
+        <CustomerList
+          initialCustomers={serializedCustomers}
+          initialPagination={result.pagination}
+        />
       </main>
     </div>
   );

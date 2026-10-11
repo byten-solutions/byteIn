@@ -1,5 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { NotFoundError } from "@/lib/errors";
+import { sanitizePagination } from "@/lib/pagination";
 import type {
   CreateCustomerInput,
   UpdateCustomerInput,
@@ -24,8 +26,8 @@ export class CustomerService {
   }
 
   static async getCustomers(options: CustomerFilterOptions = {}) {
-    const { search, page = 1, limit = 50 } = options;
-    const skip = (Math.max(1, page) - 1) * limit;
+    const { search } = options;
+    const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
 
     const where: Prisma.CustomerWhereInput = {};
 
@@ -85,7 +87,7 @@ export class CustomerService {
     });
 
     if (!customer) {
-      throw new Error("Customer not found");
+      throw new NotFoundError("Customer not found");
     }
 
     return customer;
@@ -94,7 +96,7 @@ export class CustomerService {
   static async updateCustomer(id: string, input: UpdateCustomerInput) {
     const existing = await prisma.customer.findUnique({ where: { id } });
     if (!existing) {
-      throw new Error("Customer not found");
+      throw new NotFoundError("Customer not found");
     }
 
     return prisma.customer.update({

@@ -10,7 +10,7 @@ export default async function ReservationsPage() {
     redirect("/login");
   }
 
-  const result = await ReservationService.getReservations({ page: 1, limit: 50 });
+  const result = await ReservationService.getReservations({ page: 1, limit: 20 });
 
   // Serialize Decimal objects and Date objects for client component
   const serializedReservations = result.reservations.map((r) => ({
@@ -53,7 +53,10 @@ export default async function ReservationsPage() {
     <div className="min-h-svh bg-muted/15 flex flex-col">
       <Navbar />
       <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-8 flex-1">
-        <ReservationList initialReservations={serializedReservations} />
+        <ReservationList
+          initialReservations={serializedReservations}
+          initialPagination={result.pagination}
+        />
       </main>
     </div>
   );

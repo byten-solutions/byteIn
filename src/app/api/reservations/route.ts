@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { ReservationStatus } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
-import {
-  ReservationService,
-  ReservationConflictError,
-} from "@/modules/reservations/reservation.service";
+import { requireAuth } from "@/lib/auth-guard";
+import { handleApiError } from "@/lib/errors";
+import { paginationQuerySchema } from "@/lib/pagination";
+import { ReservationService } from "@/modules/reservations/reservation.service";
 import { createReservationSchema } from "@/modules/reservations/reservation.validation";
 
 export async function GET(req: NextRequest) {
@@ -19,8 +17,13 @@ export async function GET(req: NextRequest) {
       statusParam && Object.values(ReservationStatus).includes(statusParam as ReservationStatus)
         ? (statusParam as ReservationStatus)
         : undefined;
-    const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || "20", 10);
+
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+    const { page, limit } = paginationQuerySchema.parse({
+      page: pageParam ?? undefined,
+      limit: limitParam ?? undefined,
+    });
 
     const result = await ReservationService.getReservations({
       search,
@@ -31,14 +34,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("GET /api/reservations error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch reservations" },
-      { status: 500 }
-    );
+    return handleApiError(error, "Failed to fetch reservations");
   }
 }
 
@@ -58,26 +54,6 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    if (error instanceof ReservationConflictError) {
-      return NextResponse.json({ error: error.message }, { status: 409 });
-    }
-
-    const message = error instanceof Error ? error.message : "Failed to create reservation";
-    let status = 400;
-    if (message.includes("already booked") || message.includes("concurrent")) {
-      status = 409;
-    } else if (message.includes("not found")) {
-      status = 404;
-    }
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "Failed to create reservation");
   }
 }
