@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { Bed, Tag, ShieldCheck, ArrowRight, CheckCircle2, Clock, Wrench } from "lucide-react";
-import { RoomStatus } from "@prisma/client";
+import { Bed, Tag, ShieldCheck, ArrowRight, CheckCircle2, Clock, Wrench, Calendar, PlusCircle } from "lucide-react";
+import { RoomStatus, ReservationStatus } from "@prisma/client";
 import { getSession } from "@/lib/auth-guard";
 import { prisma } from "@/lib/prisma";
 import { Navbar } from "@/components/navbar";
@@ -23,20 +23,32 @@ export default async function Page() {
     dirty: 0,
     occupied: 0,
     maintenance: 0,
+    reservations: 0,
+    confirmedReservations: 0,
   };
   let categoryCount = 0;
 
   if (session) {
-    const [total, clean, dirty, occupied, maintenance, categories] = await Promise.all([
+    const [total, clean, dirty, occupied, maintenance, categories, totalRes, confirmedRes] = await Promise.all([
       prisma.room.count(),
       prisma.room.count({ where: { status: RoomStatus.VACANT_CLEAN } }),
       prisma.room.count({ where: { status: RoomStatus.VACANT_DIRTY } }),
       prisma.room.count({ where: { status: RoomStatus.OCCUPIED } }),
       prisma.room.count({ where: { status: RoomStatus.MAINTENANCE } }),
       prisma.roomCategory.count(),
+      prisma.reservation.count(),
+      prisma.reservation.count({ where: { status: ReservationStatus.CONFIRMED } }),
     ]);
 
-    counts = { total, clean, dirty, occupied, maintenance };
+    counts = {
+      total,
+      clean,
+      dirty,
+      occupied,
+      maintenance,
+      reservations: totalRes,
+      confirmedReservations: confirmedRes,
+    };
     categoryCount = categories;
   }
 
@@ -60,16 +72,22 @@ export default async function Page() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Link href="/rooms">
-                  <Button size="sm">
-                    <Bed className="h-4 w-4 mr-1.5" />
-                    Manage Rooms
+                <Link href="/reservations/new">
+                  <Button size="sm" className="bg-primary hover:bg-primary/90">
+                    <PlusCircle className="h-4 w-4 mr-1.5" />
+                    New Reservation
                   </Button>
                 </Link>
-                <Link href="/categories">
+                <Link href="/reservations">
                   <Button variant="outline" size="sm">
-                    <Tag className="h-4 w-4 mr-1.5" />
-                    Categories
+                    <Calendar className="h-4 w-4 mr-1.5" />
+                    Reservations
+                  </Button>
+                </Link>
+                <Link href="/rooms">
+                  <Button variant="outline" size="sm">
+                    <Bed className="h-4 w-4 mr-1.5" />
+                    Rooms
                   </Button>
                 </Link>
               </div>
@@ -147,13 +165,43 @@ export default async function Page() {
             </div>
 
             {/* Quick Access Modules */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="hover:border-foreground/20 transition-colors shadow-xs">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-primary" />
+                      Reservations & Booking
+                    </CardTitle>
+                    <Badge variant="outline">{counts.confirmedReservations} active</Badge>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Multi-room bookings, live availability search, and rate snapshots.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Book reservations for guests across one or more physical rooms with independent stay dates and conflict-safe availability guarantees.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Link href="/reservations" className="inline-flex items-center text-xs font-semibold text-primary hover:underline">
+                      View Bookings
+                      <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                    </Link>
+                    <span className="text-muted-foreground text-xs">•</span>
+                    <Link href="/reservations/new" className="inline-flex items-center text-xs font-semibold text-primary hover:underline">
+                      New Booking
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+
               <Card className="hover:border-foreground/20 transition-colors shadow-xs">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-bold flex items-center gap-2">
                       <Bed className="h-5 w-5 text-primary" />
-                      Physical Room Inventory & Status Board
+                      Room Inventory & Status
                     </CardTitle>
                     <Badge variant="outline">{counts.total} rooms</Badge>
                   </div>
@@ -177,7 +225,7 @@ export default async function Page() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base font-bold flex items-center gap-2">
                       <Tag className="h-5 w-5 text-primary" />
-                      Room Categories & Setup
+                      Categories & Setup
                     </CardTitle>
                     <Badge variant="outline">{categoryCount} categories</Badge>
                   </div>

@@ -25,6 +25,12 @@ export async function Navbar() {
                 Overview
               </Link>
               <Link
+                href="/reservations"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Reservations
+              </Link>
+              <Link
                 href="/rooms"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >

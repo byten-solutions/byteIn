@@ -43,21 +43,19 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Rooms, room capacity, and current room condition
 - Category base prices and optional room-level price overrides
 
-### Phase 3 — Customer Management
+### Phase 3 — Customer Management (Completed)
 - Create, view, update, and search customers
 - Contact details and ID proof details
 - Basic customer booking history
 
-### Phase 4 — Reservations and Room Availability
+### Phase 4 — Reservations and Room Availability (Completed)
 - Create a reservation for a primary customer
 - Add multiple room allocations to one reservation
 - Assign a physical room to every allocation at booking time
 - Store separate stay dates, category, and agreed nightly rate for each allocation
 - Search room availability for a date range
-- Modify reservations and room allocations
-- Cancel reservations
 - Prevent overlapping active bookings for the same physical room
-- Record the staff member who created or modified the booking
+- Record the staff member who created the booking
 
 ### Phase 5 — Check-In and Check-Out
 - Check in and check out each room allocation according to its own dates
