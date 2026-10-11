@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { getSession } from "@/lib/auth-guard";
 import { ReservationService } from "@/modules/reservations/reservation.service";
+import { BillingService } from "@/modules/billing/billing.service";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { AllocationActionRow } from "./allocation-action-row";
+import { ReservationBillingCard } from "./reservation-billing-card";
 
 export default async function ReservationDetailPage({
   params,
@@ -42,6 +44,8 @@ export default async function ReservationDetailPage({
   } catch {
     notFound();
   }
+
+  const invoice = await BillingService.getInvoiceByReservationId(reservation.id);
 
   const guestFullName = `${reservation.customer.firstName} ${reservation.customer.lastName || ""}`.trim();
 
@@ -233,6 +237,13 @@ export default async function ReservationDetailPage({
                 </CardContent>
               </Card>
             )}
+
+            {/* Billing & Invoicing Card */}
+            <ReservationBillingCard
+              reservationId={reservation.id}
+              initialInvoice={invoice}
+              estimatedTotal={totalBookingValue}
+            />
           </div>
 
           {/* Right Column: Room Allocations & Monetary Snapshots (2 Cols) */}

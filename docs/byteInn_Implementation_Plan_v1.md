@@ -63,7 +63,7 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Update room condition after checkout (normally Vacant Dirty)
 - Allow a room to become ready for booking only when its condition and reservation schedule permit it
 
-### Phase 6 — Billing and Payments
+### Phase 6 — Billing and Payments (Completed)
 - Create invoice(s) for a reservation and its room allocations
 - Add invoice line items for room charges and any supported extra charges
 - Preserve booked room rates when calculating room charges
