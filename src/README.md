@@ -9,17 +9,23 @@ This directory contains the primary application codebase for **byteInn**.
 ```text
 src/
 ├── app/                   # Next.js App Router (Pages, Layouts, API Route Handlers)
-│   ├── api/               # REST API Route Handlers (e.g., /api/reservations/...)
+│   ├── api/               # REST API Route Handlers
+│   │   └── auth/          # Authentication endpoints (/api/auth/login, /logout, /me, /verify-role)
+│   ├── login/             # Login view (/login)
 │   ├── globals.css        # Tailwind CSS v4 styling & shadcn design tokens
 │   ├── layout.tsx         # Root HTML layout and font definitions
 │   └── page.tsx           # Application landing view
 ├── components/            # UI Components
 │   ├── logo.tsx           # Brand Logo component
-│   └── ui/                # Installed shadcn/ui primitives (button, etc.)
+│   ├── sign-out-button.tsx# Client sign-out button component
+│   └── ui/                # Installed shadcn/ui primitives (button, card, input, label)
 ├── lib/                   # Shared singletons and low-level helpers
+│   ├── auth-guard.ts      # Server authentication and role authorization guards
 │   ├── prisma.ts          # Global PrismaClient singleton instance
+│   ├── session.ts         # Session cookie serialization and parsing helpers
 │   └── utils.ts           # Class merge helper (cn)
-├── modules/               # (Planned) Domain services and business logic
+├── modules/               # Domain services and business logic
+│   └── auth/              # AuthService, validation schemas, and types
 └── README.md              # Source architecture guide
 ```
 
