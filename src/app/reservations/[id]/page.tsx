@@ -23,6 +23,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { AllocationActionRow } from "./allocation-action-row";
 
 export default async function ReservationDetailPage({
   params,
@@ -262,61 +263,40 @@ export default async function ReservationDetailPage({
                     const roomSubtotal = nights * nightlyRate;
 
                     return (
-                      <div key={allocation.id} className="p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-base">
-                              Room {allocation.room.roomNo}
-                            </span>
-                            <Badge variant="secondary" className="text-xs">
-                              {allocation.roomCategory.name}
-                            </Badge>
-                            {allocation.room.displayName && (
-                              <span className="text-xs text-muted-foreground">
-                                • {allocation.room.displayName}
-                              </span>
-                            )}
-                          </div>
-                          {getStatusBadge(allocation.status)}
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs bg-muted/20 p-2.5 rounded-lg border">
-                          <div>
-                            <span className="text-muted-foreground block text-[10px]">Location</span>
-                            <span>
-                              {allocation.room.building.name}, Fl {allocation.room.floor.floorNo}
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-muted-foreground block text-[10px]">Stay Interval</span>
-                            <span className="font-medium">
-                              {arrStr} → {depStr}
-                            </span>
-                            <span className="text-[10px] text-muted-foreground block">
-                              ({nights} night{nights === 1 ? "" : "s"})
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-muted-foreground block text-[10px]">Guests</span>
-                            <span>
-                              {allocation.adults} Adult{allocation.adults === 1 ? "" : "s"}
-                              {allocation.children > 0 && `, ${allocation.children} Child`}
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-muted-foreground block text-[10px]">Snapshotted Rate</span>
-                            <span className="font-mono font-semibold text-primary">
-                              ${nightlyRate.toFixed(2)} / nt
-                            </span>
-                            <span className="text-[10px] text-muted-foreground block">
-                              Total: ${roomSubtotal.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                      <AllocationActionRow
+                        key={allocation.id}
+                        allocation={{
+                          id: allocation.id,
+                          roomId: allocation.roomId,
+                          roomNo: allocation.room.roomNo,
+                          roomStatus: allocation.room.status,
+                          categoryName: allocation.roomCategory.name,
+                          displayName: allocation.room.displayName,
+                          buildingName: allocation.room.building.name,
+                          floorNo: allocation.room.floor.floorNo,
+                          arrivalDate: arrStr,
+                          departureDate: depStr,
+                          nights,
+                          adults: allocation.adults,
+                          children: allocation.children,
+                          bookedNightlyRate: allocation.bookedNightlyRate.toString(),
+                          roomSubtotal,
+                          status: allocation.status,
+                          checkedInAt: allocation.checkedInAt
+                            ? allocation.checkedInAt.toISOString()
+                            : null,
+                          checkedOutAt: allocation.checkedOutAt
+                            ? allocation.checkedOutAt.toISOString()
+                            : null,
+                        }}
+                        customer={{
+                          id: reservation.customer.id,
+                          firstName: reservation.customer.firstName,
+                          lastName: reservation.customer.lastName,
+                          idProofType: reservation.customer.idProofType,
+                          idProofNumber: reservation.customer.idProofNumber,
+                        }}
+                      />
                     );
                   })}
                 </div>

@@ -151,7 +151,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
       firstName: "Jane",
       lastName: "Smith",
       phone: "+1-555-0199",
-      email: "jane.smith@example.test",
+      email: "jane.smith@res.test",
       nationality: "Canadian",
       idProofType: "Passport",
       idProofNumber: "C12345678",
@@ -172,16 +172,31 @@ describe("Phase 4: Reservations & Availability Tests", () => {
 
     await prisma.reservationRoom.deleteMany({
       where: {
-        roomId: { in: [room101Id, room102Id, room103MaintenanceId, room104ConcurrencyId] },
+        OR: [
+          { roomId: { in: [room101Id, room102Id, room103MaintenanceId, room104ConcurrencyId] } },
+          { reservation: { customerId: testCustomerId } },
+          { reservation: { customer: { email: { contains: "res.test" } } } },
+        ],
       },
     });
 
     await prisma.reservation.deleteMany({
-      where: { createdBy: testStaffUserId },
+      where: {
+        OR: [
+          { createdBy: testStaffUserId },
+          { customerId: testCustomerId },
+          { customer: { email: { contains: "res.test" } } },
+        ],
+      },
     });
 
     await prisma.customer.deleteMany({
-      where: { email: { contains: "example.test" } },
+      where: {
+        OR: [
+          { id: testCustomerId },
+          { email: { contains: "res.test" } },
+        ],
+      },
     });
 
     await prisma.room.deleteMany({
@@ -439,7 +454,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
           newCustomer: {
             firstName: "Robert",
             lastName: "Paulson",
-            email: "robert.p@example.test",
+            email: "robert.p@res.test",
             phone: "+1-555-4321",
           },
           allocations: [
@@ -456,7 +471,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
       assert.ok(res.customer);
       assert.equal(res.customer.firstName, "Robert");
       assert.equal(res.customer.lastName, "Paulson");
-      assert.equal(res.customer.email, "robert.p@example.test");
+      assert.equal(res.customer.email, "robert.p@res.test");
     });
   });
 
@@ -615,8 +630,12 @@ describe("Phase 4: Reservations & Availability Tests", () => {
     it("should atomically roll back entire multi-room reservation if any room fails conflict check", async () => {
       // Room 104 is already booked Nov 10 - Nov 15.
       // An attempt to book Room 102 (free) AND Room 104 (conflicting) in one reservation must roll back completely!
-      const initialResCount = await prisma.reservation.count();
-      const initialResRoomCount = await prisma.reservationRoom.count();
+      const initialResCount = await prisma.reservation.count({
+        where: { createdBy: testStaffUserId },
+      });
+      const initialResRoomCount = await prisma.reservationRoom.count({
+        where: { reservation: { createdBy: testStaffUserId } },
+      });
 
       await assert.rejects(
         async () => {
@@ -645,8 +664,12 @@ describe("Phase 4: Reservations & Availability Tests", () => {
       );
 
       // Verify zero orphaned records: reservation count and allocation count remain unchanged!
-      const afterResCount = await prisma.reservation.count();
-      const afterResRoomCount = await prisma.reservationRoom.count();
+      const afterResCount = await prisma.reservation.count({
+        where: { createdBy: testStaffUserId },
+      });
+      const afterResRoomCount = await prisma.reservationRoom.count({
+        where: { reservation: { createdBy: testStaffUserId } },
+      });
 
       assert.equal(afterResCount, initialResCount, "Zero orphaned reservations after rollback");
       assert.equal(afterResRoomCount, initialResRoomCount, "Zero orphaned room allocations after rollback");

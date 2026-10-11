@@ -31,6 +31,12 @@ export async function Navbar() {
                 Reservations
               </Link>
               <Link
+                href="/customers"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Guests
+              </Link>
+              <Link
                 href="/rooms"
                 className="text-muted-foreground hover:text-foreground transition-colors"
               >

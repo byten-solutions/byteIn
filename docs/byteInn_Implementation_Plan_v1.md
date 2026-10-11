@@ -57,7 +57,7 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Prevent overlapping active bookings for the same physical room
 - Record the staff member who created the booking
 
-### Phase 5 — Check-In and Check-Out
+### Phase 5 — Check-In and Check-Out (Completed)
 - Check in and check out each room allocation according to its own dates
 - Record guest verification and required ID details
 - Update room condition after checkout (normally Vacant Dirty)
