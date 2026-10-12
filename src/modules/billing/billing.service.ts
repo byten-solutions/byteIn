@@ -39,7 +39,7 @@ export class BillingService {
    * Generates a unique, collision-resistant human-readable invoice number.
    * Format: INV-YYYYMMDD-XXXX (e.g. INV-20261011-A89F)
    */
-  private static generateInvoiceNumber(): string {
+  public static generateInvoiceNumber(): string {
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, "0");

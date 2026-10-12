@@ -5,7 +5,6 @@ import {
   User,
   ShieldCheck,
   FileText,
-  CreditCard,
   BedDouble,
   ChevronRight,
 } from "lucide-react"
@@ -13,7 +12,6 @@ import { getSession } from "@/lib/auth-guard"
 import { ReservationService } from "@/modules/reservations/reservation.service"
 import { BillingService } from "@/modules/billing/billing.service"
 import { AppShell } from "@/components/app-shell"
-import { Button } from "@/components/ui/button"
 import {
   StatusBadge,
   MoneyText,
@@ -21,6 +19,7 @@ import {
 import { formatDate, formatStayRange } from "@/lib/date-format"
 import { AllocationActionRow } from "./allocation-action-row"
 import { ReservationBillingCard } from "./reservation-billing-card"
+import { ReservationHeaderActions } from "./reservation-header-actions"
 
 export default async function ReservationDetailPage({
   params,
@@ -121,35 +120,21 @@ export default async function ReservationDetailPage({
             </div>
           </div>
 
-          {/* ONE Contextual Primary Action */}
+          {/* Contextual Header Actions */}
           <div className="shrink-0 self-start lg:self-center">
-            {invoice ? (
-              <Link href={`/billing/${invoice.id}`}>
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-10 text-xs font-semibold gap-1.5">
-                  <CreditCard className="size-3.5" />
-                  <span>Open Invoice</span>
-                </Button>
-              </Link>
-            ) : nextConfirmedRoom ? (
-              <a href={`#room-${nextConfirmedRoom.id}`}>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white h-10 text-xs font-semibold gap-1.5">
-                  <BedDouble className="size-3.5" />
-                  <span>Check In Room {nextConfirmedRoom.room.roomNo}</span>
-                </Button>
-              </a>
-            ) : nextCheckedInRoom ? (
-              <a href={`#room-${nextCheckedInRoom.id}`}>
-                <Button variant="outline" className="h-10 text-xs font-semibold gap-1.5">
-                  <span>Check Out Room {nextCheckedInRoom.room.roomNo}</span>
-                </Button>
-              </a>
-            ) : (
-              <Link href="/reservations/new">
-                <Button variant="outline" className="h-10 text-xs">
-                  New Reservation
-                </Button>
-              </Link>
-            )}
+            <ReservationHeaderActions
+              invoiceId={invoice?.id}
+              nextConfirmedRoom={
+                nextConfirmedRoom
+                  ? { id: nextConfirmedRoom.id, roomNo: nextConfirmedRoom.room.roomNo }
+                  : null
+              }
+              nextCheckedInRoom={
+                nextCheckedInRoom
+                  ? { id: nextCheckedInRoom.id, roomNo: nextCheckedInRoom.room.roomNo }
+                  : null
+              }
+            />
           </div>
         </div>
 
@@ -212,6 +197,8 @@ export default async function ReservationDetailPage({
                           idProofType: reservation.customer.idProofType,
                           idProofNumber: reservation.customer.idProofNumber,
                         }}
+                        invoice={invoice}
+                        estimatedTotal={totalBookingValue}
                       />
                     </div>
                   )

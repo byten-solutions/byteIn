@@ -6,11 +6,14 @@ import {
   RoomStatus,
   InvoiceStatus,
   PaymentStatus,
+  AllocationStatus,
+  ReservationStatus,
   Prisma,
 } from "@prisma/client";
 import { BillingService } from "../src/modules/billing/billing.service";
 import { ReservationService } from "../src/modules/reservations/reservation.service";
 import { CustomerService } from "../src/modules/customers/customer.service";
+import { CheckInOutService } from "../src/modules/check-in-out/check-in-out.service";
 import { enforceRole } from "../src/lib/auth-guard";
 import type { SessionPayload } from "../src/modules/auth/auth.types";
 
@@ -198,14 +201,20 @@ describe("Phase 6: Billing & Payments Tests", () => {
     await prisma.invoiceItem.deleteMany({
       where: {
         invoice: {
-          reservationId: { in: [testReservationId, secondReservationId] },
+          OR: [
+            { reservationId: { in: [testReservationId, secondReservationId] } },
+            { reservation: { createdBy: testStaffUserId } },
+          ],
         },
       },
     });
 
     await prisma.invoice.deleteMany({
       where: {
-        reservationId: { in: [testReservationId, secondReservationId] },
+        OR: [
+          { reservationId: { in: [testReservationId, secondReservationId] } },
+          { reservation: { createdBy: testStaffUserId } },
+        ],
       },
     });
 
@@ -625,6 +634,120 @@ describe("Phase 6: Billing & Payments Tests", () => {
         },
         /Authentication required/
       );
+    });
+  });
+
+  describe("8. Batch 1 Regression: Reservation Auto-Invoicing & Checkout Billing Integration", () => {
+    let autoReservationId: string;
+    let autoInvoiceId: string;
+
+    it("should atomically provision an itemized draft invoice upon reservation creation when autoCreateInvoice is true", async () => {
+      // Create new reservation with autoCreateInvoice = true (3 nights in Room 301 @ $150 = $450)
+      const res = await ReservationService.createReservation(
+        {
+          customerId: testCustomerId,
+          allocations: [
+            {
+              roomId: room301Id,
+              arrivalDate: "2026-11-20",
+              departureDate: "2026-11-23", // 3 nights @ $150
+            },
+          ],
+          autoCreateInvoice: true,
+        },
+        testStaffUserId
+      );
+
+      assert.ok(res.id);
+      autoReservationId = res.id;
+
+      // Verify invoice was automatically provisioned in DB
+      const invoice = await BillingService.getInvoiceByReservationId(res.id);
+      assert.ok(invoice, "Invoice must be automatically provisioned");
+      assert.equal(invoice.reservationId, res.id);
+      assert.equal(invoice.status, InvoiceStatus.DRAFT);
+      assert.equal(invoice.subtotal, "450.00");
+      assert.equal(invoice.grandTotal, "450.00");
+      assert.equal(invoice.balanceDue, "450.00");
+      assert.equal(invoice.totalPaid, "0.00");
+      assert.equal(invoice.items.length, 1);
+      assert.equal(invoice.items[0].quantity, "3.00");
+      assert.equal(invoice.items[0].unitPrice, "150.00");
+      assert.equal(invoice.items[0].lineTotal, "450.00");
+
+      autoInvoiceId = invoice.id;
+    });
+
+    it("should reconcile manual invoice creation idempotently by returning existing active invoice", async () => {
+      // Re-invoking createInvoiceForReservation directly still throws conflict
+      await assert.rejects(
+        async () => {
+          await BillingService.createInvoiceForReservation(
+            { reservationId: autoReservationId },
+            testStaffUserId
+          );
+        },
+        /already exists for this reservation/
+      );
+
+      // But getInvoiceByReservationId reliably fetches the single source of truth
+      const existing = await BillingService.getInvoiceByReservationId(autoReservationId);
+      assert.ok(existing);
+      assert.equal(existing.id, autoInvoiceId);
+    });
+
+    it("should preserve invoice and outstanding balance even after partial payment and allocation checkout", async () => {
+      // Record partial payment of $200.00
+      const { invoice: invoiceAfterPay, receipt } = await BillingService.recordPayment(
+        autoInvoiceId,
+        {
+          amount: 200,
+          paymentMethod: "UPI",
+          referenceNumber: "UPI-BATCH1-9999",
+        },
+        testStaffUserId
+      );
+
+      assert.ok(receipt.receiptNumber);
+      assert.equal(receipt.amountPaid, "200.00");
+      assert.equal(invoiceAfterPay.status, InvoiceStatus.PARTIALLY_PAID);
+      assert.equal(invoiceAfterPay.totalPaid, "200.00");
+      assert.equal(invoiceAfterPay.balanceDue, "250.00");
+
+      // Verify checkout completes cleanly and leaves invoice and unpaid balance intact
+      const freshRes = await prisma.reservation.findUnique({
+        where: { id: autoReservationId },
+        include: { rooms: true },
+      });
+      assert.ok(freshRes && freshRes.rooms.length > 0);
+      const allocId = freshRes.rooms[0].id;
+
+      // Check-in first
+      await prisma.reservationRoom.update({
+        where: { id: allocId },
+        data: { status: AllocationStatus.CHECKED_IN },
+      });
+      await prisma.room.update({
+        where: { id: room301Id },
+        data: { status: RoomStatus.OCCUPIED },
+      });
+
+      // Execute Checkout
+      const checkoutResult = await CheckInOutService.checkOut(
+        { allocationId: allocId, notes: "Guest departed with pending balance" },
+        testStaffUserId
+      );
+
+      assert.equal(checkoutResult.allocationStatus, AllocationStatus.CHECKED_OUT);
+      assert.equal(checkoutResult.roomStatus, RoomStatus.VACANT_DIRTY);
+      assert.equal(checkoutResult.reservationStatus, ReservationStatus.COMPLETED);
+
+      // Verify the invoice and its unpaid balance remain completely visible on billing
+      const finalInvoice = await BillingService.getInvoiceById(autoInvoiceId);
+      assert.ok(finalInvoice);
+      assert.equal(finalInvoice.status, InvoiceStatus.PARTIALLY_PAID);
+      assert.equal(finalInvoice.balanceDue, "250.00");
+      assert.equal(finalInvoice.totalPaid, "200.00");
     });
   });
 });

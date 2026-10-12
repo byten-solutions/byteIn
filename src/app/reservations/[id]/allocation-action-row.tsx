@@ -1,12 +1,16 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   LogIn,
   LogOut,
   AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  ExternalLink,
   Loader2,
   ChevronDown,
   ChevronUp,
@@ -26,6 +30,9 @@ import {
 import { StatusBadge, MoneyText } from "@/components/ui-kit"
 import { getIdProofOptions } from "@/lib/constants"
 import { formatDateTime, formatStayRange } from "@/lib/date-format"
+import { formatMoney } from "@/lib/currency"
+import { cn } from "@/lib/utils"
+import type { InvoiceDetailDTO } from "@/modules/billing/billing.types"
 
 export interface AllocationProps {
   id: string
@@ -59,9 +66,13 @@ interface CustomerProps {
 export function AllocationActionRow({
   allocation: initialAllocation,
   customer,
+  invoice = null,
+  estimatedTotal = 0,
 }: {
   allocation: AllocationProps
   customer: CustomerProps
+  invoice?: InvoiceDetailDTO | null
+  estimatedTotal?: number
 }) {
   const router = useRouter()
   const [allocation, setAllocation] = React.useState(initialAllocation)
@@ -80,6 +91,25 @@ export function AllocationActionRow({
   const [checkOutNotes, setCheckOutNotes] = React.useState("")
   const [submittingCheckOut, setSubmittingCheckOut] = React.useState(false)
   const [checkOutError, setCheckOutError] = React.useState<string | null>(null)
+
+  // Listen for header action triggers
+  React.useEffect(() => {
+    const handleOpenAction = (e: Event) => {
+      const customEvent = e as CustomEvent<{ allocationId: string; action: "checkin" | "checkout" }>
+      if (customEvent.detail && customEvent.detail.allocationId === allocation.id) {
+        if (customEvent.detail.action === "checkout") {
+          setIsCheckOutOpen(true)
+        } else if (customEvent.detail.action === "checkin") {
+          setIsCheckInOpen(true)
+        }
+      }
+    }
+
+    window.addEventListener("byteinn:open-action", handleOpenAction)
+    return () => {
+      window.removeEventListener("byteinn:open-action", handleOpenAction)
+    }
+  }, [allocation.id])
 
   const handleCheckIn = async () => {
     setCheckInError(null)
@@ -385,8 +415,93 @@ export function AllocationActionRow({
               </div>
             )}
 
-            {/* Turnover Notice as one short line */}
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-700 dark:text-amber-300">
+            {/* BILLING SAFEGUARD & BALANCE STATUS */}
+            {invoice ? (
+              <div
+                className={cn(
+                  "rounded-lg border p-3.5 space-y-2.5",
+                  parseFloat(invoice.balanceDue) > 0
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200"
+                )}
+              >
+                <div className="flex items-center justify-between font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    {parseFloat(invoice.balanceDue) > 0 ? (
+                      <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    )}
+                    <span>
+                      {parseFloat(invoice.balanceDue) > 0
+                        ? "Outstanding Balance Notice"
+                        : "Billing Fully Settled"}
+                    </span>
+                  </span>
+                  <StatusBadge status={invoice.status} size="sm" />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-[11px] pt-1 border-t border-border/40">
+                  <div>
+                    <span className="text-muted-foreground block text-[10px]">Grand Total</span>
+                    <MoneyText value={invoice.grandTotal} className="font-semibold text-foreground" />
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[10px]">Paid</span>
+                    <MoneyText value={invoice.totalPaid} className="font-semibold text-foreground" />
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground block text-[10px]">Balance Due</span>
+                    <MoneyText
+                      value={invoice.balanceDue}
+                      className={cn(
+                        "font-bold",
+                        parseFloat(invoice.balanceDue) > 0
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-foreground"
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {parseFloat(invoice.balanceDue) > 0 && (
+                  <div className="pt-2 flex items-center justify-between gap-2 border-t border-amber-500/20">
+                    <span className="text-[11px] text-amber-800 dark:text-amber-300">
+                      Unpaid balance remains on this reservation.
+                    </span>
+                    <Link
+                      href={`/billing/${invoice.id}`}
+                      target="_blank"
+                      className="shrink-0"
+                    >
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[11px] font-semibold gap-1 bg-card hover:bg-card/80 text-foreground"
+                      >
+                        <span>Collect Payment</span>
+                        <ExternalLink className="size-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-1.5 text-amber-900 dark:text-amber-200">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <AlertCircle className="size-4 text-amber-600 shrink-0" />
+                  <span>No Invoice Generated</span>
+                </div>
+                <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                  This reservation does not yet have an active invoice. Estimated stay value:{" "}
+                  <strong>{formatMoney(estimatedTotal)}</strong>.
+                </p>
+              </div>
+            )}
+
+            {/* Turnover Notice */}
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-muted-foreground">
               Checking out transitions Room {allocation.roomNo} to <strong>VACANT_DIRTY</strong> for housekeeping turnover.
             </div>
 
@@ -415,12 +530,19 @@ export function AllocationActionRow({
               size="sm"
               onClick={handleCheckOut}
               disabled={submittingCheckOut}
+              className={
+                parseFloat(invoice?.balanceDue || "0") > 0
+                  ? "bg-amber-600 hover:bg-amber-700 text-white"
+                  : ""
+              }
             >
               {submittingCheckOut ? (
                 <>
                   <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                   Checking Out...
                 </>
+              ) : parseFloat(invoice?.balanceDue || "0") > 0 ? (
+                "Confirm Check Out with Pending Balance"
               ) : (
                 "Confirm Check Out"
               )}

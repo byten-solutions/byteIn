@@ -47,19 +47,37 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const validated = createInvoiceSchema.parse(body);
 
-    const invoice = await BillingService.createInvoiceForReservation(
-      validated,
-      session.sub
-    );
+    try {
+      const invoice = await BillingService.createInvoiceForReservation(
+        validated,
+        session.sub
+      );
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: invoice,
-        message: `Invoice ${invoice.invoiceNumber} successfully created.`,
-      },
-      { status: 201 }
-    );
+      return NextResponse.json(
+        {
+          success: true,
+          data: invoice,
+          message: `Invoice ${invoice.invoiceNumber} successfully created.`,
+        },
+        { status: 201 }
+      );
+    } catch (innerError: unknown) {
+      const msg = innerError instanceof Error ? innerError.message : String(innerError);
+      if (msg.includes("already exists for this reservation")) {
+        const existing = await BillingService.getInvoiceByReservationId(validated.reservationId);
+        if (existing) {
+          return NextResponse.json(
+            {
+              success: true,
+              data: existing,
+              message: `Active invoice ${existing.invoiceNumber} retrieved.`,
+            },
+            { status: 200 }
+          );
+        }
+      }
+      throw innerError;
+    }
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });

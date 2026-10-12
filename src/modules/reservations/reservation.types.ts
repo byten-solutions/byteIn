@@ -27,6 +27,7 @@ export interface CreateReservationInput {
   newCustomer?: CreateCustomerInput;
   specialRequests?: string | null;
   allocations: RoomAllocationInput[];
+  autoCreateInvoice?: boolean;
 }
 
 export interface ReservationFilterOptions {

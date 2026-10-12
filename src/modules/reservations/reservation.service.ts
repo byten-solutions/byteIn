@@ -1,6 +1,14 @@
 import crypto from "crypto";
-import { Prisma, RoomStatus, AllocationStatus, ReservationStatus } from "@prisma/client";
+import {
+  Prisma,
+  RoomStatus,
+  AllocationStatus,
+  ReservationStatus,
+  InvoiceStatus,
+  InvoiceItemType,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { BillingService } from "../billing/billing.service";
 import {
   BadRequestError,
   ConflictError,
@@ -132,7 +140,8 @@ export class ReservationService {
    */
   static async createReservation(
     input: CreateReservationInput,
-    creatorUserId: string
+    creatorUserId: string,
+    options?: { autoCreateInvoice?: boolean }
   ) {
     if (!input.allocations || input.allocations.length === 0) {
       throw new Error("At least one room allocation is required");
@@ -341,6 +350,87 @@ export class ReservationService {
               },
             },
           });
+
+          // 8. Auto-provision initial itemized invoice if requested
+          const shouldCreateInvoice =
+            input.autoCreateInvoice ?? options?.autoCreateInvoice ?? false;
+          if (shouldCreateInvoice) {
+            let invoiceNumber = BillingService.generateInvoiceNumber();
+            let invExists = await tx.invoice.findUnique({
+              where: { invoiceNumber },
+            });
+            while (invExists) {
+              invoiceNumber = BillingService.generateInvoiceNumber();
+              invExists = await tx.invoice.findUnique({
+                where: { invoiceNumber },
+              });
+            }
+
+            let subtotal = new Prisma.Decimal(0);
+            const itemsToCreate: Array<{
+              reservationRoomId: string;
+              description: string;
+              quantity: Prisma.Decimal;
+              unitPrice: Prisma.Decimal;
+              lineTotal: Prisma.Decimal;
+              itemType: InvoiceItemType;
+            }> = [];
+
+            for (const alloc of createdReservation.rooms) {
+              const diffMs = alloc.departureDate.getTime() - alloc.arrivalDate.getTime();
+              const nights = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+              const unitPrice = new Prisma.Decimal(alloc.bookedNightlyRate.toString());
+              const lineTotal = unitPrice.mul(nights);
+              subtotal = subtotal.add(lineTotal);
+
+              const arrStr = alloc.arrivalDate.toISOString().split("T")[0];
+              const depStr = alloc.departureDate.toISOString().split("T")[0];
+              const desc = `Room ${alloc.room.roomNo} (${alloc.roomCategory.name}) — ${nights} night${nights === 1 ? "" : "s"} (${arrStr} to ${depStr})`;
+
+              itemsToCreate.push({
+                reservationRoomId: alloc.id,
+                description: desc,
+                quantity: new Prisma.Decimal(nights),
+                unitPrice,
+                lineTotal,
+                itemType: InvoiceItemType.ROOM_CHARGE,
+              });
+            }
+
+            const grandTotal = subtotal;
+
+            const invoice = await tx.invoice.create({
+              data: {
+                reservationId: createdReservation.id,
+                invoiceNumber,
+                subtotal,
+                discountTotal: new Prisma.Decimal(0),
+                taxTotal: new Prisma.Decimal(0),
+                grandTotal,
+                status: InvoiceStatus.DRAFT,
+                items: {
+                  create: itemsToCreate,
+                },
+              },
+            });
+
+            await tx.auditLog.create({
+              data: {
+                userId: creatorUserId,
+                entityType: "Invoice",
+                entityId: invoice.id,
+                action: "INVOICE_CREATED",
+                newData: {
+                  invoiceNumber: invoice.invoiceNumber,
+                  reservationId: createdReservation.id,
+                  grandTotal: invoice.grandTotal.toString(),
+                  status: invoice.status,
+                  itemCount: itemsToCreate.length,
+                  source: "AUTO_RESERVATION_CREATION",
+                },
+              },
+            });
+          }
 
           return createdReservation;
         },

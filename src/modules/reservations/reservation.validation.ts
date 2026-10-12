@@ -100,6 +100,7 @@ export const createReservationSchema = z
     allocations: z
       .array(roomAllocationSchema)
       .min(1, "At least one room allocation is required"),
+    autoCreateInvoice: z.boolean().optional().default(true),
   })
   .refine(
     (data) => Boolean(data.customerId || data.newCustomer),
