@@ -10,6 +10,7 @@ import {
   Users,
   BedDouble,
   SlidersHorizontal,
+  BarChart3,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { NavUser } from "@/components/nav-user"
@@ -48,6 +49,11 @@ const navItems = [
         title: "Guests",
         href: "/customers",
         icon: Users,
+      },
+      {
+        title: "Reports",
+        href: "/reports",
+        icon: BarChart3,
       },
     ],
   },

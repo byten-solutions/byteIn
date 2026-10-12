@@ -72,12 +72,12 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Issue receipts
 - Record refunds if refunds are allowed by the final cancellation/payment policy
 
-### Phase 7 — Reports
-- Occupancy report
-- Revenue report
-- Today's arrivals
-- Today's departures
-- Reservation status report
+### Phase 7 — Reports (Completed)
+- Occupancy report (REP-004: historical room nights, half-open intervals, zero-division guards)
+- Revenue report (REP-005: invoiced revenue vs collected payments, payment methods, extra charges)
+- Today's arrivals and departures (Phase 5 check-in/out board & Phase 7 reporting)
+- Reservation status report (REP-006: confirmed, in-house, completed, cancelled counts, ALOS)
+- Dedicated `/reports` page and navigation (REP-007: filters, stat cards, progress bars, print view)
 
 Use clearly defined calculation rules for each report; do not treat room price, invoiced revenue, and collected payments as interchangeable figures.
 

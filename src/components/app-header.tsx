@@ -23,6 +23,7 @@ const routeTitles: Record<string, string> = {
   "/reservations/new": "New Reservation",
   "/billing": "Billing",
   "/customers": "Guests",
+  "/reports": "Reports & Analytics",
   "/rooms": "Rooms",
   "/categories": "Room Categories",
 }

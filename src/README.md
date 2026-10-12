@@ -15,9 +15,16 @@ src/
 │   │   ├── buildings/     # Building & floor endpoints (/api/buildings/[id]/floors)
 │   │   ├── room-categories/# Category endpoints (/api/room-categories, /api/room-categories/[id])
 │   │   ├── amenities/     # Amenity endpoints (/api/amenities)
-│   │   └── rooms/         # Room inventory & status endpoints (/api/rooms, /api/rooms/[id]/status)
+│   │   ├── rooms/         # Room inventory & status endpoints (/api/rooms, /api/rooms/[id]/status)
+│   │   ├── reservations/  # Reservation endpoints (/api/reservations, /api/reservations/[id])
+│   │   ├── room-allocations/# Allocation check-in and check-out endpoints
+│   │   ├── invoices/      # Billing & payment endpoints (/api/invoices, items, payments, void)
+│   │   └── reports/       # Phase 7 operational & financial reports (/api/reports/occupancy, revenue, reservations)
 │   ├── categories/        # Room Categories & Setup view (/categories)
 │   ├── rooms/             # Room Inventory & Status Board (/rooms)
+│   ├── reservations/      # Reservation list, detail, and booking view (/reservations)
+│   ├── billing/           # Invoices, payments, receipts, and print views (/billing)
+│   ├── reports/           # Dedicated Phase 7 Operational & Financial Reports view (/reports)
 │   ├── login/             # Login view (/login)
 │   ├── globals.css        # Tailwind CSS v4 styling & shadcn design tokens
 │   ├── layout.tsx         # Root HTML layout and font definitions
@@ -38,7 +45,10 @@ src/
 ├── modules/               # Domain services and business logic
 │   ├── auth/              # AuthService, validation schemas, and types
 │   ├── properties/        # PropertyService, validations, and types
-│   └── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
+│   ├── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
+│   ├── reservations/      # ReservationService, validations, and types
+│   ├── billing/           # BillingService, invoice calculation, receipts, and validations
+│   └── reports/           # ReportsService (Occupancy, Revenue vs Collections, Reservation Status)
 └── README.md              # Source architecture guide
 ```
 
