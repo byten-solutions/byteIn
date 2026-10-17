@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
+import { handleApiError } from "@/lib/errors";
 
 export async function POST(
   req: NextRequest,
@@ -18,11 +19,6 @@ export async function POST(
       message: "Payment successfully voided.",
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    const message = error instanceof Error ? error.message : "Failed to void payment";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

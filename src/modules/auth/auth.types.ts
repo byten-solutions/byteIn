@@ -7,6 +7,8 @@ export interface SessionPayload {
   email: string;
   name: string;
   role: RoleName;
+  tokenVersion?: number;
+  mustChangePassword?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -17,6 +19,7 @@ export interface SafeUser {
   email: string;
   role: RoleName;
   status: string;
+  mustChangePassword?: boolean;
   lastLoginAt: Date | null;
   createdAt: Date;
 }
@@ -24,6 +27,11 @@ export interface SafeUser {
 export interface LoginInput {
   email: string;
   password: string;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface AuthResult {

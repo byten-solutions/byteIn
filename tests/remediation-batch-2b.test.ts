@@ -36,10 +36,15 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
       where: { role: { name: RoleName.ADMIN } },
       include: { role: true },
     });
-    const receptionistUser = await prisma.user.findFirst({
-      where: { role: { name: RoleName.RECEPTIONIST } },
-      include: { role: true },
-    });
+    const receptionistUser =
+      (await prisma.user.findFirst({
+        where: { email: "reception@byteinn.local" },
+        include: { role: true },
+      })) ||
+      (await prisma.user.findFirst({
+        where: { role: { name: RoleName.RECEPTIONIST }, mustChangePassword: false },
+        include: { role: true },
+      }));
     assert.ok(adminUser, "Admin required");
     assert.ok(receptionistUser, "Receptionist required");
 

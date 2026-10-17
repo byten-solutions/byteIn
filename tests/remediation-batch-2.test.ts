@@ -24,10 +24,15 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
 
   before(async () => {
     // 1. Locate receptionist user
-    const receptionistUser = await prisma.user.findFirst({
-      where: { role: { name: RoleName.RECEPTIONIST } },
-      include: { role: true },
-    });
+    const receptionistUser =
+      (await prisma.user.findFirst({
+        where: { email: "reception@byteinn.local" },
+        include: { role: true },
+      })) ||
+      (await prisma.user.findFirst({
+        where: { role: { name: RoleName.RECEPTIONIST }, mustChangePassword: false },
+        include: { role: true },
+      }));
     assert.ok(receptionistUser, "Receptionist user required for test");
     receptionistUserId = receptionistUser.id;
 

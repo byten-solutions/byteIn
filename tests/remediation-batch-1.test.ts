@@ -28,10 +28,15 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       where: { role: { name: RoleName.ADMIN } },
       include: { role: true },
     });
-    const receptionistUser = await prisma.user.findFirst({
-      where: { role: { name: RoleName.RECEPTIONIST } },
-      include: { role: true },
-    });
+    const receptionistUser =
+      (await prisma.user.findFirst({
+        where: { email: "reception@byteinn.local" },
+        include: { role: true },
+      })) ||
+      (await prisma.user.findFirst({
+        where: { role: { name: RoleName.RECEPTIONIST }, mustChangePassword: false },
+        include: { role: true },
+      }));
 
     assert.ok(adminUser, "Admin user required for test");
     assert.ok(receptionistUser, "Receptionist user required for test");

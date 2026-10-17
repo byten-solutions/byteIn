@@ -5,9 +5,11 @@ import { AuthError, requireAuth } from "@/lib/auth-guard";
 import { RoomService } from "@/modules/rooms/room.service";
 import { createRoomSchema } from "@/modules/rooms/room.validation";
 
+import { handleApiError } from "@/lib/errors";
+
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
 
     const propertyId = searchParams.get("propertyId") || undefined;
@@ -32,17 +34,13 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: true, rooms });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("GET /api/rooms error:", error);
-    return NextResponse.json({ error: "Failed to fetch rooms" }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN]);
+    await requireAuth([RoleName.ADMIN], req);
     const body = await req.json();
     const validated = createRoomSchema.parse(body);
     const room = await RoomService.createRoom(validated);

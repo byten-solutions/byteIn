@@ -6,9 +6,11 @@ import {
   RoleName,
   type AuthResult,
   type LoginInput,
+  type ChangePasswordInput,
   type SafeUser,
   type SessionPayload,
 } from "./auth.types";
+import { BadRequestError, ForbiddenError, NotFoundError } from "@/lib/errors";
 
 export const MIN_SESSION_SECRET_LENGTH = 32;
 
@@ -88,6 +90,8 @@ export class AuthService {
       email: payload.email,
       name: payload.name,
       role: payload.role,
+      tokenVersion: payload.tokenVersion ?? 1,
+      mustChangePassword: payload.mustChangePassword ?? false,
     })
       .setProtectedHeader({ alg: "HS256" })
       .setSubject(payload.sub)
@@ -118,6 +122,8 @@ export class AuthService {
         email: payload.email as string,
         name: (payload.name as string) || "",
         role: payload.role as SessionPayload["role"],
+        tokenVersion: typeof payload.tokenVersion === "number" ? payload.tokenVersion : 1,
+        mustChangePassword: Boolean(payload.mustChangePassword),
         iat: payload.iat,
         exp: payload.exp,
       };
@@ -198,6 +204,8 @@ export class AuthService {
       email: user.email,
       name: user.name,
       role: user.role.name,
+      tokenVersion: user.tokenVersion,
+      mustChangePassword: user.mustChangePassword,
     };
     const token = await this.createSessionToken(sessionPayload);
 
@@ -207,6 +215,7 @@ export class AuthService {
       email: user.email,
       role: user.role.name,
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
       lastLoginAt: now,
       createdAt: user.createdAt,
     };
@@ -214,6 +223,105 @@ export class AuthService {
     return {
       user: safeUser,
       token,
+    };
+  }
+
+  /**
+   * Updates user password, clears mustChangePassword, increments tokenVersion to
+   * invalidate other active sessions, and issues a fresh session token.
+   */
+  static async changePassword(
+    userId: string,
+    input: ChangePasswordInput,
+    metadata?: { ip?: string; userAgent?: string }
+  ): Promise<{ token: string; user: SafeUser }> {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { role: true },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    if (user.status !== "ACTIVE") {
+      throw new ForbiddenError("Account is disabled");
+    }
+
+    // 1. Verify current password
+    const isCurrentValid = await this.verifyPassword(input.currentPassword, user.passwordHash);
+    if (!isCurrentValid) {
+      throw new BadRequestError("Current password is incorrect");
+    }
+
+    // 2. Validate new password complexity
+    const newPass = input.newPassword;
+    if (!newPass || typeof newPass !== "string") {
+      throw new BadRequestError("New password is required");
+    }
+    if (newPass.length < 8) {
+      throw new BadRequestError("New password must be at least 8 characters long");
+    }
+    if (!/[A-Z]/.test(newPass)) {
+      throw new BadRequestError("New password must contain at least one uppercase letter");
+    }
+    if (!/[a-z]/.test(newPass)) {
+      throw new BadRequestError("New password must contain at least one lowercase letter");
+    }
+    if (!/[0-9]/.test(newPass)) {
+      throw new BadRequestError("New password must contain at least one number");
+    }
+    if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(newPass)) {
+      throw new BadRequestError("New password must contain at least one special character");
+    }
+
+    if (input.currentPassword === newPass) {
+      throw new BadRequestError("New password cannot be the same as the current password");
+    }
+
+    // 3. Hash new password & atomically update user with incremented tokenVersion
+    const newHash = await this.hashPassword(newPass);
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        mustChangePassword: false,
+        tokenVersion: { increment: 1 },
+      },
+      include: { role: true },
+    });
+
+    // 4. Record audit log
+    await this.recordAuditLog(user.id, "PASSWORD_CHANGED", {
+      action: "In-app password change",
+      previousTokenVersion: user.tokenVersion,
+      newTokenVersion: updatedUser.tokenVersion,
+      ...metadata,
+    });
+
+    // 5. Mint new session token for the current session with the updated tokenVersion
+    const newSessionPayload: SessionPayload = {
+      sub: updatedUser.id,
+      email: updatedUser.email,
+      name: updatedUser.name,
+      role: updatedUser.role.name,
+      tokenVersion: updatedUser.tokenVersion,
+      mustChangePassword: false,
+    };
+    const token = await this.createSessionToken(newSessionPayload);
+
+    return {
+      token,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role.name,
+        status: updatedUser.status,
+        mustChangePassword: false,
+        lastLoginAt: updatedUser.lastLoginAt,
+        createdAt: updatedUser.createdAt,
+      },
     };
   }
 

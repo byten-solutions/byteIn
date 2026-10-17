@@ -295,3 +295,49 @@ export interface ReceivablesReportDTO {
   }
   items: ReceivableItemDTO[]
 }
+
+// ----------------------------------------------------------------------------
+// 8. Discounts and Rate Overrides Concession Report (ADV-BIL-02)
+// ----------------------------------------------------------------------------
+
+export interface InvoiceDiscountItemDTO {
+  invoiceId: string
+  invoiceNumber: string
+  reservationId: string
+  reservationNo: string
+  customerName: string
+  discountTotal: string
+  items: Array<{
+    description: string
+    unitPrice: string
+    lineTotal: string
+  }>
+  createdAt: string
+}
+
+export interface RateOverrideItemDTO {
+  reservationId: string
+  reservationNo: string
+  allocationId: string
+  roomNo: string
+  categoryName: string
+  basePrice: string
+  bookedRate: string
+  rateVariance: string
+  nights: number
+  totalVariance: string
+  arrivalDate: string
+  departureDate: string
+}
+
+export interface DiscountsReportDTO {
+  summary: {
+    totalInvoiceDiscounts: string
+    totalRateOverrideDiscounts: string
+    totalConcessionImpact: string
+    discountedInvoicesCount: number
+    rateOverridesCount: number
+  }
+  invoiceDiscounts: InvoiceDiscountItemDTO[]
+  rateOverrides: RateOverrideItemDTO[]
+}

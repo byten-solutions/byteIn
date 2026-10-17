@@ -5,11 +5,13 @@ import { getSessionCookie } from "./session";
 
 export class AuthError extends Error {
   statusCode: number;
+  mustChangePassword?: boolean;
 
-  constructor(message: string, statusCode = 401) {
+  constructor(message: string, statusCode = 401, mustChangePassword = false) {
     super(message);
     this.name = "AuthError";
     this.statusCode = statusCode;
+    this.mustChangePassword = mustChangePassword;
   }
 }
 
@@ -43,11 +45,17 @@ export async function getSession(
       return null;
     }
 
+    if (payload.tokenVersion !== undefined && user.tokenVersion !== payload.tokenVersion) {
+      return null;
+    }
+
     return {
       ...payload,
       role: user.role.name as RoleName,
       name: user.name,
       email: user.email,
+      tokenVersion: user.tokenVersion,
+      mustChangePassword: user.mustChangePassword,
     };
   } catch {
     return null;
@@ -82,9 +90,11 @@ export function enforceRole(
  * Enforces authentication and role-based access control with database-level freshness.
  * - Cryptographically verifies session token.
  * - Validates user existence and ACTIVE status in PostgreSQL.
+ * - Enforces token_version matches DB (session invalidation).
+ * - Enforces must_change_password redirect guard.
  * - Enforces permissions against the user's current database role.
- * - Throws AuthError(401) if unauthenticated or user deleted.
- * - Throws AuthError(403) if user account is disabled or lacks permitted role.
+ * - Throws AuthError(401) if unauthenticated or user deleted or session invalidated.
+ * - Throws AuthError(403) if user account is disabled, must change password, or lacks permitted role.
  */
 export async function requireAuth(
   allowedRoles?: RoleName[],
@@ -121,11 +131,39 @@ export async function requireAuth(
     throw new AuthError("User account is disabled", 403);
   }
 
+  if (payload.tokenVersion !== undefined && user.tokenVersion !== payload.tokenVersion) {
+    throw new AuthError("Session has been invalidated. Please log in again.", 401);
+  }
+
+  if (user.mustChangePassword) {
+    let isAllowedPath = false;
+    if (explicitTokenOrReq && typeof explicitTokenOrReq !== "string" && "url" in explicitTokenOrReq) {
+      const urlStr = (explicitTokenOrReq as Request).url;
+      try {
+        const pathname = new URL(urlStr).pathname;
+        if (
+          pathname.startsWith("/api/auth/change-password") ||
+          pathname.startsWith("/api/auth/logout") ||
+          pathname.startsWith("/api/auth/me")
+        ) {
+          isAllowedPath = true;
+        }
+      } catch {
+        // invalid URL format
+      }
+    }
+    if (!isAllowedPath) {
+      throw new AuthError("Password change required before accessing system functions", 403, true);
+    }
+  }
+
   const verifiedSession: SessionPayload = {
     ...payload,
     role: user.role.name as RoleName,
     name: user.name,
     email: user.email,
+    tokenVersion: user.tokenVersion,
+    mustChangePassword: user.mustChangePassword,
   };
 
   return enforceRole(verifiedSession, allowedRoles);

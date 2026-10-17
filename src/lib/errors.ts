@@ -77,7 +77,13 @@ export function handleApiError(
   fallbackMessage = "An unexpected internal server error occurred"
 ): NextResponse {
   if (error instanceof AuthError) {
-    return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    return NextResponse.json(
+      {
+        error: error.message,
+        ...(error.mustChangePassword ? { mustChangePassword: true } : {}),
+      },
+      { status: error.statusCode }
+    );
   }
 
   if (error instanceof ZodError) {

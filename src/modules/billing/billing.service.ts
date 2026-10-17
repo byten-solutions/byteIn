@@ -6,6 +6,8 @@ import {
   PaymentStatus,
   Prisma,
 } from "@prisma/client";
+import { BadRequestError, ForbiddenError, NotFoundError } from "@/lib/errors";
+import { getHotelTodayDate } from "@/lib/date";
 import {
   CreateInvoiceInput,
   AddInvoiceItemInput,
@@ -947,15 +949,30 @@ export class BillingService {
       });
 
       if (!payment) {
-        throw new Error("Payment not found");
+        throw new NotFoundError("Payment not found");
       }
 
       if (invoiceId && payment.invoiceId !== invoiceId) {
-        throw new Error("Payment does not belong to the specified invoice");
+        throw new BadRequestError("Payment does not belong to the specified invoice");
       }
 
       if (payment.status === PaymentStatus.VOIDED) {
-        throw new Error("Payment is already voided");
+        throw new BadRequestError("Payment is already voided");
+      }
+
+      // Invariant: Receptionists can only void same-business-day payments. Older payments require ADMIN.
+      const hotelToday = getHotelTodayDate();
+      const paymentDate = getHotelTodayDate(payment.paidAt);
+      if (hotelToday !== paymentDate) {
+        const caller = await tx.user.findUnique({
+          where: { id: staffUserId },
+          include: { role: true },
+        });
+        if (caller?.role.name !== "ADMIN") {
+          throw new ForbiddenError(
+            "Receptionists can only void same-business-day payments. Voiding older payments requires Administrator privileges."
+          );
+        }
       }
 
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${payment.invoiceId} FOR UPDATE`;

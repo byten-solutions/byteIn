@@ -29,6 +29,9 @@ import type {
   StaffCollectionBreakdownDTO,
   ReceivablesReportDTO,
   ReceivableItemDTO,
+  DiscountsReportDTO,
+  InvoiceDiscountItemDTO,
+  RateOverrideItemDTO,
 } from "./reports.types"
 import { getHotelTodayDate, getHotelTodayDateUtc } from "@/lib/date"
 import { EXCLUDE_PAST_CONFIRMED_FROM_OCCUPANCY, FUTURE_OCCUPANCY_POLICY } from "@/config/reports"
@@ -1363,6 +1366,159 @@ export class ReportsService {
         bucket60Plus: b60Plus.toFixed(2),
       },
       items,
+    }
+  }
+
+  /**
+   * Generates an itemized report of invoice discounts and room rate overrides (ADV-BIL-02).
+   */
+  static async getDiscountsReport(filters: Partial<ReportFilterDTO> = {}): Promise<DiscountsReportDTO> {
+    const { startDate, endDate, propertyId } = filters
+
+    // 1. Fetch invoices with discounts (discountTotal > 0 or items with itemType: DISCOUNT)
+    const invoiceWhere: Prisma.InvoiceWhereInput = {
+      status: { not: InvoiceStatus.VOID },
+      OR: [
+        { discountTotal: { gt: 0 } },
+        { items: { some: { itemType: InvoiceItemType.DISCOUNT } } },
+      ],
+    }
+
+    if (propertyId) {
+      invoiceWhere.reservation = {
+        rooms: {
+          some: {
+            room: { propertyId },
+          },
+        },
+      }
+    }
+
+    if (startDate || endDate) {
+      invoiceWhere.createdAt = {}
+      if (startDate) {
+        invoiceWhere.createdAt.gte = new Date(`${startDate}T00:00:00.000Z`)
+      }
+      if (endDate) {
+        invoiceWhere.createdAt.lte = new Date(`${endDate}T23:59:59.999Z`)
+      }
+    }
+
+    const invoices = await prisma.invoice.findMany({
+      where: invoiceWhere,
+      include: {
+        reservation: {
+          include: { customer: true },
+        },
+        items: true,
+      },
+      orderBy: { createdAt: "desc" },
+    })
+
+    let totalInvoiceDiscountsDec = new Prisma.Decimal(0)
+    const invoiceDiscounts: InvoiceDiscountItemDTO[] = []
+
+    for (const inv of invoices) {
+      const discountItems = inv.items.filter((i) => i.itemType === InvoiceItemType.DISCOUNT)
+      let invDiscountDec = new Prisma.Decimal(inv.discountTotal)
+      if (invDiscountDec.isZero() && discountItems.length > 0) {
+        invDiscountDec = discountItems.reduce((sum, item) => sum.add(item.lineTotal.abs()), new Prisma.Decimal(0))
+      }
+
+      totalInvoiceDiscountsDec = totalInvoiceDiscountsDec.add(invDiscountDec)
+
+      invoiceDiscounts.push({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        reservationId: inv.reservationId,
+        reservationNo: inv.reservation.reservationNo,
+        customerName: `${inv.reservation.customer.firstName} ${inv.reservation.customer.lastName || ""}`.trim(),
+        discountTotal: invDiscountDec.toFixed(2),
+        items: discountItems.map((item) => ({
+          description: item.description,
+          unitPrice: item.unitPrice.toFixed(2),
+          lineTotal: item.lineTotal.toFixed(2),
+        })),
+        createdAt: inv.createdAt.toISOString(),
+      })
+    }
+
+    // 2. Fetch room allocations where bookedNightlyRate < category.basePrice
+    const allocWhere: Prisma.ReservationRoomWhereInput = {
+      status: { not: AllocationStatus.CANCELLED },
+    }
+
+    if (propertyId) {
+      allocWhere.room = { propertyId }
+    }
+
+    if (startDate || endDate) {
+      if (startDate) {
+        allocWhere.arrivalDate = { gte: new Date(`${startDate}T00:00:00.000Z`) }
+      }
+      if (endDate) {
+        allocWhere.departureDate = { lte: new Date(`${endDate}T23:59:59.999Z`) }
+      }
+    }
+
+    const allocations = await prisma.reservationRoom.findMany({
+      where: allocWhere,
+      include: {
+        room: true,
+        roomCategory: true,
+        reservation: {
+          include: { customer: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    })
+
+    let totalRateOverrideDiscountsDec = new Prisma.Decimal(0)
+    const rateOverrides: RateOverrideItemDTO[] = []
+
+    for (const alloc of allocations) {
+      const basePriceDec = new Prisma.Decimal(alloc.roomCategory.basePrice)
+      const bookedRateDec = new Prisma.Decimal(alloc.bookedNightlyRate)
+
+      if (bookedRateDec.lessThan(basePriceDec)) {
+        const varianceDec = basePriceDec.minus(bookedRateDec)
+        const nights = Math.max(
+          1,
+          Math.round((alloc.departureDate.getTime() - alloc.arrivalDate.getTime()) / (1000 * 60 * 60 * 24))
+        )
+        const totalVarianceDec = varianceDec.mul(nights)
+
+        totalRateOverrideDiscountsDec = totalRateOverrideDiscountsDec.add(totalVarianceDec)
+
+        rateOverrides.push({
+          reservationId: alloc.reservationId,
+          reservationNo: alloc.reservation.reservationNo,
+          allocationId: alloc.id,
+          roomNo: alloc.room.roomNo,
+          categoryName: alloc.roomCategory.name,
+          basePrice: basePriceDec.toFixed(2),
+          bookedRate: bookedRateDec.toFixed(2),
+          rateVariance: varianceDec.toFixed(2),
+          nights,
+          totalVariance: totalVarianceDec.toFixed(2),
+          arrivalDate: alloc.arrivalDate.toISOString().split("T")[0]!,
+          departureDate: alloc.departureDate.toISOString().split("T")[0]!,
+        })
+      }
+    }
+
+    const totalConcessionDec = totalInvoiceDiscountsDec.add(totalRateOverrideDiscountsDec)
+
+    return {
+      summary: {
+        totalInvoiceDiscounts: totalInvoiceDiscountsDec.toFixed(2),
+        totalRateOverrideDiscounts: totalRateOverrideDiscountsDec.toFixed(2),
+        totalConcessionImpact: totalConcessionDec.toFixed(2),
+        discountedInvoicesCount: invoiceDiscounts.length,
+        rateOverridesCount: rateOverrides.length,
+      },
+      invoiceDiscounts,
+      rateOverrides,
     }
   }
 }
