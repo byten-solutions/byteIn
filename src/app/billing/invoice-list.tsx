@@ -97,16 +97,16 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
       />
 
       {/* Slim Summary Strip (Replaces big KPI cards) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/70 bg-card p-4 px-6 text-xs shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/80 bg-card p-4 px-5 text-xs shadow-2xs">
         <div className="flex items-center gap-6 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Invoiced:</span>
-            <MoneyText value={data.summary.totalInvoiced} className="font-bold text-foreground text-sm" />
+            <MoneyText value={data.summary.totalInvoiced} className="font-bold text-foreground text-sm font-mono tabular-nums" />
           </div>
           <span className="text-muted-foreground/30">•</span>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Collected:</span>
-            <MoneyText value={data.summary.totalCollected} className="font-bold text-emerald-600 dark:text-emerald-400 text-sm" />
+            <MoneyText value={data.summary.totalCollected} className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono tabular-nums" />
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
           <MoneyText
             value={data.summary.totalOutstanding}
             className={cn(
-              "text-sm font-bold",
+              "text-sm font-bold font-mono tabular-nums",
               totalOutstandingNum > 0
                 ? "text-amber-600 dark:text-amber-400 font-extrabold"
                 : "text-foreground"
@@ -127,17 +127,17 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
       {/* Toolbar: Search + Status Chips */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/70" />
           <Input
             placeholder="Search invoice #, guest, or phone..."
-            className="pl-9 h-10 text-xs sm:text-sm bg-card"
+            className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
         {/* Status filter chips */}
-        <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shrink-0 overflow-x-auto">
+        <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shrink-0 overflow-x-auto shadow-2xs">
           {STATUS_FILTERS.map((tab) => {
             const active = statusFilter === tab.value
             return (
@@ -146,9 +146,9 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
                 type="button"
                 onClick={() => setStatusFilter(tab.value)}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
+                  "px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                   active
-                    ? "bg-card text-foreground shadow-xs font-semibold"
+                    ? "bg-card text-foreground shadow-2xs font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >

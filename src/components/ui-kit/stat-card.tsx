@@ -24,8 +24,8 @@ export function StatCard({
   const content = (
     <div
       className={cn(
-        "group relative flex flex-col justify-between rounded-xl border border-border/70 bg-card p-5 text-card-foreground shadow-xs transition-all duration-150",
-        href && "hover:border-primary/40 hover:bg-muted/30 hover:shadow-sm cursor-pointer",
+        "group relative flex flex-col justify-between rounded-xl border border-border/80 bg-card p-4 sm:p-5 text-card-foreground shadow-2xs transition-all duration-150",
+        href && "hover:border-primary/50 hover:shadow-xs cursor-pointer",
         className
       )}
     >
@@ -33,27 +33,27 @@ export function StatCard({
         <div className="flex items-center gap-2">
           {indicatorColor && (
             <span
-              className={cn("size-2 rounded-full shrink-0", indicatorColor)}
+              className={cn("size-2 rounded-full shrink-0 shadow-2xs", indicatorColor)}
               aria-hidden="true"
             />
           )}
-          <span className="text-xs font-medium text-muted-foreground tracking-wide uppercase">
+          <span className="text-xs font-semibold text-muted-foreground tracking-normal">
             {label}
           </span>
         </div>
         {icon && (
-          <div className="text-muted-foreground/70 group-hover:text-foreground transition-colors">
+          <div className="text-muted-foreground/60 group-hover:text-foreground transition-colors">
             {icon}
           </div>
         )}
       </div>
 
-      <div className="mt-3">
-        <div className="text-2xl font-bold tracking-tight text-foreground font-mono">
+      <div className="mt-3 flex items-baseline justify-between gap-2">
+        <div className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-mono tabular-nums">
           {value}
         </div>
         {subtext && (
-          <div className="mt-1 text-xs text-muted-foreground line-clamp-1">
+          <div className="text-xs text-muted-foreground line-clamp-1 text-right">
             {subtext}
           </div>
         )}
@@ -62,7 +62,14 @@ export function StatCard({
   )
 
   if (href) {
-    return <Link href={href} className="block outline-hidden focus-visible:ring-2 focus-visible:ring-ring rounded-xl">{content}</Link>
+    return (
+      <Link
+        href={href}
+        className="block outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl"
+      >
+        {content}
+      </Link>
+    )
   }
 
   return content

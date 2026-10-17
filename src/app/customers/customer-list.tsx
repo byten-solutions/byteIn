@@ -252,9 +252,9 @@ export function CustomerList({
               setFormError(null)
               setIsRegisterOpen(true)
             }}
-            className="h-9 bg-primary text-primary-foreground hover:bg-primary/90 font-medium gap-1.5"
+            className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs font-semibold"
           >
-            <Plus className="size-4" />
+            <Plus className="size-3.5" />
             <span>Register Guest</span>
           </Button>
         }
@@ -263,10 +263,10 @@ export function CustomerList({
       {/* Toolbar: Search input */}
       <div className="flex items-center justify-between">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/70" />
           <Input
             placeholder="Search by guest name, phone, email, or ID..."
-            className="pl-9 h-10 text-xs sm:text-sm bg-card"
+            className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)

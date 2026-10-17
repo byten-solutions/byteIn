@@ -100,7 +100,7 @@ export function DataTableShell({
   return (
     <div className={cn("space-y-4", className)}>
       {/* Desktop view (md and up) */}
-      <div className={cn("overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs", mobileView && "hidden md:block")}>
+      <div className={cn("overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs", mobileView && "hidden md:block")}>
         {children}
       </div>
 
@@ -111,9 +111,9 @@ export function DataTableShell({
       {pagination && pagination.totalPages > 1 && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 py-2 text-xs text-muted-foreground">
           <div>
-            Showing <span className="font-mono font-medium text-foreground">{startRecord}</span> to{" "}
-            <span className="font-mono font-medium text-foreground">{endRecord}</span> of{" "}
-            <span className="font-mono font-medium text-foreground">{pagination.totalCount}</span> entries
+            Showing <span className="font-mono tabular-nums font-semibold text-foreground">{startRecord}</span> to{" "}
+            <span className="font-mono tabular-nums font-semibold text-foreground">{endRecord}</span> of{" "}
+            <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.totalCount}</span> entries
           </div>
 
           <div className="flex items-center gap-1.5 self-end sm:self-auto">
@@ -128,8 +128,8 @@ export function DataTableShell({
               Previous
             </Button>
             <div className="px-2 text-xs">
-              Page <span className="font-mono font-semibold text-foreground">{pagination.page}</span> of{" "}
-              <span className="font-mono font-semibold text-foreground">{pagination.totalPages}</span>
+              Page <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.page}</span> of{" "}
+              <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.totalPages}</span>
             </div>
             <Button
               variant="outline"

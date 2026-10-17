@@ -1,7 +1,6 @@
 import Link from "next/link"
 import {
   BedDouble,
-  CalendarDays,
   Plus,
   ShieldCheck,
   ArrowRight,
@@ -17,7 +16,6 @@ import { getHotelTodayDateUtc } from "@/lib/date"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import {
-  PageHeader,
   StatCard,
   StatusBadge,
   EmptyState,
@@ -88,31 +86,41 @@ export default async function Page() {
     >
       <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
         {session ? (
-          <div className="space-y-8">
-            {/* Header */}
-            <PageHeader
-              title={`Welcome back, ${session.name}`}
-              description={`Reception Desk • Role: ${session.role}`}
-              action={
+          <div className="space-y-6">
+            {/* Reception Header & Quick Actions */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-border/60">
+              <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <Link href="/rooms">
-                    <Button variant="outline" size="sm" className="h-9">
-                      <BedDouble className="mr-1.5 size-4" />
-                      Rooms
-                    </Button>
-                  </Link>
-                  <Link href="/reservations/new">
-                    <Button size="sm" className="h-9 bg-primary text-primary-foreground hover:bg-primary/90">
-                      <Plus className="mr-1.5 size-4" />
-                      New Reservation
-                    </Button>
-                  </Link>
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+                    Reception Dispatch
+                  </h1>
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
+                    Live Shift
+                  </span>
                 </div>
-              }
-            />
+                <p className="text-xs text-muted-foreground">
+                  Front Desk Console • Operator: <span className="font-medium text-foreground">{session.name}</span> ({session.role})
+                </p>
+              </div>
 
-            {/* Stat Row (4) */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href="/rooms">
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80">
+                    <BedDouble className="size-3.5" />
+                    Room Rack
+                  </Button>
+                </Link>
+                <Link href="/reservations/new">
+                  <Button size="sm" className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
+                    <Plus className="size-3.5" />
+                    New Reservation
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Shift Pulse & Operational Inventory Metrics (4 columns) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <StatCard
                 label="Vacant Clean"
                 value={counts.clean}
@@ -130,7 +138,7 @@ export default async function Page() {
               <StatCard
                 label="Occupied"
                 value={counts.occupied}
-                subtext={`${counts.confirmedReservations} active reservation${counts.confirmedReservations === 1 ? "" : "s"}`}
+                subtext={`${counts.confirmedReservations} active booking${counts.confirmedReservations === 1 ? "" : "s"}`}
                 indicatorColor="bg-sky-500"
                 href="/rooms?status=OCCUPIED"
               />
@@ -143,40 +151,48 @@ export default async function Page() {
               />
             </div>
 
-            {/* Active reservations inline link strip */}
-            <div className="flex items-center justify-between rounded-xl border border-border/70 bg-card/60 px-5 py-3.5 text-xs">
-              <div className="flex items-center gap-2">
-                <CalendarDays className="size-4 text-muted-foreground" />
-                <span className="text-muted-foreground">
-                  Active confirmed reservations:{" "}
-                  <strong className="font-mono text-foreground font-semibold">
-                    {counts.confirmedReservations}
-                  </strong>{" "}
-                  of {counts.reservations} total
-                </span>
+            {/* Operational Shift Strip */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-card p-3 sm:px-4 sm:py-3 text-xs shadow-2xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-full bg-primary shrink-0" />
+                  <span className="font-semibold text-foreground font-mono tabular-nums">
+                    {counts.total > 0 ? Math.round((counts.occupied / counts.total) * 100) : 0}%
+                  </span>
+                  <span>Occupancy</span>
+                </div>
+                <span className="hidden sm:inline text-border">|</span>
+                <div className="text-muted-foreground">
+                  Turnover Pressure:{" "}
+                  <span className="font-mono tabular-nums font-semibold text-foreground">
+                    {counts.dirty}
+                  </span>{" "}
+                  dirty room{counts.dirty === 1 ? "" : "s"} awaiting turnover
+                </div>
               </div>
+
               <Link
                 href="/reservations"
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                className="inline-flex items-center gap-1 font-semibold text-primary hover:underline self-end sm:self-auto text-xs"
               >
-                <span>View all reservations</span>
+                <span>{counts.confirmedReservations} Confirmed Bookings</span>
                 <ChevronRight className="size-3.5" />
               </Link>
             </div>
 
-            {/* Arrivals and Departures today */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Daily Operations: Arrivals & Departures Matrices */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
               {/* Arrivals Today */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
                     <LogIn className="size-4 text-emerald-600 dark:text-emerald-400" />
-                    <h2 className="text-base font-semibold tracking-tight text-foreground">
+                    <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
                       Arrivals Today
                     </h2>
                   </div>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-mono font-medium text-muted-foreground">
-                    {arrivals.length}
+                  <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+                    {arrivals.length} scheduled
                   </span>
                 </div>
 
@@ -184,29 +200,29 @@ export default async function Page() {
                   <EmptyState
                     icon={<LogIn className="size-5" />}
                     title="No arrivals scheduled today"
-                    description="No confirmed guest check-ins arriving today."
-                    className="min-h-48"
+                    description="No confirmed guest check-ins scheduled for today's shift."
+                    className="min-h-44"
                   />
                 ) : (
-                  <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card overflow-hidden shadow-xs">
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
                     {arrivals.map((alloc) => (
                       <Link
                         key={alloc.id}
                         href={`/reservations/${alloc.reservationId}`}
-                        className="flex items-center justify-between p-4 text-xs transition-colors hover:bg-muted/40 group"
+                        className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                       >
                         <div className="space-y-1 min-w-0 pr-3">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-foreground text-sm">
+                            <span className="font-mono tabular-nums font-bold text-foreground text-sm">
                               Room {alloc.room.roomNo}
                             </span>
-                            <span className="text-muted-foreground truncate">
+                            <span className="text-muted-foreground truncate text-[11px]">
                               • {alloc.roomCategory.name}
                             </span>
                           </div>
-                          <div className="text-muted-foreground truncate">
+                          <div className="text-muted-foreground truncate text-xs">
                             Guest:{" "}
-                            <span className="font-medium text-foreground">
+                            <span className="font-semibold text-foreground">
                               {alloc.reservation.customer.firstName}{" "}
                               {alloc.reservation.customer.lastName}
                             </span>{" "}
@@ -227,16 +243,16 @@ export default async function Page() {
               </div>
 
               {/* Departures Today */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
                     <LogOut className="size-4 text-sky-600 dark:text-sky-400" />
-                    <h2 className="text-base font-semibold tracking-tight text-foreground">
+                    <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
                       Departures Today
                     </h2>
                   </div>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-mono font-medium text-muted-foreground">
-                    {departures.length}
+                  <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+                    {departures.length} scheduled
                   </span>
                 </div>
 
@@ -244,29 +260,29 @@ export default async function Page() {
                   <EmptyState
                     icon={<LogOut className="size-5" />}
                     title="No departures scheduled today"
-                    description="No guest check-outs scheduled for today."
-                    className="min-h-48"
+                    description="No guest check-outs scheduled for today's shift."
+                    className="min-h-44"
                   />
                 ) : (
-                  <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-card overflow-hidden shadow-xs">
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
                     {departures.map((alloc) => (
                       <Link
                         key={alloc.id}
                         href={`/reservations/${alloc.reservationId}`}
-                        className="flex items-center justify-between p-4 text-xs transition-colors hover:bg-muted/40 group"
+                        className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                       >
                         <div className="space-y-1 min-w-0 pr-3">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-foreground text-sm">
+                            <span className="font-mono tabular-nums font-bold text-foreground text-sm">
                               Room {alloc.room.roomNo}
                             </span>
-                            <span className="text-muted-foreground truncate">
+                            <span className="text-muted-foreground truncate text-[11px]">
                               • {alloc.roomCategory.name}
                             </span>
                           </div>
-                          <div className="text-muted-foreground truncate">
+                          <div className="text-muted-foreground truncate text-xs">
                             Guest:{" "}
-                            <span className="font-medium text-foreground">
+                            <span className="font-semibold text-foreground">
                               {alloc.reservation.customer.firstName}{" "}
                               {alloc.reservation.customer.lastName}
                             </span>{" "}

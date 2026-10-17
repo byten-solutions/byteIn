@@ -232,15 +232,15 @@ export function ReservationList({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Page Header */}
       <PageHeader
         title="Reservations"
         description="Reception desk guest booking registry and stay schedules"
         action={
           <Link href="/reservations/new">
-            <Button size="sm" className="h-9 bg-primary text-primary-foreground hover:bg-primary/90">
-              <Plus className="mr-1.5 size-4" />
+            <Button size="sm" className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
+              <Plus className="size-3.5" />
               New Reservation
             </Button>
           </Link>
@@ -250,10 +250,10 @@ export function ReservationList({
       {/* Toolbar: Search + Status Segmented Tabs */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/70" />
           <Input
             placeholder="Search reservation #, guest name, phone..."
-            className="pl-9 h-10 text-xs sm:text-sm bg-card"
+            className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)
@@ -263,7 +263,7 @@ export function ReservationList({
         </div>
 
         {/* Status segmented control */}
-        <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shrink-0 overflow-x-auto">
+        <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-1 shrink-0 overflow-x-auto shadow-2xs">
           {STATUS_TABS.map((tab) => {
             const active = statusFilter === tab.value
             return (
@@ -275,9 +275,9 @@ export function ReservationList({
                   setCurrentPage(1)
                 }}
                 className={cn(
-                  "px-3 py-1.5 text-xs font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
+                  "px-3 py-1 text-xs font-medium rounded-md transition-all whitespace-nowrap cursor-pointer",
                   active
-                    ? "bg-card text-foreground shadow-xs font-semibold"
+                    ? "bg-card text-foreground shadow-2xs font-semibold"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >

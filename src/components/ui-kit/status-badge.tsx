@@ -38,103 +38,103 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
   VACANT_CLEAN: {
     label: "Clean",
     dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
   },
   VACANT_DIRTY: {
     label: "Dirty",
     dotClass: "bg-amber-500",
-    badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20",
+    badgeClass: "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/30 font-semibold",
   },
   OCCUPIED: {
     label: "Occupied",
     dotClass: "bg-sky-500",
-    badgeClass: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20",
+    badgeClass: "bg-sky-500/12 text-sky-900 dark:text-sky-300 border-sky-500/25 font-semibold",
   },
   MAINTENANCE: {
     label: "Maintenance",
     dotClass: "bg-purple-500",
-    badgeClass: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20",
+    badgeClass: "bg-purple-500/12 text-purple-900 dark:text-purple-300 border-purple-500/25 font-semibold",
   },
   OUT_OF_SERVICE: {
     label: "Out of Service",
-    dotClass: "bg-neutral-400",
-    badgeClass: "bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border-neutral-500/20",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
 
   // Reservation statuses
   CONFIRMED: {
     label: "Confirmed",
-    dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    dotClass: "bg-sky-500",
+    badgeClass: "bg-sky-500/12 text-sky-900 dark:text-sky-300 border-sky-500/25 font-semibold",
   },
   COMPLETED: {
     label: "Completed",
-    dotClass: "bg-blue-500",
-    badgeClass: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
   CANCELLED: {
     label: "Cancelled",
     dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+    badgeClass: "bg-rose-500/12 text-rose-900 dark:text-rose-300 border-rose-500/25 font-semibold",
   },
 
   // Invoice statuses
   DRAFT: {
     label: "Draft",
-    dotClass: "bg-neutral-400",
-    badgeClass: "bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border-neutral-500/20",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
   ISSUED: {
     label: "Issued",
     dotClass: "bg-sky-500",
-    badgeClass: "bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/20",
+    badgeClass: "bg-sky-500/12 text-sky-900 dark:text-sky-300 border-sky-500/25 font-semibold",
   },
   PAID: {
     label: "Paid",
     dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
   },
   PARTIALLY_PAID: {
     label: "Partially Paid",
     dotClass: "bg-amber-500",
-    badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20",
+    badgeClass: "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/30 font-semibold",
   },
   OVERDUE: {
     label: "Overdue",
     dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+    badgeClass: "bg-rose-500/12 text-rose-900 dark:text-rose-300 border-rose-500/25 font-semibold",
   },
 
   // Payments / user statuses
   SUCCESS: {
     label: "Success",
     dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
   },
   ACTIVE: {
     label: "Active",
     dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
   },
   VOIDED: {
     label: "Voided",
-    dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
   PENDING: {
     label: "Pending",
     dotClass: "bg-amber-500",
-    badgeClass: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20",
+    badgeClass: "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/30 font-semibold",
   },
   FAILED: {
     label: "Failed",
     dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+    badgeClass: "bg-rose-500/12 text-rose-900 dark:text-rose-300 border-rose-500/25 font-semibold",
   },
   DISABLED: {
     label: "Disabled",
-    dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
 }
 

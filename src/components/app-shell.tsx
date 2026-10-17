@@ -41,7 +41,7 @@ function AppShellInner({ session, stats, children }: AppShellProps) {
   }
 
   return (
-    <div className="flex h-svh w-full overflow-hidden bg-muted/20 text-foreground">
+    <div className="flex h-svh w-full overflow-hidden bg-background text-foreground">
       {/* 1. Desktop Persistent Collapsible Sidebar */}
       <AppSidebar session={session} className="hidden lg:flex" />
 

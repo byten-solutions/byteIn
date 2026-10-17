@@ -94,15 +94,15 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-border bg-card/60 backdrop-blur shrink-0 transition-[width] duration-200 ease-in-out h-full z-40 select-none",
+        "flex flex-col border-r border-sidebar-border/80 bg-sidebar/90 backdrop-blur-md shrink-0 transition-[width] duration-200 ease-in-out h-full z-40 select-none",
         isCollapsed ? "w-16" : "w-64",
         className
       )}
     >
-      {/* Brand Header */}
+      {/* Brand Header - aligned to h-13 with AppHeader */}
       <div
         className={cn(
-          "flex h-12 items-center border-b border-border/80 transition-all",
+          "flex h-13 items-center border-b border-sidebar-border/80 transition-all",
           isCollapsed ? "justify-center px-2" : "px-4 gap-2.5"
         )}
       >
@@ -121,7 +121,7 @@ export function AppSidebar({
               <span className="font-bold tracking-tight text-base text-foreground truncate">
                 byteInn
               </span>
-              <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
+              <span className="text-[10px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 shrink-0">
                 PMS
               </span>
             </div>
@@ -132,16 +132,16 @@ export function AppSidebar({
       {/* Navigation Sections */}
       <nav
         className={cn(
-          "flex-1 overflow-y-auto py-5 space-y-7",
-          isCollapsed ? "px-2 space-y-4" : "px-3.5"
+          "flex-1 overflow-y-auto py-5 space-y-6",
+          isCollapsed ? "px-2 space-y-4" : "px-3"
         )}
       >
         {navItems.map((group, groupIdx) => (
-          <div key={group.section} className="space-y-1.5">
+          <div key={group.section} className="space-y-1">
             {isCollapsed ? (
-              groupIdx > 0 && <div className="my-2 border-t border-border/60 mx-1" />
+              groupIdx > 0 && <div className="my-2 border-t border-sidebar-border/60 mx-1" />
             ) : (
-              <h3 className="px-3 text-[11px] font-medium tracking-wider text-muted-foreground/70 uppercase">
+              <h3 className="px-3 pb-1 text-[10px] font-mono font-bold tracking-wider text-muted-foreground/70 uppercase">
                 {group.section}
               </h3>
             )}
@@ -158,10 +158,10 @@ export function AppSidebar({
                       onClick={onNavigate}
                       title={item.title}
                       className={cn(
-                        "flex items-center justify-center size-10 mx-auto rounded-lg text-xs font-medium transition-colors group relative",
+                        "flex items-center justify-center size-10 mx-auto rounded-lg text-xs font-medium transition-all group relative",
                         active
                           ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                          : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                          : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/80"
                       )}
                     >
                       <Icon
@@ -169,7 +169,7 @@ export function AppSidebar({
                           "size-4 shrink-0 transition-transform group-hover:scale-105",
                           active
                             ? "text-primary-foreground"
-                            : "text-muted-foreground group-hover:text-foreground"
+                            : "text-muted-foreground group-hover:text-sidebar-foreground"
                         )}
                       />
                       <span className="sr-only">{item.title}</span>
@@ -183,10 +183,10 @@ export function AppSidebar({
                     href={item.href}
                     onClick={onNavigate}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors group relative",
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group relative",
                       active
                         ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                        : "text-sidebar-foreground/75 hover:text-sidebar-foreground hover:bg-sidebar-accent/70"
                     )}
                   >
                     <Icon
@@ -194,7 +194,7 @@ export function AppSidebar({
                         "size-4 shrink-0 transition-transform group-hover:scale-105",
                         active
                           ? "text-primary-foreground"
-                          : "text-muted-foreground group-hover:text-foreground"
+                          : "text-muted-foreground group-hover:text-sidebar-foreground"
                       )}
                     />
                     <span className="truncate">{item.title}</span>

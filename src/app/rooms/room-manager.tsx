@@ -407,8 +407,8 @@ export function RoomManager({
         description="Monitor physical room conditions, update operational statuses, and configure inventory."
         action={
           isAdmin ? (
-            <Button onClick={openCreateRoom} className="gap-1.5">
-              <Plus className="size-4" />
+            <Button onClick={openCreateRoom} size="sm" className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
+              <Plus className="size-3.5" />
               <span>Add room</span>
             </Button>
           ) : undefined
@@ -435,16 +435,16 @@ export function RoomManager({
           className={cn(
             "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
             statusFilter === "ALL"
-              ? "bg-foreground text-background border-foreground shadow-xs font-semibold"
-              : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border"
+              ? "bg-primary text-primary-foreground border-primary shadow-2xs font-semibold"
+              : "bg-card hover:bg-muted/60 text-muted-foreground hover:text-foreground border-border/80"
           )}
         >
           <Bed className="size-3.5" />
           <span>All</span>
           <span
             className={cn(
-              "font-mono text-[11px] px-1.5 py-0.5 rounded-full font-semibold",
-              statusFilter === "ALL" ? "bg-background/20 text-background" : "bg-muted text-foreground"
+              "font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-full font-semibold",
+              statusFilter === "ALL" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-foreground"
             )}
           >
             {counts.total}
@@ -472,16 +472,16 @@ export function RoomManager({
               className={cn(
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
                 isActive
-                  ? "bg-foreground text-background border-foreground shadow-xs font-semibold"
-                  : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border"
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xs font-semibold"
+                  : "bg-card hover:bg-muted/60 text-muted-foreground hover:text-foreground border-border/80"
               )}
             >
-              <span className={cn("size-2 rounded-full shrink-0", item.dotClass)} />
+              <span className={cn("size-2 rounded-full shrink-0 shadow-2xs", item.dotClass)} />
               <span>{item.label}</span>
               <span
                 className={cn(
-                  "font-mono text-[11px] px-1.5 py-0.5 rounded-full font-semibold",
-                  isActive ? "bg-background/20 text-background" : "bg-muted text-foreground"
+                  "font-mono tabular-nums text-[11px] px-1.5 py-0.5 rounded-full font-semibold",
+                  isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-foreground"
                 )}
               >
                 {count}

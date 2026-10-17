@@ -50,31 +50,31 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-4 bg-muted/30">
-      <Card className="w-full max-w-sm shadow-md">
-        <CardHeader className="text-center space-y-2">
+    <div className="flex min-h-svh items-center justify-center p-4 bg-background">
+      <Card className="w-full max-w-sm rounded-2xl border border-border/80 bg-card shadow-sm">
+        <CardHeader className="text-center space-y-2 pt-6">
           <div className="flex justify-center mb-1">
-            <Logo size={48} showWordmark={false} />
+            <Logo size={44} showWordmark={false} />
           </div>
-          <CardTitle className="text-xl font-bold tracking-tight">
+          <CardTitle className="text-xl font-bold tracking-tight text-foreground">
             Sign in to byteInn
           </CardTitle>
-          <CardDescription>
-            Reception-operated Room Management System
+          <CardDescription className="text-xs text-muted-foreground">
+            Reception-operated Property Management System
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-6">
             {error && (
               <div
                 role="alert"
-                className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive font-medium"
+                className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive font-medium"
               >
                 {error}
               </div>
             )}
             <div className="space-y-1.5">
-              <Label htmlFor="email">Email address</Label>
+              <Label htmlFor="email" className="text-xs font-semibold text-foreground">Email address</Label>
               <Input
                 id="email"
                 type="email"
@@ -84,10 +84,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
+                className="h-9 text-xs bg-background/50 border-border/80"
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-xs font-semibold text-foreground">Password</Label>
               <Input
                 id="password"
                 type="password"
@@ -97,12 +98,17 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
+                className="h-9 text-xs bg-background/50 border-border/80"
               />
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in..." : "Sign in"}
+          <CardFooter className="px-6 pb-6 pt-2">
+            <Button
+              type="submit"
+              className="w-full h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs font-semibold text-xs"
+              disabled={loading}
+            >
+              {loading ? "Signing in..." : "Sign in to Shift"}
             </Button>
           </CardFooter>
         </form>
