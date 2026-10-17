@@ -152,8 +152,9 @@ export class ReportsService {
 
     // Evaluate occupancy night-by-night
     for (const alloc of allocations) {
+      const effectiveDep = alloc.actualCheckoutDate ?? alloc.departureDate
       const allocArr = new Date(alloc.arrivalDate).getTime()
-      const allocDep = new Date(alloc.departureDate).getTime()
+      const allocDep = new Date(effectiveDep).getTime()
       const nightlyRate = alloc.bookedNightlyRate
 
       for (let i = 0; i < totalDays; i++) {
@@ -582,10 +583,11 @@ export class ReportsService {
 
       for (const alloc of res.rooms) {
         totalAllocations++
+        const effectiveDep = alloc.actualCheckoutDate ?? alloc.departureDate
         const nights = Math.max(
           1,
           Math.round(
-            (alloc.departureDate.getTime() - alloc.arrivalDate.getTime()) /
+            (effectiveDep.getTime() - alloc.arrivalDate.getTime()) /
               (1000 * 60 * 60 * 24)
           )
         )
@@ -790,10 +792,11 @@ export class ReportsService {
         balanceDue = inv.grandTotal.sub(paidDec).toFixed(2)
       }
 
+      const effectiveDep = alloc.actualCheckoutDate ?? alloc.departureDate
       const stayNights = Math.max(
         1,
         Math.round(
-          (alloc.departureDate.getTime() - alloc.arrivalDate.getTime()) /
+          (effectiveDep.getTime() - alloc.arrivalDate.getTime()) /
             (1000 * 60 * 60 * 24)
         )
       )
@@ -964,7 +967,8 @@ export class ReportsService {
         // Find allocation covering this day: arrival <= curDayStart < departure
         const matchedAlloc = roomAllocs.find((a) => {
           const arr = a.arrivalDate.getTime()
-          const dep = a.departureDate.getTime()
+          const effectiveDep = a.actualCheckoutDate ?? a.departureDate
+          const dep = effectiveDep.getTime()
           return arr <= curDayStart && curDayStart < dep
         })
 

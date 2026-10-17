@@ -231,12 +231,14 @@ export class CheckInOutService {
         },
       });
 
-      // 4. Update allocation to CHECKED_OUT
+      // 4. Update allocation to CHECKED_OUT with actualCheckoutDate
+      const actualDate = getHotelTodayDateUtc();
       const updatedAllocation = await tx.reservationRoom.update({
         where: { id: allocation.id },
         data: {
           status: AllocationStatus.CHECKED_OUT,
           checkedOutAt: now,
+          actualCheckoutDate: actualDate,
         },
       });
 
@@ -247,7 +249,8 @@ export class CheckInOutService {
         .every(
           (r) =>
             r.status === AllocationStatus.CHECKED_OUT ||
-            r.status === AllocationStatus.CANCELLED
+            r.status === AllocationStatus.CANCELLED ||
+            r.status === AllocationStatus.NO_SHOW
         );
 
       let reservationStatus = allocation.reservation.status;

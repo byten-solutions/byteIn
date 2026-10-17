@@ -202,9 +202,10 @@ A reservation does not store a single arrival/departure range because different 
 | booked_nightly_rate | Required Decimal snapshot |
 | adults | Integer, default 1 |
 | children | Integer, default 0 |
-| status | Allocation status such as `CONFIRMED`, `CHECKED_IN`, `CHECKED_OUT`, `CANCELLED` |
+| status | Allocation status: `CONFIRMED`, `CHECKED_IN`, `CHECKED_OUT`, `CANCELLED`, `NO_SHOW` |
 | checked_in_at | Nullable timestamp |
 | checked_out_at | Nullable timestamp |
+| actual_checkout_date | Nullable date recorded at checkout (`effective_checkout_date = actual_checkout_date ?? departure_date`) |
 | assigned_at | Timestamp |
 | created_at | Timestamp |
 | updated_at | Timestamp |

@@ -66,3 +66,25 @@ export interface AvailableRoomResult {
   };
   effectiveRate: Decimal;
 }
+
+export interface CancelReservationInput {
+  reason?: string;
+}
+
+export interface CancelAllocationInput {
+  reason?: string;
+}
+
+export interface MarkNoShowInput {
+  notes?: string;
+}
+
+export interface ExtendStayInput {
+  newDepartureDate: string | Date;
+  reason?: string;
+}
+
+export interface ChangeRoomInput {
+  newRoomId: string;
+  reason?: string;
+}

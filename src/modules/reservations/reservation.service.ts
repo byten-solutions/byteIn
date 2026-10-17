@@ -15,11 +15,18 @@ import {
   NotFoundError,
 } from "@/lib/errors";
 import { sanitizePagination } from "@/lib/pagination";
+import { getHotelTodayDateUtc } from "@/lib/date";
+import {
+  ROOM_CHANGE_RATE_POLICY,
+  AUTO_CANCEL_RESERVATION_WHEN_ALL_ALLOCATIONS_CANCELLED,
+} from "@/config/reservations";
 import type {
   CheckAvailabilityInput,
   CreateReservationInput,
   ReservationFilterOptions,
   AvailableRoomResult,
+  ExtendStayInput,
+  ChangeRoomInput,
 } from "./reservation.types";
 import { normalizeDate } from "./reservation.validation";
 
@@ -552,4 +559,417 @@ export class ReservationService {
 
     return reservation;
   }
+
+  /**
+   * Cancels an entire reservation and all its non-terminal (CONFIRMED) allocations.
+   * Rejects if reservation has active checked-in allocations.
+   */
+  static async cancelReservation(
+    id: string,
+    userId: string,
+    reason?: string
+  ) {
+    const reservation = await prisma.reservation.findUnique({
+      where: { id },
+      include: { rooms: true },
+    });
+
+    if (!reservation) {
+      throw new NotFoundError("Reservation not found");
+    }
+
+    if (reservation.status === ReservationStatus.CANCELLED) {
+      throw new BadRequestError("Reservation is already cancelled");
+    }
+
+    const hasCheckedIn = reservation.rooms.some(
+      (r) => r.status === AllocationStatus.CHECKED_IN
+    );
+    if (hasCheckedIn) {
+      throw new BadRequestError(
+        "Cannot cancel reservation with active checked-in guests. Complete check-out first."
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // 1. Cancel all CONFIRMED allocations
+      await tx.reservationRoom.updateMany({
+        where: {
+          reservationId: id,
+          status: AllocationStatus.CONFIRMED,
+        },
+        data: {
+          status: AllocationStatus.CANCELLED,
+        },
+      });
+
+      // 2. Update reservation status
+      const updatedRes = await tx.reservation.update({
+        where: { id },
+        data: {
+          status: ReservationStatus.CANCELLED,
+        },
+        include: {
+          rooms: true,
+          customer: true,
+        },
+      });
+
+      // 3. Audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: "Reservation",
+          entityId: id,
+          action: "RESERVATION_CANCELLED",
+          oldData: { status: reservation.status },
+          newData: { status: ReservationStatus.CANCELLED, reason: reason || null },
+        },
+      });
+
+      return updatedRes;
+    });
+  }
+
+  /**
+   * Cancels a single room allocation.
+   * If all allocations on the reservation become cancelled/no-show, the parent reservation is marked CANCELLED.
+   */
+  static async cancelAllocation(
+    allocationId: string,
+    userId: string,
+    reason?: string
+  ) {
+    const allocation = await prisma.reservationRoom.findUnique({
+      where: { id: allocationId },
+      include: { reservation: { include: { rooms: true } } },
+    });
+
+    if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (allocation.status === AllocationStatus.CANCELLED) {
+      throw new BadRequestError("Room allocation is already cancelled");
+    }
+
+    if (allocation.status === AllocationStatus.CHECKED_IN) {
+      throw new BadRequestError(
+        "Cannot cancel an active checked-in allocation. Complete check-out instead."
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // 1. Cancel allocation
+      const updatedAlloc = await tx.reservationRoom.update({
+        where: { id: allocationId },
+        data: {
+          status: AllocationStatus.CANCELLED,
+        },
+      });
+
+      // 2. Audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: "ReservationRoom",
+          entityId: allocationId,
+          action: "ALLOCATION_CANCELLED",
+          oldData: { status: allocation.status },
+          newData: { status: AllocationStatus.CANCELLED, reason: reason || null },
+        },
+      });
+
+      // 3. Check if all sibling allocations are now non-active
+      if (AUTO_CANCEL_RESERVATION_WHEN_ALL_ALLOCATIONS_CANCELLED) {
+        const siblings = await tx.reservationRoom.findMany({
+          where: { reservationId: allocation.reservationId },
+        });
+        const allCancelledOrNoShow = siblings.every(
+          (r) =>
+            r.status === AllocationStatus.CANCELLED ||
+            r.status === AllocationStatus.NO_SHOW
+        );
+        if (allCancelledOrNoShow) {
+          await tx.reservation.update({
+            where: { id: allocation.reservationId },
+            data: { status: ReservationStatus.CANCELLED },
+          });
+        }
+      }
+
+      return updatedAlloc;
+    });
+  }
+
+  /**
+   * Marks a CONFIRMED allocation as NO_SHOW.
+   * Immediately releases the physical room from Postgres exclusion constraint.
+   */
+  static async markNoShow(
+    allocationId: string,
+    userId: string,
+    notes?: string
+  ) {
+    const allocation = await prisma.reservationRoom.findUnique({
+      where: { id: allocationId },
+      include: { reservation: true },
+    });
+
+    if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (allocation.status !== AllocationStatus.CONFIRMED) {
+      throw new BadRequestError(
+        `Only CONFIRMED allocations can be marked as NO_SHOW. Current status: ${allocation.status}`
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // 1. Transition to NO_SHOW
+      const updatedAlloc = await tx.reservationRoom.update({
+        where: { id: allocationId },
+        data: {
+          status: AllocationStatus.NO_SHOW,
+        },
+      });
+
+      // 2. Audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: "ReservationRoom",
+          entityId: allocationId,
+          action: "ALLOCATION_NO_SHOW",
+          oldData: { status: allocation.status },
+          newData: { status: AllocationStatus.NO_SHOW, notes: notes || null },
+        },
+      });
+
+      // 3. Reconcile parent reservation status
+      if (AUTO_CANCEL_RESERVATION_WHEN_ALL_ALLOCATIONS_CANCELLED) {
+        const siblings = await tx.reservationRoom.findMany({
+          where: { reservationId: allocation.reservationId },
+        });
+        const allCancelledOrNoShow = siblings.every(
+          (r) =>
+            r.status === AllocationStatus.CANCELLED ||
+            r.status === AllocationStatus.NO_SHOW
+        );
+        if (allCancelledOrNoShow) {
+          await tx.reservation.update({
+            where: { id: allocation.reservationId },
+            data: { status: ReservationStatus.CANCELLED },
+          });
+        }
+      }
+
+      return updatedAlloc;
+    });
+  }
+
+  /**
+   * Extends the departure date of an allocation.
+   * Checks physical room availability and enforces concurrency locking against collisions.
+   */
+  static async extendStay(
+    allocationId: string,
+    input: ExtendStayInput,
+    userId: string
+  ) {
+    const allocation = await prisma.reservationRoom.findUnique({
+      where: { id: allocationId },
+    });
+
+    if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (
+      allocation.status !== AllocationStatus.CHECKED_IN &&
+      allocation.status !== AllocationStatus.CONFIRMED
+    ) {
+      throw new BadRequestError(
+        `Only CHECKED_IN or CONFIRMED allocations can be extended. Current status: ${allocation.status}`
+      );
+    }
+
+    const newDep = normalizeDate(input.newDepartureDate);
+    if (newDep.getTime() <= allocation.departureDate.getTime()) {
+      throw new BadRequestError("New departure date must be strictly after the current departure date");
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Check physical room availability between [currentDepartureDate, newDepartureDate)
+      const conflictingAllocations = await tx.reservationRoom.findMany({
+        where: {
+          roomId: allocation.roomId,
+          id: { not: allocationId },
+          status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
+          arrivalDate: { lt: newDep },
+          departureDate: { gt: allocation.departureDate },
+        },
+      });
+
+      if (conflictingAllocations.length > 0) {
+        throw new ReservationConflictError(
+          "Physical room is not available for the requested extension dates due to another scheduled booking"
+        );
+      }
+
+      const updatedAlloc = await tx.reservationRoom.update({
+        where: { id: allocationId },
+        data: {
+          departureDate: newDep,
+        },
+      });
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: "ReservationRoom",
+          entityId: allocationId,
+          action: "STAY_EXTENDED",
+          oldData: { departureDate: allocation.departureDate.toISOString() },
+          newData: { departureDate: newDep.toISOString(), reason: input.reason || null },
+        },
+      });
+
+      return updatedAlloc;
+    });
+  }
+
+  /**
+   * Moves an active allocation to a different physical room.
+   * Transitions old room to VACANT_DIRTY and new room to OCCUPIED if checked in.
+   */
+  static async changeRoom(
+    allocationId: string,
+    input: ChangeRoomInput,
+    userId: string
+  ) {
+    const allocation = await prisma.reservationRoom.findUnique({
+      where: { id: allocationId },
+      include: { room: true },
+    });
+
+    if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (
+      allocation.status !== AllocationStatus.CHECKED_IN &&
+      allocation.status !== AllocationStatus.CONFIRMED
+    ) {
+      throw new BadRequestError(
+        `Only active allocations can change rooms. Current status: ${allocation.status}`
+      );
+    }
+
+    if (allocation.roomId === input.newRoomId) {
+      throw new BadRequestError("Allocation is already assigned to this room");
+    }
+
+    const targetRoom = await prisma.room.findUnique({
+      where: { id: input.newRoomId },
+      include: { category: true },
+    });
+
+    if (!targetRoom) {
+      throw new NotFoundError("Target room not found");
+    }
+
+    if (
+      targetRoom.status === RoomStatus.MAINTENANCE ||
+      targetRoom.status === RoomStatus.OUT_OF_SERVICE
+    ) {
+      throw new ReservationConflictError(
+        `Target room is currently in ${targetRoom.status} status and cannot be occupied`
+      );
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // Determine the date window that must be checked for target room availability
+      const checkStart =
+        allocation.status === AllocationStatus.CHECKED_IN
+          ? getHotelTodayDateUtc()
+          : allocation.arrivalDate;
+      const checkEnd = allocation.departureDate;
+
+      // Check target room for any overlapping active allocations
+      const conflicts = await tx.reservationRoom.findMany({
+        where: {
+          roomId: input.newRoomId,
+          status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
+          arrivalDate: { lt: checkEnd },
+          departureDate: { gt: checkStart },
+        },
+      });
+
+      if (conflicts.length > 0) {
+        throw new ReservationConflictError(
+          "Target room is already booked or occupied for the required stay dates"
+        );
+      }
+
+      // Check physical status of target room if moving a currently checked-in guest
+      if (allocation.status === AllocationStatus.CHECKED_IN) {
+        const freshTargetRoom = await tx.room.findUnique({
+          where: { id: input.newRoomId },
+        });
+        if (freshTargetRoom && freshTargetRoom.status === RoomStatus.OCCUPIED) {
+          throw new ReservationConflictError("Target room is currently occupied");
+        }
+      }
+
+      // Rate policy
+      let bookedRate = allocation.bookedNightlyRate;
+      if (ROOM_CHANGE_RATE_POLICY === "APPLY_NEW_RATE") {
+        bookedRate = targetRoom.priceOverride || targetRoom.category.basePrice;
+      }
+
+      // 1. Update allocation
+      const updatedAlloc = await tx.reservationRoom.update({
+        where: { id: allocationId },
+        data: {
+          roomId: input.newRoomId,
+          roomCategoryId: targetRoom.roomCategoryId,
+          bookedNightlyRate: bookedRate,
+        },
+      });
+
+      // 2. Physical room status transitions if already checked in
+      if (allocation.status === AllocationStatus.CHECKED_IN) {
+        await tx.room.update({
+          where: { id: allocation.roomId },
+          data: { status: RoomStatus.VACANT_DIRTY },
+        });
+
+        await tx.room.update({
+          where: { id: input.newRoomId },
+          data: { status: RoomStatus.OCCUPIED },
+        });
+      }
+
+      // 3. Audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          entityType: "ReservationRoom",
+          entityId: allocationId,
+          action: "ROOM_CHANGED",
+          oldData: { roomId: allocation.roomId, status: allocation.status },
+          newData: {
+            roomId: input.newRoomId,
+            reason: input.reason || null,
+          },
+        },
+      });
+
+      return updatedAlloc;
+    });
+  }
 }
+

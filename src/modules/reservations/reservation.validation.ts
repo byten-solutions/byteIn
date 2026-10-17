@@ -135,3 +135,26 @@ export const createReservationSchema = z
       path: ["allocations"],
     }
   );
+
+export const cancelReservationSchema = z.object({
+  reason: z.string().trim().optional(),
+});
+
+export const cancelAllocationSchema = z.object({
+  reason: z.string().trim().optional(),
+});
+
+export const markNoShowSchema = z.object({
+  notes: z.string().trim().optional(),
+});
+
+export const extendStaySchema = z.object({
+  newDepartureDate: dateSchema,
+  reason: z.string().trim().optional(),
+});
+
+export const changeRoomSchema = z.object({
+  newRoomId: z.string().trim().min(1, "New room ID is required"),
+  reason: z.string().trim().optional(),
+});
+

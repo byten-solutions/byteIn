@@ -87,7 +87,9 @@ npx prisma migrate status
 
 - **Date Semantics**: `arrival_date` is inclusive; `departure_date` is exclusive. A checkout on October 18 frees the room for another guest arriving on October 18.
 - **Physical Room Assignment**: Because physical rooms are assigned at booking time, overlapping active allocations for the same physical room are strictly forbidden.
-- **Database-Level Enforcement**: Availability must never rely solely on client-side validation. All reservation room bookings must be verified and written inside a safe database transaction with appropriate concurrency locking or PostgreSQL exclusion constraints.
+- **Database-Level Enforcement**: Availability must never rely solely on client-side validation. All reservation room bookings must be verified and written inside a safe database transaction with appropriate concurrency locking or PostgreSQL exclusion constraints (`no_overlapping_active_allocations`).
+- **NO_SHOW & Cancellation Room Release**: Transitioning an allocation to `NO_SHOW` or `CANCELLED` immediately releases the room from the PostgreSQL exclusion constraint (which only filters for `status IN ('CONFIRMED', 'CHECKED_IN')`), allowing instant re-booking.
+- **Early Checkout Tracking**: Checkout preserves booked `departure_date` and populates `actual_checkout_date`. Financial billing and reporting calculate nights using `effective_checkout_date = actual_checkout_date ?? departure_date`.
 
 ---
 

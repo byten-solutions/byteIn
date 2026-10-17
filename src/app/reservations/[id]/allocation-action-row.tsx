@@ -50,7 +50,7 @@ export interface AllocationProps {
   children: number
   bookedNightlyRate: string
   roomSubtotal: number
-  status: "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "CANCELLED"
+  status: "CONFIRMED" | "CHECKED_IN" | "CHECKED_OUT" | "CANCELLED" | "NO_SHOW"
   checkedInAt: string | null
   checkedOutAt: string | null
 }
@@ -278,6 +278,10 @@ export function AllocationActionRow({
 
           {allocation.status === "CANCELLED" && (
             <StatusBadge status="CANCELLED" size="sm" label="Cancelled" />
+          )}
+
+          {allocation.status === "NO_SHOW" && (
+            <StatusBadge status="CANCELLED" size="sm" label="No Show" />
           )}
         </div>
       </div>

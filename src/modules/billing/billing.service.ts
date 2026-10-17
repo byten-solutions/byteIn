@@ -186,16 +186,17 @@ export class BillingService {
       }> = [];
 
       for (const alloc of reservation.rooms) {
+        const effectiveDep = alloc.actualCheckoutDate ?? alloc.departureDate;
         const nights = this.calculateNights(
           alloc.arrivalDate,
-          alloc.departureDate
+          effectiveDep
         );
         const unitPrice = new Prisma.Decimal(alloc.bookedNightlyRate);
         const lineTotal = unitPrice.mul(nights);
         subtotal = subtotal.add(lineTotal);
 
         const arrStr = alloc.arrivalDate.toISOString().split("T")[0];
-        const depStr = alloc.departureDate.toISOString().split("T")[0];
+        const depStr = effectiveDep.toISOString().split("T")[0];
         const desc = `Room ${alloc.room.roomNo} (${alloc.roomCategory.name}) — ${nights} night${nights === 1 ? "" : "s"} (${arrStr} to ${depStr})`;
 
         itemsToCreate.push({
