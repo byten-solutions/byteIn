@@ -19,6 +19,7 @@ export interface RecordPaymentInput {
   amount: number | string;
   paymentMethod: string;
   referenceNumber?: string | null;
+  idempotencyKey?: string | null;
   paidAt?: string;
 }
 

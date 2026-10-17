@@ -283,7 +283,7 @@ model ReservationRoom {
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  reservation  Reservation   @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservation  Reservation   @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   room         Room          @relation(fields: [roomId], references: [id])
   roomCategory RoomCategory  @relation(fields: [roomCategoryId], references: [id])
   invoiceItems InvoiceItem[]
@@ -313,7 +313,7 @@ model Invoice {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  reservation Reservation   @relation(fields: [reservationId], references: [id])
+  reservation Reservation   @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   items       InvoiceItem[]
   payments    Payment[]
 
@@ -333,8 +333,8 @@ model InvoiceItem {
   itemType          InvoiceItemType @default(ROOM_CHARGE) @map("item_type")
   createdAt         DateTime        @default(now()) @map("created_at")
 
-  invoice         Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  reservationRoom ReservationRoom? @relation(fields: [reservationRoomId], references: [id], onDelete: SetNull)
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  reservationRoom ReservationRoom? @relation(fields: [reservationRoomId], references: [id], onDelete: Restrict)
 
   @@index([invoiceId])
   @@index([reservationRoomId])
@@ -347,12 +347,13 @@ model Payment {
   amount          Decimal       @db.Decimal(10, 2)
   paymentMethod   String        @map("payment_method")
   referenceNumber String?       @map("reference_number")
+  idempotencyKey  String?       @unique @map("idempotency_key")
   status          PaymentStatus @default(RECORDED)
   paidAt          DateTime      @map("paid_at")
   createdBy       String        @map("created_by")
   createdAt       DateTime      @default(now()) @map("created_at")
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   creator User    @relation("RecordedPayments", fields: [createdBy], references: [id])
 
   @@index([invoiceId])

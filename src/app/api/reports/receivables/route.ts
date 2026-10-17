@@ -9,12 +9,12 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST])
+    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req)
     const searchParams = req.nextUrl.searchParams
 
     const query = receivablesReportSchema.parse({
       propertyId: searchParams.get("propertyId") || undefined,
-      filter: (searchParams.get("filter") as "all" | "in_house" | "departed") || undefined,
+      filter: (searchParams.get("filter") as "all" | "in_house" | "future" | "departed") || undefined,
     })
 
     const report = await ReportsService.getReceivablesReport(query.propertyId, query.filter)

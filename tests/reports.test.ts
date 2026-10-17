@@ -238,10 +238,7 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
     // Cleanup
     await prisma.auditLog.deleteMany({
       where: {
-        OR: [
-          { userId: testStaffUserId },
-          { entityType: { in: ["Invoice", "Payment", "Reservation", "ReservationRoom"] } },
-        ],
+        userId: testStaffUserId,
       },
     })
 

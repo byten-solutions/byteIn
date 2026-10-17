@@ -71,8 +71,15 @@ npx prisma migrate status
   - `users.email` (unique)
   - `reservations.reservation_no` (unique)
   - `invoices.invoice_number` (unique)
+  - `payments.idempotency_key` (unique nullable, preventing duplicate payments)
   - Room numbers must be unique within their physical scope (e.g., `(building_id, room_no)`).
-- **Deletion Safety**: Do NOT use cascading delete (`onDelete: Cascade`) on financial or transactional records (`invoices`, `payments`, `audit_logs`, `reservations`). Soft deletion or restricted deletion must preserve audit trails.
+- **Deletion Safety**: Financial and booking records strictly forbid cascading deletions (`onDelete: Restrict`):
+  - `ReservationRoom.reservation` (`onDelete: Restrict`)
+  - `InvoiceItem.invoice` (`onDelete: Restrict`)
+  - `InvoiceItem.reservationRoom` (`onDelete: Restrict`)
+  - `Invoice.reservation` (`onDelete: Restrict`)
+  - `Payment.invoice` (`onDelete: Restrict`)
+  - This prevents accidental deletion of reservations or invoices from wiping ledger and transaction history.
 
 ---
 

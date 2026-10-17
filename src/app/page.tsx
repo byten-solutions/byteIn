@@ -13,6 +13,7 @@ import { RoomStatus, ReservationStatus } from "@prisma/client"
 import { getSession } from "@/lib/auth-guard"
 import { prisma } from "@/lib/prisma"
 import { CheckInOutService } from "@/modules/check-in-out/check-in-out.service"
+import { getHotelTodayDateUtc } from "@/lib/date"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,7 +41,7 @@ export default async function Page() {
   let departures: Awaited<ReturnType<typeof CheckInOutService.getDailyDepartures>> = []
 
   if (session) {
-    const today = new Date()
+    const today = getHotelTodayDateUtc()
     const [
       total,
       clean,

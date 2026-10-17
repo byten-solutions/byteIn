@@ -257,16 +257,17 @@ Store the billed amounts on invoice items so later changes to room prices do not
 | Column | Type / notes |
 |---|---|
 | id | Primary key |
-| invoice_id | FK to invoices.id |
+| invoice_id | FK to invoices.id (`onDelete: Restrict`) |
 | amount | Required positive Decimal |
 | payment_method | Cash / card / UPI / bank transfer, as supported |
 | reference_number | Optional |
+| idempotency_key | Optional unique string (`@unique @map("idempotency_key")`) preventing duplicate payment submission |
 | status | `RECORDED`, `VOIDED` or equivalent |
 | paid_at | Required timestamp |
 | created_by | FK to users.id |
 | created_at | Timestamp |
 
-Allow multiple payment records against one invoice. Derive outstanding balance from invoice total minus valid payments, accounting for refunds/voids according to the finalized policy.
+Allow multiple payment records against one invoice. Derive outstanding balance from invoice total minus valid payments, accounting for refunds/voids according to the finalized policy. Referential integrity strictly prevents cascading deletions (`onDelete: Restrict`) across `payments`, `invoice_items`, `invoices`, and `reservation_rooms`.
 
 ### 3.16 audit_logs
 

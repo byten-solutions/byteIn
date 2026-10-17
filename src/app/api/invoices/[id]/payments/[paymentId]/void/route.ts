@@ -4,14 +4,14 @@ import { AuthError, requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; paymentId: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
-    const { paymentId } = await params;
+    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const { id: invoiceId, paymentId } = await params;
 
-    const updated = await BillingService.voidPayment(paymentId, session.sub);
+    const updated = await BillingService.voidPayment(invoiceId, paymentId, session.sub);
     return NextResponse.json({
       success: true,
       data: updated,

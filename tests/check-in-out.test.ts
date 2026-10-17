@@ -167,7 +167,7 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
     // Cleanup records in reverse order
     await prisma.auditLog.deleteMany({
       where: {
-        OR: [{ userId: testStaffUserId }, { entityType: "ReservationRoom" }],
+        userId: testStaffUserId,
       },
     });
 

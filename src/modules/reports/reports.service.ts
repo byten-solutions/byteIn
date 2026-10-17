@@ -30,6 +30,8 @@ import type {
   ReceivablesReportDTO,
   ReceivableItemDTO,
 } from "./reports.types"
+import { getHotelTodayDate, getHotelTodayDateUtc } from "@/lib/date"
+import { EXCLUDE_PAST_CONFIRMED_FROM_OCCUPANCY, FUTURE_OCCUPANCY_POLICY } from "@/config/reports"
 
 export class ReportsService {
   /**
@@ -93,12 +95,16 @@ export class ReportsService {
       Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1
     const totalAvailableRoomNights = totalRooms * totalDays
 
+    const todayUtc = getHotelTodayDateUtc().getTime()
+
     // 4. Daily breakdown map
     const dailyMap = new Map<
       string,
       {
         occupiedRooms: Set<string>
+        otbRooms: Set<string>
         roomRevenue: Prisma.Decimal
+        otbRevenue: Prisma.Decimal
       }
     >()
 
@@ -108,7 +114,9 @@ export class ReportsService {
       const dateKey = curDate.toISOString().split("T")[0]!
       dailyMap.set(dateKey, {
         occupiedRooms: new Set<string>(),
+        otbRooms: new Set<string>(),
         roomRevenue: new Prisma.Decimal(0),
+        otbRevenue: new Prisma.Decimal(0),
       })
     }
 
@@ -139,6 +147,8 @@ export class ReportsService {
 
     let totalOccupiedRoomNights = 0
     let totalRoomRevenueDec = new Prisma.Decimal(0)
+    let totalOtbRoomNights = 0
+    let totalOtbRevenueDec = new Prisma.Decimal(0)
 
     // Evaluate occupancy night-by-night
     for (const alloc of allocations) {
@@ -152,19 +162,57 @@ export class ReportsService {
 
         // Half-open interval: arrival inclusive, departure exclusive
         if (allocArr <= curDayStart && curDayStart < allocDep) {
-          const dayEntry = dailyMap.get(dateKey)
-          if (dayEntry && !dayEntry.occupiedRooms.has(alloc.roomId)) {
-            dayEntry.occupiedRooms.add(alloc.roomId)
-            dayEntry.roomRevenue = dayEntry.roomRevenue.add(nightlyRate)
-            totalOccupiedRoomNights++
-            totalRoomRevenueDec = totalRoomRevenueDec.add(nightlyRate)
+          const isPastDate = curDayStart < todayUtc
+          const isRealized =
+            alloc.status === AllocationStatus.CHECKED_IN ||
+            alloc.status === AllocationStatus.CHECKED_OUT
 
-            // Category attribution
-            const catId = alloc.roomCategoryId
-            const catEntry = categoryMap.get(catId)
-            if (catEntry) {
-              catEntry.occupiedNights += 1
-              catEntry.roomRevenue = catEntry.roomRevenue.add(nightlyRate)
+          const dayEntry = dailyMap.get(dateKey)
+          if (!dayEntry) continue
+
+          if (isRealized) {
+            if (!dayEntry.occupiedRooms.has(alloc.roomId)) {
+              dayEntry.occupiedRooms.add(alloc.roomId)
+              dayEntry.roomRevenue = dayEntry.roomRevenue.add(nightlyRate)
+              totalOccupiedRoomNights++
+              totalRoomRevenueDec = totalRoomRevenueDec.add(nightlyRate)
+
+              // Category attribution
+              const catId = alloc.roomCategoryId
+              const catEntry = categoryMap.get(catId)
+              if (catEntry) {
+                catEntry.occupiedNights += 1
+                catEntry.roomRevenue = catEntry.roomRevenue.add(nightlyRate)
+              }
+            }
+          } else if (alloc.status === AllocationStatus.CONFIRMED) {
+            if (isPastDate && EXCLUDE_PAST_CONFIRMED_FROM_OCCUPANCY) {
+              // Past unarrived confirmed allocations are strictly excluded from realized occupancy and revenue
+            } else {
+              // Current or future OTB reserved rooms
+              if (!dayEntry.otbRooms.has(alloc.roomId)) {
+                dayEntry.otbRooms.add(alloc.roomId)
+                dayEntry.otbRevenue = dayEntry.otbRevenue.add(nightlyRate)
+                totalOtbRoomNights++
+                totalOtbRevenueDec = totalOtbRevenueDec.add(nightlyRate)
+              }
+
+              if (FUTURE_OCCUPANCY_POLICY === "INCLUDE_IN_OCCUPANCY") {
+                if (!dayEntry.occupiedRooms.has(alloc.roomId)) {
+                  dayEntry.occupiedRooms.add(alloc.roomId)
+                  dayEntry.roomRevenue = dayEntry.roomRevenue.add(nightlyRate)
+                  totalOccupiedRoomNights++
+                  totalRoomRevenueDec = totalRoomRevenueDec.add(nightlyRate)
+
+                  // Category attribution
+                  const catId = alloc.roomCategoryId
+                  const catEntry = categoryMap.get(catId)
+                  if (catEntry) {
+                    catEntry.occupiedNights += 1
+                    catEntry.roomRevenue = catEntry.roomRevenue.add(nightlyRate)
+                  }
+                }
+              }
             }
           }
         }
@@ -186,6 +234,7 @@ export class ReportsService {
     for (const [dateStr, entry] of dailyMap.entries()) {
       const dObj = new Date(`${dateStr}T00:00:00.000Z`)
       const occupied = entry.occupiedRooms.size
+      const otb = entry.otbRooms.size
       const available = Math.max(0, totalRooms - occupied)
       const rate = totalRooms > 0 ? (occupied / totalRooms) * 100 : 0
       const dayRev = entry.roomRevenue
@@ -202,6 +251,8 @@ export class ReportsService {
         roomRevenue: dayRev.toFixed(2),
         adr: dayAdr.toFixed(2),
         revpar: dayRevpar.toFixed(2),
+        otbRooms: otb,
+        otbRevenue: entry.otbRevenue.toFixed(2),
       })
     }
 
@@ -261,6 +312,8 @@ export class ReportsService {
       totalRoomRevenue: totalRoomRevenueDec.toFixed(2),
       adr: overallAdr.toFixed(2),
       revpar: overallRevpar.toFixed(2),
+      totalOtbRoomNights,
+      totalOtbRevenue: totalOtbRevenueDec.toFixed(2),
       dailyBreakdown,
       categoryBreakdown,
     }
@@ -606,8 +659,7 @@ export class ReportsService {
     targetDateStr?: string,
     propertyId?: string
   ): Promise<DailyOperationsReportDTO> {
-    const today = new Date()
-    const dateStr = targetDateStr || today.toISOString().split("T")[0]!
+    const dateStr = targetDateStr || getHotelTodayDate()
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`)
     const nextDay = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
 
@@ -987,7 +1039,7 @@ export class ReportsService {
     staffUserId?: string,
     propertyId?: string
   ): Promise<ShiftCollectionsReportDTO> {
-    const todayIso = new Date().toISOString().split("T")[0]!
+    const todayIso = getHotelTodayDate()
     const effectiveStart = startDateStr || dateStr || todayIso
     const effectiveEnd = endDateStr || dateStr || todayIso
 
@@ -1152,10 +1204,10 @@ export class ReportsService {
    */
   static async getReceivablesReport(
     propertyId?: string,
-    filterOption: "all" | "in_house" | "departed" = "all"
+    filterOption: "all" | "in_house" | "future" | "departed" = "all"
   ): Promise<ReceivablesReportDTO> {
+    const todayStr = getHotelTodayDate()
     const now = new Date()
-    const todayStr = now.toISOString().split("T")[0]!
 
     const invoiceWhere: Prisma.InvoiceWhereInput = {
       status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
@@ -1191,9 +1243,11 @@ export class ReportsService {
 
     let totalReceivablesDec = new Prisma.Decimal(0)
     let inHouseReceivablesDec = new Prisma.Decimal(0)
+    let futureReceivablesDec = new Prisma.Decimal(0)
     let departedReceivablesDec = new Prisma.Decimal(0)
 
     let inHouseCount = 0
+    let futureCount = 0
     let departedCount = 0
 
     let b0to7 = new Prisma.Decimal(0)
@@ -1216,14 +1270,22 @@ export class ReportsService {
 
       totalReceivablesDec = totalReceivablesDec.add(balanceDec)
 
-      // Determine if guest is in-house: any allocation in CHECKED_IN
-      const isInHouse = inv.reservation.rooms.some(
-        (r) => r.status === AllocationStatus.CHECKED_IN
-      )
+      const rooms = inv.reservation.rooms
+      const isInHouse = rooms.some((r) => r.status === AllocationStatus.CHECKED_IN)
+      const isFuture = !isInHouse && rooms.some((r) => r.status === AllocationStatus.CONFIRMED)
 
-      if (isInHouse) {
+      const guestStayStatus: "IN_HOUSE" | "FUTURE" | "DEPARTED" = isInHouse
+        ? "IN_HOUSE"
+        : isFuture
+        ? "FUTURE"
+        : "DEPARTED"
+
+      if (guestStayStatus === "IN_HOUSE") {
         inHouseCount++
         inHouseReceivablesDec = inHouseReceivablesDec.add(balanceDec)
+      } else if (guestStayStatus === "FUTURE") {
+        futureCount++
+        futureReceivablesDec = futureReceivablesDec.add(balanceDec)
       } else {
         departedCount++
         departedReceivablesDec = departedReceivablesDec.add(balanceDec)
@@ -1251,8 +1313,9 @@ export class ReportsService {
       }
 
       // Filter check
-      if (filterOption === "in_house" && !isInHouse) continue
-      if (filterOption === "departed" && isInHouse) continue
+      if (filterOption === "in_house" && guestStayStatus !== "IN_HOUSE") continue
+      if (filterOption === "future" && guestStayStatus !== "FUTURE") continue
+      if (filterOption === "departed" && guestStayStatus !== "DEPARTED") continue
 
       const cust = inv.reservation.customer
       const roomNos = inv.reservation.rooms.map((r) => r.room.roomNo)
@@ -1263,12 +1326,13 @@ export class ReportsService {
         reservationId: inv.reservationId,
         reservationNo: inv.reservation.reservationNo,
         customerId: inv.reservation.customerId,
-        guestName: `${cust.firstName} ${cust.lastName}`,
+        guestName: `${cust.firstName} ${cust.lastName || ""}`.trim(),
         guestPhone: cust.phone || null,
         guestEmail: cust.email || null,
         roomNumbers: roomNos,
         reservationStatus: inv.reservation.status,
         isGuestInHouse: isInHouse,
+        guestStayStatus,
         issueDate: inv.createdAt.toISOString().split("T")[0]!,
         grandTotal: inv.grandTotal.toFixed(2),
         totalPaid: totalPaidDec.toFixed(2),
@@ -1284,6 +1348,8 @@ export class ReportsService {
       totalInvoices: items.length,
       inHouseReceivables: inHouseReceivablesDec.toFixed(2),
       inHouseCount,
+      futureReceivables: futureReceivablesDec.toFixed(2),
+      futureCount,
       departedReceivables: departedReceivablesDec.toFixed(2),
       departedCount,
       agingSummary: {

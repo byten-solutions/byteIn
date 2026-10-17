@@ -4,6 +4,8 @@ import { ReportsService } from "@/modules/reports/reports.service"
 import { AppShell } from "@/components/app-shell"
 import { ReportsView } from "./reports-view"
 
+import { getHotelTodayDate, getHotelTodayDateUtc } from "@/lib/date"
+
 export const dynamic = "force-dynamic"
 
 export default async function ReportsPage() {
@@ -12,16 +14,15 @@ export default async function ReportsPage() {
     redirect("/login")
   }
 
-  const now = new Date()
-  const y = now.getUTCFullYear()
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0")
-  const d = String(now.getUTCDate()).padStart(2, "0")
+  const todayStr = getHotelTodayDate()
+  const [y, m] = todayStr.split("-")
 
   // Default: from 1st of current month to today
   const defaultStartDate = `${y}-${m}-01`
-  const defaultEndDate = `${y}-${m}-${d}`
+  const defaultEndDate = todayStr
 
-  const weekLater = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 6))
+  const todayUtc = getHotelTodayDateUtc()
+  const weekLater = new Date(todayUtc.getTime() + 6 * 24 * 60 * 60 * 1000)
   const weekLaterStr = weekLater.toISOString().split("T")[0]!
 
   const [

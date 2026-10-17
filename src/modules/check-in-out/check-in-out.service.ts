@@ -9,6 +9,7 @@ import {
   ConflictError,
   NotFoundError,
 } from "@/lib/errors";
+import { getHotelTodayDateUtc } from "@/lib/date";
 import type {
   CheckInInput,
   CheckOutInput,
@@ -297,16 +298,11 @@ export class CheckInOutService {
   }
 
   /**
-   * Retrieves today's arrivals (CONFIRMED allocations scheduled for today)
+  /**
+   * Retrieves today's arrivals (CONFIRMED allocations scheduled for today) in hotel operating timezone
    */
-  static async getDailyArrivals(targetDate: Date = new Date()) {
-    const startOfDay = new Date(
-      Date.UTC(
-        targetDate.getUTCFullYear(),
-        targetDate.getUTCMonth(),
-        targetDate.getUTCDate()
-      )
-    );
+  static async getDailyArrivals(targetDate?: Date) {
+    const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
       where: {
@@ -327,16 +323,10 @@ export class CheckInOutService {
   }
 
   /**
-   * Retrieves today's departures (CHECKED_IN allocations scheduled for checkout today)
+   * Retrieves today's departures (CHECKED_IN allocations scheduled for checkout today) in hotel operating timezone
    */
-  static async getDailyDepartures(targetDate: Date = new Date()) {
-    const startOfDay = new Date(
-      Date.UTC(
-        targetDate.getUTCFullYear(),
-        targetDate.getUTCMonth(),
-        targetDate.getUTCDate()
-      )
-    );
+  static async getDailyDepartures(targetDate?: Date) {
+    const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
       where: {

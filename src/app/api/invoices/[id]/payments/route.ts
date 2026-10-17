@@ -5,16 +5,32 @@ import { AuthError, requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 import { recordPaymentSchema } from "@/modules/billing/billing.validation";
 
+import { REQUIRE_PAYMENT_IDEMPOTENCY_KEY } from "@/config/billing";
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
+    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
-    const validated = recordPaymentSchema.parse(body);
+    const idempotencyHeader = req.headers.get("idempotency-key");
+    const idempotencyKey = idempotencyHeader || body.idempotencyKey || undefined;
+
+    if (REQUIRE_PAYMENT_IDEMPOTENCY_KEY && !idempotencyKey) {
+      return NextResponse.json(
+        { error: "Idempotency-Key header is required for payment submission." },
+        { status: 400 }
+      );
+    }
+
+    const validated = recordPaymentSchema.parse({
+      ...body,
+      idempotencyKey: idempotencyKey || null,
+    });
+
     const result = await BillingService.recordPayment(
       id,
       validated,

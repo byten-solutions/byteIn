@@ -163,10 +163,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
     // Cleanup created records in reverse order
     await prisma.auditLog.deleteMany({
       where: {
-        OR: [
-          { userId: testStaffUserId },
-          { entityType: "Reservation" },
-        ],
+        userId: testStaffUserId,
       },
     });
 

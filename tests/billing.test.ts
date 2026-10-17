@@ -45,6 +45,7 @@ describe("Phase 6: Billing & Payments Tests", () => {
 
   before(async () => {
     // 1. Staff User
+    await prisma.user.deleteMany({ where: { email: "staff.billing@byteinn.test" } });
     const user = await prisma.user.create({
       data: {
         email: "staff.billing@byteinn.test",

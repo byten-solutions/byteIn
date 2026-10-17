@@ -18,8 +18,17 @@ export class AuthError extends Error {
  * and validates that the user exists and is ACTIVE in the database.
  * Returns null if the token is missing, invalid, expired, or if the account is disabled/deleted.
  */
-export async function getSession(explicitToken?: string | null): Promise<SessionPayload | null> {
-  const token = explicitToken !== undefined ? explicitToken : await getSessionCookie();
+export async function getSession(
+  explicitTokenOrReq?: string | null | Request
+): Promise<SessionPayload | null> {
+  let token: string | null = null;
+  if (typeof explicitTokenOrReq === "string") {
+    token = explicitTokenOrReq;
+  } else if (explicitTokenOrReq && "headers" in explicitTokenOrReq) {
+    token = await getSessionCookie(explicitTokenOrReq);
+  } else {
+    token = await getSessionCookie();
+  }
   if (!token) return null;
   const payload = await AuthService.verifySessionToken(token);
   if (!payload) return null;
@@ -79,9 +88,17 @@ export function enforceRole(
  */
 export async function requireAuth(
   allowedRoles?: RoleName[],
-  explicitToken?: string | null
+  explicitTokenOrReq?: string | null | Request
 ): Promise<SessionPayload> {
-  const token = explicitToken !== undefined ? explicitToken : await getSessionCookie();
+  let token: string | null = null;
+  if (typeof explicitTokenOrReq === "string") {
+    token = explicitTokenOrReq;
+  } else if (explicitTokenOrReq && "headers" in explicitTokenOrReq) {
+    token = await getSessionCookie(explicitTokenOrReq);
+  } else {
+    token = await getSessionCookie();
+  }
+
   if (!token) {
     throw new AuthError("Authentication required", 401);
   }

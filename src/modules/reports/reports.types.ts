@@ -20,6 +20,8 @@ export interface DailyOccupancyDTO {
   roomRevenue: string
   adr: string
   revpar: string
+  otbRooms?: number
+  otbRevenue?: string
 }
 
 export interface CategoryPerformanceDTO {
@@ -46,6 +48,8 @@ export interface OccupancyReportDTO {
   totalRoomRevenue: string
   adr: string    // Average Daily Rate (totalRoomRevenue / totalOccupiedRoomNights)
   revpar: string // Revenue Per Available Room (totalRoomRevenue / totalAvailableRoomNights)
+  totalOtbRoomNights?: number
+  totalOtbRevenue?: string
   dailyBreakdown: DailyOccupancyDTO[]
   categoryBreakdown: CategoryPerformanceDTO[]
 }
@@ -264,6 +268,7 @@ export interface ReceivableItemDTO {
   roomNumbers: string[]
   reservationStatus: ReservationStatus
   isGuestInHouse: boolean
+  guestStayStatus: "IN_HOUSE" | "FUTURE" | "DEPARTED"
   issueDate: string
   grandTotal: string
   totalPaid: string
@@ -278,6 +283,8 @@ export interface ReceivablesReportDTO {
   totalInvoices: number
   inHouseReceivables: string
   inHouseCount: number
+  futureReceivables: string
+  futureCount: number
   departedReceivables: string
   departedCount: number
   agingSummary: {

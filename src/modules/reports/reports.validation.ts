@@ -134,5 +134,5 @@ export const collectionsReportSchema = z.object({
 
 export const receivablesReportSchema = z.object({
   propertyId: z.string().trim().min(1).optional(),
-  filter: z.enum(["all", "in_house", "departed"]).optional().default("all"),
+  filter: z.enum(["all", "in_house", "future", "departed"]).optional().default("all"),
 })

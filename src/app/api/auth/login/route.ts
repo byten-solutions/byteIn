@@ -4,10 +4,21 @@ import { AuthService } from "@/modules/auth/auth.service";
 import type { LoginInput } from "@/modules/auth/auth.types";
 import { setSessionCookie } from "@/lib/session";
 import { loginRateLimiter } from "@/lib/rate-limiter";
+import { TRUST_PROXY_HEADERS } from "@/config/security";
+
+function resolveClientIp(req: NextRequest): string {
+  if (TRUST_PROXY_HEADERS) {
+    const forwardedFor = req.headers.get("x-forwarded-for");
+    if (forwardedFor) {
+      const parts = forwardedFor.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 0) return parts[0]!;
+    }
+  }
+  return "127.0.0.1";
+}
 
 export async function POST(req: NextRequest) {
-  const forwardedFor = req.headers.get("x-forwarded-for");
-  const ip = forwardedFor ? forwardedFor.split(",")[0]?.trim() || "127.0.0.1" : "127.0.0.1";
+  const ip = resolveClientIp(req);
   const userAgent = req.headers.get("user-agent") || undefined;
 
   let body: Record<string, unknown> = {};

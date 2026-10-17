@@ -771,6 +771,59 @@ export class BillingService {
         );
       }
 
+      // Check Idempotency Key (ADV-BIL-04)
+      if (input.idempotencyKey) {
+        const existingPayment = await tx.payment.findUnique({
+          where: { idempotencyKey: input.idempotencyKey },
+          include: {
+            creator: { select: { name: true, role: true } },
+            invoice: {
+              include: {
+                reservation: { include: { customer: true } },
+                items: true,
+                payments: {
+                  include: { creator: { select: { name: true, role: true } } },
+                },
+              },
+            },
+          },
+        });
+
+        if (existingPayment) {
+          const formattedInvoice = this.formatInvoiceDetail(existingPayment.invoice);
+          const customer = existingPayment.invoice.reservation?.customer;
+          const customerName = customer
+            ? `${customer.firstName} ${customer.lastName || ""}`.trim()
+            : "Guest";
+
+          const receipt: PaymentReceiptDTO = {
+            receiptNumber: `REC-${existingPayment.id.slice(-8).toUpperCase()}`,
+            paymentId: existingPayment.id,
+            invoiceNumber: existingPayment.invoice.invoiceNumber,
+            reservationNo: existingPayment.invoice.reservation?.reservationNo || "",
+            customerName,
+            customerEmail: customer?.email || null,
+            customerPhone: customer?.phone || null,
+            amountPaid: existingPayment.amount.toString(),
+            paymentMethod: existingPayment.paymentMethod,
+            referenceNumber: existingPayment.referenceNumber,
+            paidAt: existingPayment.paidAt.toISOString(),
+            recordedByName: existingPayment.creator
+              ? `${existingPayment.creator.name} (${existingPayment.creator.role?.name || "Staff"})`
+              : "Staff",
+            invoiceGrandTotal: formattedInvoice.grandTotal,
+            invoiceTotalPaid: formattedInvoice.totalPaid,
+            remainingBalance: formattedInvoice.balanceDue,
+            invoiceStatus: formattedInvoice.status,
+          };
+
+          return {
+            invoice: formattedInvoice,
+            receipt,
+          };
+        }
+      }
+
       const now = input.paidAt ? new Date(input.paidAt) : new Date();
 
       // 1. Create Payment record
@@ -780,6 +833,7 @@ export class BillingService {
           amount: paymentAmount,
           paymentMethod: input.paymentMethod.toUpperCase().trim(),
           referenceNumber: input.referenceNumber?.trim() || null,
+          idempotencyKey: input.idempotencyKey?.trim() || null,
           status: PaymentStatus.RECORDED,
           paidAt: now,
           createdBy: staffUserId,
@@ -876,9 +930,15 @@ export class BillingService {
    * Voids a recorded payment, recalculates invoice balance, and updates status.
    */
   static async voidPayment(
-    paymentId: string,
-    staffUserId: string
+    invoiceIdOrPaymentId: string,
+    paymentIdOrStaffUserId: string,
+    staffUserIdParam?: string
   ): Promise<InvoiceDetailDTO> {
+    const isThreeArgs = typeof staffUserIdParam === "string";
+    const invoiceId = isThreeArgs ? invoiceIdOrPaymentId : null;
+    const paymentId = isThreeArgs ? paymentIdOrStaffUserId : invoiceIdOrPaymentId;
+    const staffUserId = isThreeArgs ? staffUserIdParam : paymentIdOrStaffUserId;
+
     return prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
@@ -887,6 +947,10 @@ export class BillingService {
 
       if (!payment) {
         throw new Error("Payment not found");
+      }
+
+      if (invoiceId && payment.invoiceId !== invoiceId) {
+        throw new Error("Payment does not belong to the specified invoice");
       }
 
       if (payment.status === PaymentStatus.VOIDED) {

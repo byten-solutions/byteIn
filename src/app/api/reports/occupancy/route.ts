@@ -7,7 +7,7 @@ import { reportDateRangeSchema } from "@/modules/reports/reports.validation"
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST])
+    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req)
     const searchParams = req.nextUrl.searchParams
 
     const query = reportDateRangeSchema.parse({
