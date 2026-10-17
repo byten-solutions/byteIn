@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
 import { requireAuth } from "@/lib/auth-guard";
 import { UserService } from "@/modules/users/user.service";
+import { createUserSchema } from "@/modules/users/user.validation";
 import { handleApiError } from "@/lib/errors";
-
-import { CreateUserInput } from "@/modules/users/user.types";
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,7 +29,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
     }
 
-    const created = await UserService.createUser(body as unknown as CreateUserInput, session.sub);
+    const validated = createUserSchema.parse(body);
+    const created = await UserService.createUser(validated, session.sub);
     return NextResponse.json(
       {
         success: true,

@@ -11,7 +11,7 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 tests/**/*.test.ts",
+    "test": "DATABASE_URL=\"${TEST_DATABASE_URL:-postgresql://apple@localhost:5432/byteinn_test?schema=public}\" tsx --test --test-concurrency=2 tests/**/*.test.ts",
     "validate": "npm run typecheck && npm run lint && npm test",
     "shots": "node scripts/capture-screenshots.mjs"
   },

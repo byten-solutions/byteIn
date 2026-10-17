@@ -14,4 +14,16 @@ export const loginSchema = z.object({
     .max(128, "Password must not exceed 128 characters"),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z
+    .string()
+    .min(8, "New password must be at least 8 characters long")
+    .regex(/[A-Z]/, "New password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "New password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "New password must contain at least one number")
+    .regex(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/, "New password must contain at least one special character"),
+});
+
 export type LoginSchemaType = z.infer<typeof loginSchema>;
+export type ChangePasswordSchemaType = z.infer<typeof changePasswordSchema>;

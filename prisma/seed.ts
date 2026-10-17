@@ -1,4 +1,12 @@
-import { PrismaClient, RoleName, RoomStatus, Prisma } from "@prisma/client";
+import {
+  PrismaClient,
+  RoleName,
+  RoomStatus,
+  InvoiceStatus,
+  InvoiceItemType,
+  PaymentStatus,
+  Prisma,
+} from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -47,25 +55,27 @@ async function main() {
 
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@byteinn.local" },
-    update: {},
+    update: { mustChangePassword: true },
     create: {
       name: "System Administrator",
       email: "admin@byteinn.local",
       passwordHash: adminPasswordHash,
       roleId: adminRole.id,
       status: "ACTIVE",
+      mustChangePassword: true,
     },
   });
 
   const receptionistUser = await prisma.user.upsert({
     where: { email: "reception@byteinn.local" },
-    update: {},
+    update: { mustChangePassword: true },
     create: {
       name: "Front Desk Staff",
       email: "reception@byteinn.local",
       passwordHash: receptionistPasswordHash,
       roleId: receptionistRole.id,
       status: "ACTIVE",
+      mustChangePassword: true,
     },
   });
 
@@ -315,6 +325,167 @@ async function main() {
     }
   }
   console.log(`Sample rooms ensured (${sampleRooms.length})`);
+
+  // 9. Restore Demo Invoices & Collections for Active Reservations
+  console.log("Restoring demo invoices & collections for existing reservations...");
+  const demoInvoicesData = [
+    {
+      reservationNo: "RES-20261011-B139",
+      invoiceNumber: "INV-20261011-B139",
+      subtotal: new Prisma.Decimal("3825.00"),
+      grandTotal: new Prisma.Decimal("3825.00"),
+      status: InvoiceStatus.PAID,
+      issuedAt: new Date("2026-10-11T10:21:21.000Z"),
+      items: [
+        {
+          description: "Room 102 (Deluxe Suite, 17 nights)",
+          quantity: new Prisma.Decimal("17.00"),
+          unitPrice: new Prisma.Decimal("125.00"),
+          lineTotal: new Prisma.Decimal("2125.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+        {
+          description: "Room 101 (Standard Single, 17 nights)",
+          quantity: new Prisma.Decimal("17.00"),
+          unitPrice: new Prisma.Decimal("100.00"),
+          lineTotal: new Prisma.Decimal("1700.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+      ],
+      payment: {
+        amount: new Prisma.Decimal("3825.00"),
+        paymentMethod: "UPI",
+        referenceNumber: "UPI-MRIN-B139",
+        status: PaymentStatus.RECORDED,
+        paidAt: new Date("2026-10-11T10:25:00.000Z"),
+        createdBy: receptionistUser.id,
+      },
+    },
+    {
+      reservationNo: "RES-20261011-6472",
+      invoiceNumber: "INV-20261011-6472",
+      subtotal: new Prisma.Decimal("1800.00"),
+      grandTotal: new Prisma.Decimal("1800.00"),
+      status: InvoiceStatus.PAID,
+      issuedAt: new Date("2026-10-11T14:21:35.000Z"),
+      items: [
+        {
+          description: "Room 103 (Deluxe Suite, 9 nights)",
+          quantity: new Prisma.Decimal("9.00"),
+          unitPrice: new Prisma.Decimal("200.00"),
+          lineTotal: new Prisma.Decimal("1800.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+      ],
+      payment: {
+        amount: new Prisma.Decimal("1800.00"),
+        paymentMethod: "CARD",
+        referenceNumber: "CARD-HB-6472",
+        status: PaymentStatus.RECORDED,
+        paidAt: new Date("2026-10-11T14:25:00.000Z"),
+        createdBy: receptionistUser.id,
+      },
+    },
+    {
+      reservationNo: "RES-20261011-5FDC",
+      invoiceNumber: "INV-20261011-5FDC",
+      subtotal: new Prisma.Decimal("500.00"),
+      grandTotal: new Prisma.Decimal("500.00"),
+      status: InvoiceStatus.PAID,
+      issuedAt: new Date("2026-10-11T14:00:00.000Z"),
+      items: [
+        {
+          description: "Room 202 (Executive Suite, 1 night)",
+          quantity: new Prisma.Decimal("1.00"),
+          unitPrice: new Prisma.Decimal("200.00"),
+          lineTotal: new Prisma.Decimal("200.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+        {
+          description: "Room 103 (Deluxe Suite, 1 night)",
+          quantity: new Prisma.Decimal("1.00"),
+          unitPrice: new Prisma.Decimal("120.00"),
+          lineTotal: new Prisma.Decimal("120.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+        {
+          description: "Minibar & Dining Charges",
+          quantity: new Prisma.Decimal("1.00"),
+          unitPrice: new Prisma.Decimal("180.00"),
+          lineTotal: new Prisma.Decimal("180.00"),
+          itemType: InvoiceItemType.EXTRA_CHARGE,
+        },
+      ],
+      payment: {
+        amount: new Prisma.Decimal("500.00"),
+        paymentMethod: "CASH",
+        referenceNumber: "CASH-MRIN-5FDC",
+        status: PaymentStatus.RECORDED,
+        paidAt: new Date("2026-10-11T14:05:00.000Z"),
+        createdBy: receptionistUser.id,
+      },
+    },
+    {
+      reservationNo: "RES-20261011-D228",
+      invoiceNumber: "INV-20261011-D228",
+      subtotal: new Prisma.Decimal("100.00"),
+      grandTotal: new Prisma.Decimal("100.00"),
+      status: InvoiceStatus.PAID,
+      issuedAt: new Date("2026-10-11T10:31:55.000Z"),
+      items: [
+        {
+          description: "Room 101 (Standard Single, 1 night)",
+          quantity: new Prisma.Decimal("1.00"),
+          unitPrice: new Prisma.Decimal("100.00"),
+          lineTotal: new Prisma.Decimal("100.00"),
+          itemType: InvoiceItemType.ROOM_CHARGE,
+        },
+      ],
+      payment: {
+        amount: new Prisma.Decimal("100.00"),
+        paymentMethod: "CASH",
+        referenceNumber: "CASH-JHB-D228",
+        status: PaymentStatus.RECORDED,
+        paidAt: new Date("2026-10-11T10:35:00.000Z"),
+        createdBy: receptionistUser.id,
+      },
+    },
+  ];
+
+  for (const demo of demoInvoicesData) {
+    const resv = await prisma.reservation.findUnique({
+      where: { reservationNo: demo.reservationNo },
+    });
+    if (!resv) continue;
+
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { invoiceNumber: demo.invoiceNumber },
+      include: { payments: true },
+    });
+
+    if (!existingInvoice) {
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: demo.invoiceNumber,
+          subtotal: demo.subtotal,
+          discountTotal: new Prisma.Decimal("0.00"),
+          taxTotal: new Prisma.Decimal("0.00"),
+          grandTotal: demo.grandTotal,
+          status: demo.status,
+          issuedAt: demo.issuedAt,
+          items: {
+            create: demo.items,
+          },
+          payments: {
+            create: demo.payment,
+          },
+        },
+      });
+      console.log(`Restored invoice ${inv.invoiceNumber} (₹${inv.grandTotal}) with payment`);
+    }
+  }
+
   console.log("Database seed completed successfully.");
 }
 

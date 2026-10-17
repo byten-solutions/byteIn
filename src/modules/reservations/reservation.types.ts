@@ -18,6 +18,7 @@ export interface RoomAllocationInput {
   arrivalDate: string | Date;
   departureDate: string | Date;
   bookedNightlyRate?: number | string | Decimal;
+  rateOverrideReason?: string;
   adults?: number;
   children?: number;
 }

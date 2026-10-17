@@ -8,7 +8,7 @@ import { createReservationSchema } from "@/modules/reservations/reservation.vali
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
 
     const search = searchParams.get("search") || undefined;
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuth(undefined, req);
     const body = await req.json();
     const validated = createReservationSchema.parse(body);
 

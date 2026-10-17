@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth-guard";
 import { AuthService } from "@/modules/auth/auth.service";
+import { changePasswordSchema } from "@/modules/auth/auth.validation";
 import { setSessionCookie } from "@/lib/session";
 import { handleApiError } from "@/lib/errors";
 
@@ -15,15 +16,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
     }
 
-    const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
-    const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";
+    const validated = changePasswordSchema.parse(body);
 
     const userAgent = req.headers.get("user-agent") || undefined;
     const ip = req.headers.get("x-forwarded-for") || undefined;
 
     const result = await AuthService.changePassword(
       session.sub,
-      { currentPassword, newPassword },
+      validated,
       { ip, userAgent }
     );
 

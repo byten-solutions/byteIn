@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
 import { requireAuth } from "@/lib/auth-guard";
 import { UserService } from "@/modules/users/user.service";
+import { updateUserSchema } from "@/modules/users/user.validation";
 import { handleApiError } from "@/lib/errors";
-
-import { UpdateUserInput } from "@/modules/users/user.types";
 
 export async function GET(
   req: NextRequest,
@@ -38,7 +37,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
     }
 
-    const updated = await UserService.updateUser(id, body as unknown as UpdateUserInput, session.sub);
+    const validated = updateUserSchema.parse(body);
+    const updated = await UserService.updateUser(id, validated, session.sub);
     return NextResponse.json({
       success: true,
       data: updated,

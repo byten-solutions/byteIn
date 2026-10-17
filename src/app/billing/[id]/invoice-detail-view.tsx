@@ -22,6 +22,16 @@ import {
   Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -58,6 +68,7 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
   // ConfirmDialog States
   const [itemToDelete, setItemToDelete] = React.useState<string | null>(null)
   const [paymentToVoid, setPaymentToVoid] = React.useState<string | null>(null)
+  const [voidReason, setVoidReason] = React.useState("")
 
   const balanceDueNum = parseFloat(invoice.balanceDue || "0")
   const discountTotalNum = parseFloat(invoice.discountTotal || "0")
@@ -103,16 +114,23 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
 
   const handleConfirmVoidPayment = async () => {
     if (!paymentToVoid) return
+    if (!voidReason.trim() || voidReason.trim().length < 3) {
+      toast.error("Please enter a valid void reason (at least 3 characters)")
+      return
+    }
     setActionLoading(true)
     try {
       const res = await fetch(`/api/invoices/${invoice.id}/payments/${paymentToVoid}/void`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: voidReason.trim() }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || "Failed to void payment")
       setInvoice(json.data)
-      toast.success("Payment voided")
+      toast.success("Payment voided successfully")
       setPaymentToVoid(null)
+      setVoidReason("")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to void payment"
       toast.error(msg)
@@ -507,16 +525,61 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
         onConfirm={handleConfirmRemoveItem}
       />
 
-      <ConfirmDialog
+      <Dialog
         open={paymentToVoid !== null}
-        onOpenChange={(open) => !open && setPaymentToVoid(null)}
-        title="Void Payment Record"
-        description="Are you sure you want to void this recorded payment? The outstanding invoice balance will be restored immediately."
-        confirmText="Void Payment"
-        variant="destructive"
-        isPending={actionLoading}
-        onConfirm={handleConfirmVoidPayment}
-      />
+        onOpenChange={(open) => {
+          if (!open) {
+            setPaymentToVoid(null)
+            setVoidReason("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Void Payment Record</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to void this recorded payment? The invoice balance will be restored immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="void-reason" className="text-xs font-medium">
+              Reason for Void <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="void-reason"
+              placeholder="e.g. Guest paid via alternate method / card chargeback / manager reversal"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+              className="min-h-[80px] text-xs"
+              required
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPaymentToVoid(null)
+                setVoidReason("")
+              }}
+              disabled={actionLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmVoidPayment}
+              disabled={actionLoading || voidReason.trim().length < 3}
+            >
+              {actionLoading && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+              Void Payment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* MODALS */}
       <AddItemDialog

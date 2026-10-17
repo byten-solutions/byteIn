@@ -51,6 +51,11 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     _adminUserId = adminUser.id;
     receptionistUserId = receptionistUser.id;
 
+    await prisma.user.updateMany({
+      where: { id: { in: [adminUser.id, receptionistUser.id] } },
+      data: { mustChangePassword: false },
+    });
+
     adminToken = await AuthService.createSessionToken({
       sub: adminUser.id,
       email: adminUser.email,

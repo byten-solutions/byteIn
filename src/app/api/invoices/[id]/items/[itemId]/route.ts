@@ -1,14 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
+import { updateInvoiceItemSchema } from "@/modules/billing/billing.validation";
+import { handleApiError } from "@/lib/errors";
 
-export async function DELETE(
-  _req: NextRequest,
+export async function PATCH(
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
+    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const { id, itemId } = await params;
+
+    const body = await req.json();
+    const validated = updateInvoiceItemSchema.parse(body);
+
+    const updated = await BillingService.updateInvoiceItem(
+      id,
+      itemId,
+      validated,
+      session.sub
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: updated,
+      message: "Invoice item updated successfully.",
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; itemId: string }> }
+) {
+  try {
+    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
     const { id, itemId } = await params;
 
     const updated = await BillingService.removeInvoiceItem(
@@ -23,11 +53,6 @@ export async function DELETE(
       message: "Invoice item removed successfully.",
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    const message = error instanceof Error ? error.message : "Failed to remove invoice item";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

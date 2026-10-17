@@ -44,6 +44,11 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
     adminUserId = adminUser.id;
     receptionistUserId = receptionistUser.id;
 
+    await prisma.user.updateMany({
+      where: { id: { in: [adminUser.id, receptionistUser.id] } },
+      data: { mustChangePassword: false },
+    });
+
     adminToken = await AuthService.createSessionToken({
       sub: adminUser.id,
       email: adminUser.email,
@@ -232,7 +237,9 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
           method: "POST",
           headers: {
             cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
           },
+          body: JSON.stringify({ reason: "Duplicate payment entry" }),
         }
       );
 

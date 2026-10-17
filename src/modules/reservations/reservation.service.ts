@@ -296,6 +296,21 @@ export class ReservationService {
             });
           }
 
+          // Validate rate overrides against base price
+          for (const alloc of normalizedAllocations) {
+            const room = roomMap.get(alloc.roomId)!;
+            if (alloc.bookedNightlyRate !== undefined && alloc.bookedNightlyRate !== null) {
+              const rateDecimal = new Prisma.Decimal(alloc.bookedNightlyRate.toString());
+              if (rateDecimal.lessThan(room.category.basePrice)) {
+                if (!alloc.rateOverrideReason || alloc.rateOverrideReason.trim().length < 3) {
+                  throw new BadRequestError(
+                    `Room ${room.roomNo} nightly rate of ${rateDecimal.toFixed(2)} is below category base price of ${new Prisma.Decimal(room.category.basePrice).toFixed(2)}. A rateOverrideReason of at least 3 characters is required.`
+                  );
+                }
+              }
+            }
+          }
+
           // 6. Create Reservation and ReservationRoom allocations with snapshotted nightly rates
           const createdReservation = await tx.reservation.create({
             data: {
@@ -362,6 +377,32 @@ export class ReservationService {
               },
             },
           });
+
+          // Record audit log for any below-base-price rate overrides
+          for (const alloc of normalizedAllocations) {
+            const room = roomMap.get(alloc.roomId)!;
+            if (alloc.bookedNightlyRate !== undefined && alloc.bookedNightlyRate !== null) {
+              const rateDecimal = new Prisma.Decimal(alloc.bookedNightlyRate.toString());
+              if (rateDecimal.lessThan(room.category.basePrice)) {
+                await tx.auditLog.create({
+                  data: {
+                    userId: creatorUserId,
+                    entityType: "Reservation",
+                    entityId: createdReservation.id,
+                    action: "RATE_OVERRIDE",
+                    newData: {
+                      reservationNo: createdReservation.reservationNo,
+                      roomNo: room.roomNo,
+                      categoryName: room.category.name,
+                      basePrice: room.category.basePrice.toString(),
+                      overrideRate: rateDecimal.toString(),
+                      reason: alloc.rateOverrideReason!.trim(),
+                    },
+                  },
+                });
+              }
+            }
+          }
 
           // 8. Auto-provision initial itemized invoice if requested
           const shouldCreateInvoice =

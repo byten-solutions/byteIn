@@ -59,9 +59,11 @@ interface AllocationDraft {
   roomId: string
   roomNo: string
   categoryName: string
+  categoryBasePrice?: number
   arrivalDate: string
   departureDate: string
   bookedNightlyRate: string
+  rateOverrideReason?: string
   adults: number
   children: number
   maxCapacity: number
@@ -217,13 +219,19 @@ export function NewReservationForm({
       return
     }
 
+    const basePriceNum = parseFloat(room.category.basePrice) || 0
+    const effectiveRateNum = parseFloat(room.effectiveRate) || 0
+    const isBelowBase = effectiveRateNum < basePriceNum
+
     const newAllocation: AllocationDraft = {
       roomId: room.id,
       roomNo: room.roomNo,
       categoryName: room.category.name,
+      categoryBasePrice: basePriceNum,
       arrivalDate: stayRange.from,
       departureDate: stayRange.to,
       bookedNightlyRate: room.effectiveRate,
+      rateOverrideReason: isBelowBase ? "Configured room price override applied" : "",
       adults: 1,
       children: 0,
       maxCapacity: room.capacity,
@@ -355,6 +363,7 @@ export function NewReservationForm({
           arrivalDate: string
           departureDate: string
           bookedNightlyRate: number
+          rateOverrideReason?: string
           adults: number
           children: number
         }[]
@@ -372,14 +381,24 @@ export function NewReservationForm({
         customerId?: string
       } = {
         specialRequests: specialRequests.trim() || null,
-        allocations: allocations.map((a) => ({
-          roomId: a.roomId,
-          arrivalDate: a.arrivalDate,
-          departureDate: a.departureDate,
-          bookedNightlyRate: parseFloat(a.bookedNightlyRate),
-          adults: parseInt(a.adults.toString(), 10) || 1,
-          children: parseInt(a.children.toString(), 10) || 0,
-        })),
+        allocations: allocations.map((a) => {
+          const rateNum = parseFloat(a.bookedNightlyRate) || 0
+          const isBelowBase = a.categoryBasePrice !== undefined ? rateNum < a.categoryBasePrice : false
+          return {
+            roomId: a.roomId,
+            arrivalDate: a.arrivalDate,
+            departureDate: a.departureDate,
+            bookedNightlyRate: rateNum,
+            ...(isBelowBase
+              ? {
+                  rateOverrideReason:
+                    a.rateOverrideReason?.trim() || "Configured room price override applied",
+                }
+              : {}),
+            adults: parseInt(a.adults.toString(), 10) || 1,
+            children: parseInt(a.children.toString(), 10) || 0,
+          }
+        }),
       }
 
       if (guestMode === "new") {
@@ -1153,6 +1172,24 @@ export function NewReservationForm({
                               />
                             </div>
                           </div>
+
+                          {alloc.categoryBasePrice !== undefined &&
+                            (parseFloat(alloc.bookedNightlyRate) || 0) < alloc.categoryBasePrice && (
+                              <div className="space-y-1 sm:col-span-3 pt-1">
+                                <Label className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                                  Reason for Rate Override (Below base ₹{alloc.categoryBasePrice}) *
+                                </Label>
+                                <Input
+                                  placeholder="e.g. Configured room price override / Management concession"
+                                  className="h-8 text-xs border-amber-500/40 focus:border-amber-500"
+                                  value={alloc.rateOverrideReason || ""}
+                                  onChange={(e) =>
+                                    handleUpdateAllocation(idx, "rateOverrideReason", e.target.value)
+                                  }
+                                  required
+                                />
+                              </div>
+                            )}
                         </div>
                       )}
                     </div>

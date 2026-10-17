@@ -81,6 +81,11 @@ export const roomAllocationSchema = z
         { message: "Nightly rate must be a non-negative number" }
       )
       .optional(),
+    rateOverrideReason: z
+      .string()
+      .trim()
+      .min(3, "Rate override reason must be at least 3 characters")
+      .optional(),
     adults: z.coerce.number().int().min(1, "At least 1 adult required").default(1),
     children: z.coerce.number().int().min(0, "Children cannot be negative").default(0),
   })

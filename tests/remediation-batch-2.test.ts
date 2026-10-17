@@ -36,6 +36,11 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
     assert.ok(receptionistUser, "Receptionist user required for test");
     receptionistUserId = receptionistUser.id;
 
+    await prisma.user.update({
+      where: { id: receptionistUser.id },
+      data: { mustChangePassword: false },
+    });
+
     receptionistToken = await AuthService.createSessionToken({
       sub: receptionistUser.id,
       email: receptionistUser.email,

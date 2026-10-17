@@ -1054,12 +1054,10 @@ export class ReportsService {
     const endObj = new Date(`${effectiveEnd}T23:59:59.999Z`)
 
     const paymentWhere: Prisma.PaymentWhereInput = {
-      paidAt: { gte: startObj, lte: endObj },
-      status: PaymentStatus.RECORDED,
-    }
-
-    if (staffUserId) {
-      paymentWhere.createdBy = staffUserId
+      OR: [
+        { paidAt: { gte: startObj, lte: endObj } },
+        { status: PaymentStatus.VOIDED, voidedAt: { gte: startObj, lte: endObj } },
+      ],
     }
 
     if (propertyId) {
@@ -1078,6 +1076,7 @@ export class ReportsService {
       where: paymentWhere,
       include: {
         creator: true,
+        voider: true,
         invoice: {
           include: {
             reservation: {
@@ -1110,56 +1109,126 @@ export class ReportsService {
     const transactions: PaymentTransactionDTO[] = []
 
     for (const p of payments) {
-      totalCollectedDec = totalCollectedDec.add(p.amount)
+      const wasRecordedInWindow = p.paidAt >= startObj && p.paidAt <= endObj
+      const wasVoidedInWindow =
+        p.status === PaymentStatus.VOIDED &&
+        p.voidedAt !== null &&
+        p.voidedAt >= startObj &&
+        p.voidedAt <= endObj
 
-      // 1. Payment Method aggregation
-      const mExisting = methodMap.get(p.paymentMethod) || {
-        amount: new Prisma.Decimal(0),
-        count: 0,
+      // 1. Process payment collection if recorded in this window
+      // If voided in a future shift, past shift total remains unchanged
+      if (wasRecordedInWindow) {
+        if (!staffUserId || p.createdBy === staffUserId) {
+          totalCollectedDec = totalCollectedDec.add(p.amount)
+
+          const mExisting = methodMap.get(p.paymentMethod) || {
+            amount: new Prisma.Decimal(0),
+            count: 0,
+          }
+          mExisting.amount = mExisting.amount.add(p.amount)
+          mExisting.count++
+          methodMap.set(p.paymentMethod, mExisting)
+
+          const uId = p.createdBy
+          const uName = p.creator?.name || "System Staff"
+          const uEmail = p.creator?.email || ""
+          const sExisting = staffMap.get(uId) || {
+            userName: uName,
+            userEmail: uEmail,
+            total: new Prisma.Decimal(0),
+            count: 0,
+            methods: {} as Record<string, Prisma.Decimal>,
+          }
+          sExisting.total = sExisting.total.add(p.amount)
+          sExisting.count++
+          const curMethodAmount =
+            sExisting.methods[p.paymentMethod] || new Prisma.Decimal(0)
+          sExisting.methods[p.paymentMethod] = curMethodAmount.add(p.amount)
+          staffMap.set(uId, sExisting)
+
+          const customer = p.invoice.reservation?.customer
+          const guestName = customer
+            ? `${customer.firstName} ${customer.lastName}`
+            : "Direct Folio"
+          const roomNos =
+            p.invoice.reservation?.rooms?.map((r) => r.room.roomNo) || []
+
+          transactions.push({
+            paymentId: p.id,
+            receiptNumber: `REC-${p.id.slice(-8).toUpperCase()}`,
+            invoiceId: p.invoiceId,
+            invoiceNumber: p.invoice.invoiceNumber,
+            reservationId: p.invoice.reservationId,
+            reservationNo: p.invoice.reservation?.reservationNo || null,
+            guestName,
+            roomNumbers: roomNos,
+            amount: p.amount.toFixed(2),
+            paymentMethod: p.paymentMethod,
+            referenceNumber: p.referenceNumber,
+            notes: null,
+            recordedByUserId: p.createdBy,
+            recordedByUserName: uName,
+            paidAt: p.paidAt.toISOString(),
+          })
+        }
       }
-      mExisting.amount = mExisting.amount.add(p.amount)
-      mExisting.count++
-      methodMap.set(p.paymentMethod, mExisting)
 
-      // 2. Staff user aggregation
-      const uId = p.createdBy
-      const uName = p.creator?.name || "System Staff"
-      const uEmail = p.creator?.email || ""
-      const sExisting = staffMap.get(uId) || {
-        userName: uName,
-        userEmail: uEmail,
-        total: new Prisma.Decimal(0),
-        count: 0,
-        methods: {} as Record<string, Prisma.Decimal>,
+      // 2. Process payment void if voided in this window
+      // Attributed to the shift where the void actually occurred
+      if (wasVoidedInWindow) {
+        const voidStaffId = p.voidedBy || p.createdBy
+        if (!staffUserId || voidStaffId === staffUserId) {
+          totalCollectedDec = totalCollectedDec.sub(p.amount)
+
+          const mExisting = methodMap.get(p.paymentMethod) || {
+            amount: new Prisma.Decimal(0),
+            count: 0,
+          }
+          mExisting.amount = mExisting.amount.sub(p.amount)
+          methodMap.set(p.paymentMethod, mExisting)
+
+          const voiderName = p.voider?.name || p.creator?.name || "System Staff"
+          const voiderEmail = p.voider?.email || p.creator?.email || ""
+          const sExisting = staffMap.get(voidStaffId) || {
+            userName: voiderName,
+            userEmail: voiderEmail,
+            total: new Prisma.Decimal(0),
+            count: 0,
+            methods: {} as Record<string, Prisma.Decimal>,
+          }
+          sExisting.total = sExisting.total.sub(p.amount)
+          const curMethodAmount =
+            sExisting.methods[p.paymentMethod] || new Prisma.Decimal(0)
+          sExisting.methods[p.paymentMethod] = curMethodAmount.sub(p.amount)
+          staffMap.set(voidStaffId, sExisting)
+
+          const customer = p.invoice.reservation?.customer
+          const guestName = customer
+            ? `${customer.firstName} ${customer.lastName}`
+            : "Direct Folio"
+          const roomNos =
+            p.invoice.reservation?.rooms?.map((r) => r.room.roomNo) || []
+
+          transactions.push({
+            paymentId: p.id,
+            receiptNumber: `VOID-${p.id.slice(-8).toUpperCase()}`,
+            invoiceId: p.invoiceId,
+            invoiceNumber: p.invoice.invoiceNumber,
+            reservationId: p.invoice.reservationId,
+            reservationNo: p.invoice.reservation?.reservationNo || null,
+            guestName,
+            roomNumbers: roomNos,
+            amount: (-p.amount).toFixed(2),
+            paymentMethod: p.paymentMethod,
+            referenceNumber: p.referenceNumber,
+            notes: p.voidReason ? `Voided: ${p.voidReason}` : "Payment voided",
+            recordedByUserId: voidStaffId,
+            recordedByUserName: voiderName,
+            paidAt: (p.voidedAt || p.paidAt).toISOString(),
+          })
+        }
       }
-      sExisting.total = sExisting.total.add(p.amount)
-      sExisting.count++
-      const curMethodAmount = sExisting.methods[p.paymentMethod] || new Prisma.Decimal(0)
-      sExisting.methods[p.paymentMethod] = curMethodAmount.add(p.amount)
-      staffMap.set(uId, sExisting)
-
-      // 3. Transaction list item
-      const customer = p.invoice.reservation?.customer
-      const guestName = customer ? `${customer.firstName} ${customer.lastName}` : "Direct Folio"
-      const roomNos = p.invoice.reservation?.rooms?.map((r) => r.room.roomNo) || []
-
-      transactions.push({
-        paymentId: p.id,
-        receiptNumber: `REC-${p.id.slice(-8).toUpperCase()}`,
-        invoiceId: p.invoiceId,
-        invoiceNumber: p.invoice.invoiceNumber,
-        reservationId: p.invoice.reservationId,
-        reservationNo: p.invoice.reservation?.reservationNo || null,
-        guestName,
-        roomNumbers: roomNos,
-        amount: p.amount.toFixed(2),
-        paymentMethod: p.paymentMethod,
-        referenceNumber: p.referenceNumber,
-        notes: null,
-        recordedByUserId: p.createdBy,
-        recordedByUserName: uName,
-        paidAt: p.paidAt.toISOString(),
-      })
     }
 
     const methodBreakdown: PaymentMethodBreakdownDTO[] = []

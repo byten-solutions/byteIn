@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AuthService } from "@/modules/auth/auth.service";
-import type { LoginInput } from "@/modules/auth/auth.types";
+import { loginSchema } from "@/modules/auth/auth.validation";
 import { setSessionCookie } from "@/lib/session";
 import { loginRateLimiter } from "@/lib/rate-limiter";
 import { TRUST_PROXY_HEADERS } from "@/config/security";
@@ -73,7 +73,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { user, token } = await AuthService.login(body as unknown as LoginInput, { ip, userAgent });
+    const validated = loginSchema.parse(body);
+    const { user, token } = await AuthService.login(validated, { ip, userAgent });
 
     // Reset rate limiter records on successful authentication
     loginRateLimiter.reset(ipRateKey);

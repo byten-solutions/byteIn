@@ -394,6 +394,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
               arrivalDate: "2026-11-20",
               departureDate: "2026-11-22",
               bookedNightlyRate: "89.50",
+              rateOverrideReason: "Special promo rate",
             },
           ],
         },

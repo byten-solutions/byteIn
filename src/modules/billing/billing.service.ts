@@ -11,6 +11,7 @@ import { getHotelTodayDate } from "@/lib/date";
 import {
   CreateInvoiceInput,
   AddInvoiceItemInput,
+  UpdateInvoiceItemInput,
   RecordPaymentInput,
   InvoiceDetailDTO,
   InvoiceListQuery,
@@ -218,6 +219,14 @@ export class BillingService {
         subtotal.sub(discountTotal).add(taxTotal)
       );
 
+      if (discountTotal.greaterThan(0)) {
+        if (!input.discountReason || input.discountReason.trim().length < 3) {
+          throw new BadRequestError(
+            "A discount reason of at least 3 characters is required when applying a discount"
+          );
+        }
+      }
+
       const now = new Date();
       const status = input.autoIssue
         ? InvoiceStatus.ISSUED
@@ -272,6 +281,22 @@ export class BillingService {
           },
         },
       });
+
+      if (discountTotal.greaterThan(0)) {
+        await tx.auditLog.create({
+          data: {
+            userId: staffUserId,
+            entityType: "Invoice",
+            entityId: invoice.id,
+            action: "DISCOUNT_APPLIED",
+            newData: {
+              invoiceNumber: invoice.invoiceNumber,
+              discountTotal: discountTotal.toString(),
+              reason: input.discountReason!.trim(),
+            },
+          },
+        });
+      }
 
       return this.formatInvoiceDetail(invoice);
     });
@@ -471,11 +496,19 @@ export class BillingService {
       });
 
       if (!invoice) {
-        throw new Error("Invoice not found");
+        throw new NotFoundError("Invoice not found");
       }
 
       if (invoice.status === InvoiceStatus.VOID) {
-        throw new Error("Cannot add items to a voided invoice");
+        throw new BadRequestError("Cannot add items to a voided invoice");
+      }
+
+      if (input.itemType === InvoiceItemType.DISCOUNT) {
+        if (!input.reason || input.reason.trim().length < 3) {
+          throw new BadRequestError(
+            "A reason of at least 3 characters is required when adding a discount line item"
+          );
+        }
       }
 
       const quantity = new Prisma.Decimal(input.quantity);
@@ -556,6 +589,162 @@ export class BillingService {
         },
       });
 
+      if (input.itemType === InvoiceItemType.DISCOUNT) {
+        await tx.auditLog.create({
+          data: {
+            userId: staffUserId,
+            entityType: "Invoice",
+            entityId: invoiceId,
+            action: "DISCOUNT_APPLIED",
+            newData: {
+              invoiceNumber: updatedInvoice.invoiceNumber,
+              description: input.description,
+              discountAmount: lineTotal.toString(),
+              reason: input.reason!.trim(),
+            },
+          },
+        });
+      }
+
+      return this.formatInvoiceDetail(updatedInvoice);
+    });
+  }
+
+  /**
+   * Updates an existing invoice item.
+   * Strictly blocked if any payments have been recorded on the invoice.
+   */
+  static async updateInvoiceItem(
+    invoiceId: string,
+    itemId: string,
+    input: UpdateInvoiceItemInput,
+    staffUserId: string
+  ): Promise<InvoiceDetailDTO> {
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
+
+      const invoice = await tx.invoice.findUnique({
+        where: { id: invoiceId },
+        include: { items: true, payments: true },
+      });
+
+      if (!invoice) {
+        throw new NotFoundError("Invoice not found");
+      }
+
+      if (invoice.status === InvoiceStatus.VOID) {
+        throw new BadRequestError("Cannot edit items on a voided invoice");
+      }
+
+      const hasPayments = (invoice.payments || []).some(
+        (p) => p.status === PaymentStatus.RECORDED
+      );
+      if (hasPayments) {
+        throw new BadRequestError(
+          "Cannot edit invoice items once payments have been recorded. To adjust balance, apply a concession/discount or post an adjustment item."
+        );
+      }
+
+      const item = invoice.items.find((i) => i.id === itemId);
+      if (!item) {
+        throw new NotFoundError("Invoice item not found");
+      }
+
+      const itemType = input.itemType ?? item.itemType;
+      if (itemType === InvoiceItemType.DISCOUNT) {
+        if (!input.reason || input.reason.trim().length < 3) {
+          throw new BadRequestError(
+            "A reason of at least 3 characters is required when editing to a discount line item"
+          );
+        }
+      }
+
+      const quantity = input.quantity !== undefined ? new Prisma.Decimal(input.quantity) : item.quantity;
+      const unitPrice = input.unitPrice !== undefined ? new Prisma.Decimal(input.unitPrice) : item.unitPrice;
+      const lineTotal = quantity.mul(unitPrice);
+
+      const oldData = {
+        description: item.description,
+        quantity: item.quantity.toString(),
+        unitPrice: item.unitPrice.toString(),
+        lineTotal: item.lineTotal.toString(),
+        itemType: item.itemType,
+      };
+
+      await tx.invoiceItem.update({
+        where: { id: itemId },
+        data: {
+          description: input.description ?? item.description,
+          quantity,
+          unitPrice,
+          lineTotal,
+          itemType,
+        },
+      });
+
+      const allItems = await tx.invoiceItem.findMany({
+        where: { invoiceId },
+      });
+
+      const newSubtotal = allItems.reduce(
+        (sum, it) => sum.add(it.lineTotal),
+        new Prisma.Decimal(0)
+      );
+
+      const newGrandTotal = Prisma.Decimal.max(
+        new Prisma.Decimal(0),
+        newSubtotal.sub(invoice.discountTotal).add(invoice.taxTotal)
+      );
+
+      const totalPaid = (invoice.payments || [])
+        .filter((p) => p.status === PaymentStatus.RECORDED)
+        .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+
+      let newStatus = invoice.status;
+      if (invoice.status !== InvoiceStatus.DRAFT) {
+        if (totalPaid.greaterThanOrEqualTo(newGrandTotal)) {
+          newStatus = InvoiceStatus.PAID;
+        } else if (totalPaid.greaterThan(0)) {
+          newStatus = InvoiceStatus.PARTIALLY_PAID;
+        } else {
+          newStatus = InvoiceStatus.ISSUED;
+        }
+      }
+
+      const updatedInvoice = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          subtotal: newSubtotal,
+          grandTotal: newGrandTotal,
+          status: newStatus,
+        },
+        include: {
+          reservation: { include: { customer: true } },
+          items: true,
+          payments: {
+            include: { creator: { select: { name: true, role: true } } },
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: staffUserId,
+          entityType: "Invoice",
+          entityId: invoiceId,
+          action: "INVOICE_ITEM_UPDATED",
+          oldData,
+          newData: {
+            description: input.description ?? item.description,
+            quantity: quantity.toString(),
+            unitPrice: unitPrice.toString(),
+            lineTotal: lineTotal.toString(),
+            itemType,
+            reason: input.reason?.trim() || null,
+          },
+        },
+      });
+
       return this.formatInvoiceDetail(updatedInvoice);
     });
   }
@@ -577,16 +766,25 @@ export class BillingService {
       });
 
       if (!invoice) {
-        throw new Error("Invoice not found");
+        throw new NotFoundError("Invoice not found");
       }
 
       if (invoice.status === InvoiceStatus.VOID) {
-        throw new Error("Cannot remove items from a voided invoice");
+        throw new BadRequestError("Cannot remove items from a voided invoice");
+      }
+
+      const hasPayments = (invoice.payments || []).some(
+        (p) => p.status === PaymentStatus.RECORDED
+      );
+      if (hasPayments) {
+        throw new BadRequestError(
+          "Cannot delete invoice items once payments have been recorded. Add an adjustment or credit item instead."
+        );
       }
 
       const item = invoice.items.find((i) => i.id === itemId);
       if (!item) {
-        throw new Error("Invoice item not found");
+        throw new NotFoundError("Invoice item not found");
       }
 
       await tx.invoiceItem.delete({
@@ -935,12 +1133,18 @@ export class BillingService {
   static async voidPayment(
     invoiceIdOrPaymentId: string,
     paymentIdOrStaffUserId: string,
-    staffUserIdParam?: string
+    staffUserIdParam?: string,
+    reasonParam?: string
   ): Promise<InvoiceDetailDTO> {
-    const isThreeArgs = typeof staffUserIdParam === "string";
-    const invoiceId = isThreeArgs ? invoiceIdOrPaymentId : null;
-    const paymentId = isThreeArgs ? paymentIdOrStaffUserId : invoiceIdOrPaymentId;
-    const staffUserId = isThreeArgs ? staffUserIdParam : paymentIdOrStaffUserId;
+    const isMultiArgs = typeof staffUserIdParam === "string";
+    const invoiceId = isMultiArgs ? invoiceIdOrPaymentId : null;
+    const paymentId = isMultiArgs ? paymentIdOrStaffUserId : invoiceIdOrPaymentId;
+    const staffUserId = isMultiArgs ? staffUserIdParam : paymentIdOrStaffUserId;
+    const voidReason = (reasonParam || "Payment voided by operator").trim();
+
+    if (voidReason.length < 3) {
+      throw new BadRequestError("Void reason must be at least 3 characters");
+    }
 
     return prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
@@ -977,9 +1181,15 @@ export class BillingService {
 
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${payment.invoiceId} FOR UPDATE`;
 
+      const now = new Date();
       await tx.payment.update({
         where: { id: paymentId },
-        data: { status: PaymentStatus.VOIDED },
+        data: {
+          status: PaymentStatus.VOIDED,
+          voidReason,
+          voidedAt: now,
+          voidedBy: staffUserId,
+        },
       });
 
       const remainingPayments = await tx.payment.findMany({
@@ -1029,6 +1239,9 @@ export class BillingService {
           },
           newData: {
             status: PaymentStatus.VOIDED,
+            voidReason,
+            voidedAt: now.toISOString(),
+            voidedBy: staffUserId,
             newInvoiceStatus: newStatus,
             newTotalPaid: newTotalPaid.toString(),
           },

@@ -24,6 +24,14 @@ import {
 import { POST as changePasswordRoute } from "@/app/api/auth/change-password/route";
 import { GET as discountsReportRoute } from "@/app/api/reports/discounts/route";
 import { GET as listRoomsRoute } from "@/app/api/rooms/route";
+import { POST as createReservationRoute } from "@/app/api/reservations/route";
+import { POST as addInvoiceItemRoute } from "@/app/api/invoices/[id]/items/route";
+import {
+  PATCH as updateInvoiceItemRoute,
+  DELETE as removeInvoiceItemRoute,
+} from "@/app/api/invoices/[id]/items/[itemId]/route";
+import { ReportsService } from "@/modules/reports/reports.service";
+import { BillingService } from "@/modules/billing/billing.service";
 
 describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Concession Reporting", () => {
   let adminUserId: string;
@@ -227,7 +235,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const payment = inv.payments[0]!;
 
-      // Receptionist voids payment recorded today
+      // Receptionist voids payment recorded today with reason
       const req = new NextRequest(
         `http://localhost/api/invoices/${inv.id}/payments/${payment.id}/void`,
         {
@@ -236,6 +244,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
             cookie: `byteinn_session=${receptionistToken}`,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ reason: "Customer requested card refund" }),
         }
       );
 
@@ -249,6 +258,79 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
       assert.equal(checkPayment?.status, PaymentStatus.VOIDED);
+      assert.equal(checkPayment?.voidReason, "Customer requested card refund");
+      assert.ok(checkPayment?.voidedAt);
+      assert.equal(checkPayment?.voidedBy, receptionistUserId);
+    });
+
+    it("rejects void request when void reason is missing or shorter than 3 characters with HTTP 400", async () => {
+      const today = getHotelTodayDateUtc();
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-VOID-NOREASON-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-VOID-NOREASON-${Date.now()}`,
+          status: InvoiceStatus.PARTIALLY_PAID,
+          subtotal: 1000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1000,
+          payments: {
+            create: {
+              amount: 500,
+              paymentMethod: "CASH",
+              status: PaymentStatus.RECORDED,
+              paidAt: today,
+              createdBy: receptionistUserId,
+            },
+          },
+        },
+        include: { payments: true },
+      });
+
+      const payment = inv.payments[0]!;
+
+      // 1. Missing body/reason entirely
+      const reqMissing = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/payments/${payment.id}/void`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }
+      );
+      const resMissing = await voidPaymentRoute(reqMissing, {
+        params: Promise.resolve({ id: inv.id, paymentId: payment.id }),
+      });
+      assert.equal(resMissing.status, 400, "Missing void reason must return HTTP 400");
+
+      // 2. Too short reason (< 3 chars)
+      const reqShort = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/payments/${payment.id}/void`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ reason: "no" }),
+        }
+      );
+      const resShort = await voidPaymentRoute(reqShort, {
+        params: Promise.resolve({ id: inv.id, paymentId: payment.id }),
+      });
+      assert.equal(resShort.status, 400, "Too short void reason must return HTTP 400");
     });
 
     it("rejects receptionist attempting to void a payment recorded on a past business day", async () => {
@@ -307,6 +389,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
             cookie: `byteinn_session=${receptionistToken}`,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ reason: "Customer billing dispute" }),
         }
       );
 
@@ -373,7 +456,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const payment = inv.payments[0]!;
 
-      // Admin voids past-day payment
+      // Admin voids past-day payment with reason
       const req = new NextRequest(
         `http://localhost/api/invoices/${inv.id}/payments/${payment.id}/void`,
         {
@@ -382,6 +465,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
             cookie: `byteinn_session=${adminToken}`,
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ reason: "Admin approved older ledger reversal" }),
         }
       );
 
@@ -392,6 +476,82 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       assert.equal(res.status, 200, "Past-day payment void by administrator must succeed with HTTP 200");
       const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
       assert.equal(checkPayment?.status, PaymentStatus.VOIDED);
+      assert.equal(checkPayment?.voidReason, "Admin approved older ledger reversal");
+      assert.equal(checkPayment?.voidedBy, adminUserId);
+    });
+
+    it("preserves past shift collections unchanged and attributes voids to the shift where the void occurred", async () => {
+      const today = getHotelTodayDateUtc();
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const yesterdayIso = yesterday.toISOString().split("T")[0]!;
+      const todayIso = today.toISOString().split("T")[0]!;
+
+      // 1. Create a reservation and an invoice with a payment recorded yesterday (Shift 1)
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-SHIFT-VOID-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-SHIFT-VOID-${Date.now()}`,
+          status: InvoiceStatus.PAID,
+          subtotal: 1500,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1500,
+          payments: {
+            create: {
+              amount: 1500,
+              paymentMethod: "CASH",
+              referenceNumber: "CASH-SHIFT-01",
+              status: PaymentStatus.RECORDED,
+              paidAt: yesterday,
+              createdBy: receptionistUserId,
+            },
+          },
+        },
+        include: { payments: true },
+      });
+
+      const payment = inv.payments[0]!;
+
+      // 2. Query yesterday's shift collection report BEFORE the void
+      const reportYesterdayBefore = await ReportsService.getShiftCollections(yesterdayIso);
+      const yesterdayTotalBefore = Number(reportYesterdayBefore.totalCollected);
+
+      // 3. Admin voids the payment TODAY (Shift 2)
+      await BillingService.voidPayment(
+        inv.id,
+        payment.id,
+        adminUserId,
+        "Customer check-out refund approved by manager"
+      );
+
+      // 4. Query yesterday's shift report AFTER the void:
+      // Invariant: Past shift collections MUST remain unchanged!
+      const reportYesterdayAfter = await ReportsService.getShiftCollections(yesterdayIso);
+      assert.equal(
+        Number(reportYesterdayAfter.totalCollected),
+        yesterdayTotalBefore,
+        "Yesterday shift collection total MUST NOT change when payment is voided in a later shift"
+      );
+
+      // 5. Query today's shift report:
+      // The void MUST be attributed to today's shift where it happened!
+      const reportToday = await ReportsService.getShiftCollections(todayIso);
+      const voidTx = reportToday.transactions.find(
+        (t) => t.paymentId === payment.id && Number(t.amount) < 0
+      );
+      assert.ok(voidTx, "Today's shift report must contain the negative void transaction");
+      assert.equal(Number(voidTx.amount), -1500);
+      assert.ok(voidTx.receiptNumber.startsWith("VOID-"));
+      assert.ok(voidTx.notes?.includes("Customer check-out refund approved by manager"));
     });
   });
 
@@ -852,6 +1012,471 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     });
   });
 
+  // =========================================================================
+  // SECTION 6: REASONS REQUIRED FOR DISCOUNTS & BELOW-BASE-PRICE RATE OVERRIDES
+  // =========================================================================
+  describe("6. Reasons Required for Discounts & Below-Base-Price Overrides (Audit Logs)", () => {
+    it("rejects discount line item without reason with HTTP 400", async () => {
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-DISC-VALID-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-DISC-VALID-${Date.now()}`,
+          status: InvoiceStatus.DRAFT,
+          subtotal: 1000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1000,
+        },
+      });
+
+      const reqNoReason = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            description: "VIP courtesy discount",
+            quantity: 1,
+            unitPrice: 200,
+            itemType: "DISCOUNT",
+          }),
+        }
+      );
+
+      const res = await addInvoiceItemRoute(reqNoReason, {
+        params: Promise.resolve({ id: inv.id }),
+      });
+
+      assert.equal(res.status, 400, "Discount item without reason must be rejected with HTTP 400");
+    });
+
+    it("accepts discount line item with reason and records DISCOUNT_APPLIED audit log", async () => {
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-DISC-AUDIT-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-DISC-AUDIT-${Date.now()}`,
+          status: InvoiceStatus.DRAFT,
+          subtotal: 1000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1000,
+        },
+      });
+
+      const req = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            description: "Management approved promotional voucher",
+            quantity: 1,
+            unitPrice: 200,
+            itemType: "DISCOUNT",
+            reason: "Corporate partner promotional concession",
+          }),
+        }
+      );
+
+      const res = await addInvoiceItemRoute(req, {
+        params: Promise.resolve({ id: inv.id }),
+      });
+
+      assert.equal(res.status, 200, "Discount item with reason must succeed with HTTP 200");
+
+      // Verify DISCOUNT_APPLIED audit log exists
+      const auditLog = await prisma.auditLog.findFirst({
+        where: {
+          entityId: inv.id,
+          action: "DISCOUNT_APPLIED",
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      assert.ok(auditLog, "DISCOUNT_APPLIED audit log must be recorded");
+      const newData = auditLog.newData as Record<string, unknown>;
+      assert.equal(newData?.reason, "Corporate partner promotional concession");
+      assert.equal(auditLog.userId, receptionistUserId);
+    });
+
+    it("rejects reservation room allocation below base price when rateOverrideReason is missing", async () => {
+      const today = getHotelTodayDateUtc();
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+      const building = await prisma.building.findFirst();
+      const floor = await prisma.floor.findFirst();
+
+      const testRoom = await prisma.room.create({
+        data: {
+          roomNo: `OVR-REJ-${Date.now()}`,
+          propertyId: testPropertyId,
+          buildingId: building!.id,
+          floorId: floor!.id,
+          roomCategoryId: testCategoryId,
+          capacity: 2,
+          status: RoomStatus.VACANT_CLEAN,
+        },
+      });
+
+      const category = await prisma.roomCategory.findUnique({ where: { id: testCategoryId } });
+      const basePrice = Number(category!.basePrice);
+      const belowBaseRate = basePrice - 500;
+
+      const req = new NextRequest("http://localhost/api/reservations", {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerId: testCustomerId,
+          allocations: [
+            {
+              roomId: testRoom.id,
+              arrivalDate: today.toISOString().split("T")[0],
+              departureDate: tomorrow.toISOString().split("T")[0],
+              bookedNightlyRate: belowBaseRate,
+              adults: 1,
+            },
+          ],
+        }),
+      });
+
+      const res = await createReservationRoute(req);
+      assert.equal(res.status, 400, "Below-base-price rate override without reason must be rejected with HTTP 400");
+    });
+
+    it("accepts reservation room allocation below base price with rateOverrideReason and logs RATE_OVERRIDE", async () => {
+      const today = getHotelTodayDateUtc();
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+      const building = await prisma.building.findFirst();
+      const floor = await prisma.floor.findFirst();
+
+      const testRoom = await prisma.room.create({
+        data: {
+          roomNo: `OVR-ACC-${Date.now()}`,
+          propertyId: testPropertyId,
+          buildingId: building!.id,
+          floorId: floor!.id,
+          roomCategoryId: testCategoryId,
+          capacity: 2,
+          status: RoomStatus.VACANT_CLEAN,
+        },
+      });
+
+      const category = await prisma.roomCategory.findUnique({ where: { id: testCategoryId } });
+      const basePrice = Number(category!.basePrice);
+      const belowBaseRate = basePrice - 500;
+
+      const req = new NextRequest("http://localhost/api/reservations", {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerId: testCustomerId,
+          allocations: [
+            {
+              roomId: testRoom.id,
+              arrivalDate: today.toISOString().split("T")[0],
+              departureDate: tomorrow.toISOString().split("T")[0],
+              bookedNightlyRate: belowBaseRate,
+              rateOverrideReason: "Management approved long-stay rate concession",
+              adults: 1,
+            },
+          ],
+        }),
+      });
+
+      const res = await createReservationRoute(req);
+      assert.equal(res.status, 201, "Rate override with reason must succeed with HTTP 201");
+      const json = await res.json();
+      const resvId = json.reservation?.id || json.data?.id;
+
+      // Verify RATE_OVERRIDE audit log exists
+      const auditLog = await prisma.auditLog.findFirst({
+        where: {
+          entityId: resvId,
+          action: "RATE_OVERRIDE",
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      assert.ok(auditLog, "RATE_OVERRIDE audit log must be recorded in audit_logs");
+      const newData = auditLog.newData as Record<string, unknown>;
+      assert.equal(newData?.reason, "Management approved long-stay rate concession");
+    });
+  });
+
+  // =========================================================================
+  // SECTION 7: INVOICE ITEM EDITS/DELETES BLOCKED ONCE PAYMENTS EXIST
+  // =========================================================================
+  describe("7. Invoice Item Deletes Blocked Once Payments Exist (Adds Allowed)", () => {
+    it("blocks invoice item deletion when payments have been recorded with HTTP 400", async () => {
+      const today = getHotelTodayDateUtc();
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-DEL-BLOCK-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-DEL-BLOCK-${Date.now()}`,
+          status: InvoiceStatus.PARTIALLY_PAID,
+          subtotal: 2000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 2000,
+          items: {
+            create: {
+              description: "Room charge 1 night",
+              quantity: 1,
+              unitPrice: 2000,
+              lineTotal: 2000,
+              itemType: InvoiceItemType.ROOM_CHARGE,
+            },
+          },
+          payments: {
+            create: {
+              amount: 500,
+              paymentMethod: "CASH",
+              status: PaymentStatus.RECORDED,
+              paidAt: today,
+              createdBy: receptionistUserId,
+            },
+          },
+        },
+        include: { items: true, payments: true },
+      });
+
+      const itemId = inv.items[0]!.id;
+
+      // Attempt to DELETE the item
+      const req = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items/${itemId}`,
+        {
+          method: "DELETE",
+          headers: { cookie: `byteinn_session=${receptionistToken}` },
+        }
+      );
+
+      const res = await removeInvoiceItemRoute(req, {
+        params: Promise.resolve({ id: inv.id, itemId }),
+      });
+
+      assert.equal(res.status, 400, "Deleting invoice item when payments exist must be rejected with HTTP 400");
+      const json = await res.json();
+      assert.ok(
+        json.error.includes("Cannot delete invoice items once payments have been recorded"),
+        `Error must mention payments exist invariant, got: ${json.error}`
+      );
+
+      // Verify item still exists in database
+      const itemCheck = await prisma.invoiceItem.findUnique({ where: { id: itemId } });
+      assert.ok(itemCheck, "Invoice item must not be deleted");
+
+      // Attempt to EDIT (PATCH) the item - must also be blocked!
+      const patchReq = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items/${itemId}`,
+        {
+          method: "PATCH",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ description: "Modified charge", unitPrice: 1500 }),
+        }
+      );
+
+      const patchRes = await updateInvoiceItemRoute(patchReq, {
+        params: Promise.resolve({ id: inv.id, itemId }),
+      });
+
+      assert.equal(patchRes.status, 400, "Editing invoice item when payments exist must be rejected with HTTP 400");
+      const patchJson = await patchRes.json();
+      assert.ok(
+        patchJson.error.includes("Cannot edit invoice items once payments have been recorded"),
+        `Error must mention cannot edit invariant, got: ${patchJson.error}`
+      );
+    });
+
+    it("allows editing invoice items when no payments exist yet", async () => {
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-EDIT-DRAFT-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-EDIT-DRAFT-${Date.now()}`,
+          status: InvoiceStatus.DRAFT,
+          subtotal: 1000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1000,
+          items: {
+            create: {
+              description: "Draft item before payment",
+              quantity: 1,
+              unitPrice: 1000,
+              lineTotal: 1000,
+              itemType: InvoiceItemType.EXTRA_CHARGE,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const itemId = inv.items[0]!.id;
+
+      // Edit item before payments exist
+      const patchReq = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items/${itemId}`,
+        {
+          method: "PATCH",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ description: "Updated description", unitPrice: 1200 }),
+        }
+      );
+
+      const patchRes = await updateInvoiceItemRoute(patchReq, {
+        params: Promise.resolve({ id: inv.id, itemId }),
+      });
+
+      assert.equal(patchRes.status, 200, "Editing invoice item on unpaid invoice must succeed with HTTP 200");
+      const patchJson = await patchRes.json();
+      assert.equal(patchJson.success, true);
+      const updatedItem = await prisma.invoiceItem.findUnique({ where: { id: itemId } });
+      assert.equal(updatedItem?.description, "Updated description");
+      assert.equal(Number(updatedItem?.unitPrice), 1200);
+    });
+
+    it("allows adding new invoice items when payments already exist", async () => {
+      const today = getHotelTodayDateUtc();
+      const resv = await prisma.reservation.create({
+        data: {
+          reservationNo: `RES-ADD-ALLOW-${Date.now()}`,
+          customerId: testCustomerId,
+          createdBy: receptionistUserId,
+          status: ReservationStatus.CONFIRMED,
+        },
+      });
+
+      const inv = await prisma.invoice.create({
+        data: {
+          reservationId: resv.id,
+          invoiceNumber: `INV-ADD-ALLOW-${Date.now()}`,
+          status: InvoiceStatus.PARTIALLY_PAID,
+          subtotal: 1000,
+          taxTotal: 0,
+          discountTotal: 0,
+          grandTotal: 1000,
+          items: {
+            create: {
+              description: "Initial Room charge",
+              quantity: 1,
+              unitPrice: 1000,
+              lineTotal: 1000,
+              itemType: InvoiceItemType.ROOM_CHARGE,
+            },
+          },
+          payments: {
+            create: {
+              amount: 500,
+              paymentMethod: "CASH",
+              status: PaymentStatus.RECORDED,
+              paidAt: today,
+              createdBy: receptionistUserId,
+            },
+          },
+        },
+        include: { items: true, payments: true },
+      });
+
+      // Attempt to ADD an extra charge item (allowed)
+      const req = new NextRequest(
+        `http://localhost/api/invoices/${inv.id}/items`,
+        {
+          method: "POST",
+          headers: {
+            cookie: `byteinn_session=${receptionistToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            description: "Room service lunch",
+            quantity: 1,
+            unitPrice: 350,
+            itemType: "EXTRA_CHARGE",
+          }),
+        }
+      );
+
+      const res = await addInvoiceItemRoute(req, {
+        params: Promise.resolve({ id: inv.id }),
+      });
+
+      assert.equal(res.status, 200, "Adding item to invoice with existing payments must succeed with HTTP 200");
+      const json = await res.json();
+      assert.equal(json.success, true);
+    });
+  });
+
+  // =========================================================================
+  // SECTION 8: SEEDED ACCOUNTS MUST_CHANGE_PASSWORD INVARIANT
+  // =========================================================================
+  describe("8. Seed Accounts must_change_password Invariant", () => {
+    it("ensures newly seeded accounts have must_change_password=true by default", async () => {
+      const seededUser = await prisma.user.create({
+        data: {
+          name: "Test Seeded Staff",
+          email: `test-seed-${Date.now()}@byteinn.local`,
+          passwordHash: await AuthService.hashPassword("Seed@123456"),
+          roleId: receptionistRoleId,
+          status: "ACTIVE",
+          mustChangePassword: true,
+        },
+      });
+      assert.equal(seededUser.mustChangePassword, true, "Seeded user must have mustChangePassword=true");
+    });
+  });
+
   after(async () => {
     // Cleanup temporary users created by Batch 3 tests
     await prisma.user.deleteMany({
@@ -863,7 +1488,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       },
     });
 
-    // Ensure seeded users are active with mustChangePassword = false
+    // Ensure seeded users are active with mustChangePassword = false for other test suites
     await prisma.user.updateMany({
       where: { email: { in: ["admin@byteinn.local", "reception@byteinn.local"] } },
       data: { status: "ACTIVE", mustChangePassword: false },

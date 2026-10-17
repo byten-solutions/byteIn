@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
 import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
+import { voidPaymentSchema } from "@/modules/billing/billing.validation";
 import { handleApiError } from "@/lib/errors";
 
 export async function POST(
@@ -11,8 +12,15 @@ export async function POST(
   try {
     const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
     const { id: invoiceId, paymentId } = await params;
+    const body = await req.json().catch(() => ({}));
+    const validated = voidPaymentSchema.parse(body);
 
-    const updated = await BillingService.voidPayment(invoiceId, paymentId, session.sub);
+    const updated = await BillingService.voidPayment(
+      invoiceId,
+      paymentId,
+      session.sub,
+      validated.reason
+    );
     return NextResponse.json({
       success: true,
       data: updated,
