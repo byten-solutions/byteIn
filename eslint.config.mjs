@@ -15,6 +15,7 @@ const eslintConfig = defineConfig([
     "prisma/migrations/**",
     ".agent/**",
     ".agents/**",
+    ".worktrees/**",
   ]),
   {
     rules: {
