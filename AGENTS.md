@@ -102,6 +102,10 @@ Whenever working on the codebase, follow this engineering loop:
 ## 8. Architectural Safeguards & Git Discipline
 - **Ambiguities & Conflicts**: If documentation conflicts with active code or requirements are ambiguous, **stop and ask the user** rather than silently inventing business rules or architectural patterns.
 - **Git Safety**: Never run destructive Git commands (`git reset --hard`, `git clean -fd`, destructive checkout) that modify git history or discard uncommitted user changes. Never commit, push, merge, or deploy without explicit user approval. Always inspect `git status` before and after operations.
+- **Feature Branching Protocol**: When working on a special section, feature, or major module:
+  1. Create and switch to a dedicated branch (`git checkout -b feature/<name>` or `git checkout -b <module-name>`).
+  2. Implement, test, and commit verified changes onto that feature branch.
+  3. When complete, stop and explicitly ask the user for approval before merging into `main`.
 - **Database Rules**: Never use `prisma db push` as a substitute for migrations. Always create and apply versioned Prisma migrations. Always use PostgreSQL `numeric` / Prisma `Decimal` for financial values.
 - **Data Operations**: Search, sorting, filtering, and pagination must be handled **backend-first** in the database query via Prisma, never in frontend client memory.
 
