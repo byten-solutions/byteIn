@@ -11,6 +11,7 @@ import { POST as extendStayRoute } from "../src/app/api/room-allocations/[id]/ex
 import { POST as changeRoomRoute } from "../src/app/api/room-allocations/[id]/change-room/route";
 import { POST as checkOutRoute } from "../src/app/api/room-allocations/[id]/check-out/route";
 import { ReservationStatus, AllocationStatus, RoomStatus } from "@prisma/client";
+import { getHotelTodayDate } from "../src/lib/date";
 
 describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine", () => {
   let receptionistToken: string;
@@ -277,8 +278,9 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
   describe("3. NO_SHOW Status & Exclusion Constraint Room Release", () => {
     it("should mark allocation as NO_SHOW and immediately release the physical room for a new booking", async () => {
       const room = await createTestRoom();
-      const stayArrival = new Date("2026-11-20T00:00:00.000Z");
-      const stayDeparture = new Date("2026-11-23T00:00:00.000Z");
+      const todayIso = getHotelTodayDate();
+      const stayArrival = new Date(`${todayIso}T00:00:00.000Z`);
+      const stayDeparture = new Date(Date.now() + 86400000 * 3);
 
       const reservation = await prisma.reservation.create({
         data: {
@@ -485,8 +487,8 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
               {
                 roomId: roomOld.id,
                 roomCategoryId: testCategoryId,
-                arrivalDate: new Date("2026-11-10T00:00:00.000Z"),
-                departureDate: new Date("2026-11-14T00:00:00.000Z"),
+                arrivalDate: new Date(Date.now() - 86400000),
+                departureDate: new Date(Date.now() + 86400000 * 3),
                 bookedNightlyRate: 1500,
                 status: AllocationStatus.CHECKED_IN,
               },
@@ -517,13 +519,24 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
       });
 
       assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.equal(data.success, true);
 
-      // Verify allocation moved to roomNew
-      const updatedAlloc = await prisma.reservationRoom.findUnique({
+      // Verify old allocation is ended in roomOld
+      const oldAlloc = await prisma.reservationRoom.findUnique({
         where: { id: alloc.id },
       });
-      assert.ok(updatedAlloc);
-      assert.equal(updatedAlloc.roomId, roomNew.id);
+      assert.ok(oldAlloc);
+      assert.equal(oldAlloc.roomId, roomOld.id);
+      assert.equal(oldAlloc.status, AllocationStatus.CHECKED_OUT);
+
+      // Verify new allocation started today in roomNew
+      const newAlloc = await prisma.reservationRoom.findUnique({
+        where: { id: data.data.id },
+      });
+      assert.ok(newAlloc);
+      assert.equal(newAlloc.roomId, roomNew.id);
+      assert.equal(newAlloc.status, AllocationStatus.CHECKED_IN);
 
       // Verify physical room states: old room VACANT_DIRTY, new room OCCUPIED
       const updatedOldRoom = await prisma.room.findUnique({ where: { id: roomOld.id } });
@@ -540,7 +553,10 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
   describe("6. Early Checkout & Effective Checkout Date", () => {
     it("should preserve booked departure date, set actualCheckoutDate, transition room to VACANT_DIRTY", async () => {
       const room = await createTestRoom();
-      const bookedDeparture = new Date("2026-11-25T00:00:00.000Z");
+      const stayArrival = new Date(Date.now() - 86400000);
+      const bookedDeparture = new Date(
+        new Date(Date.now() + 86400000 * 3).toISOString().slice(0, 10) + "T00:00:00.000Z"
+      );
 
       const reservation = await prisma.reservation.create({
         data: {
@@ -553,7 +569,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
               {
                 roomId: room.id,
                 roomCategoryId: testCategoryId,
-                arrivalDate: new Date("2026-11-20T00:00:00.000Z"),
+                arrivalDate: stayArrival,
                 departureDate: bookedDeparture,
                 bookedNightlyRate: 1500,
                 status: AllocationStatus.CHECKED_IN,

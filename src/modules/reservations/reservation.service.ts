@@ -6,6 +6,7 @@ import {
   ReservationStatus,
   InvoiceStatus,
   InvoiceItemType,
+  PaymentStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BillingService } from "../billing/billing.service";
@@ -16,9 +17,13 @@ import {
 } from "@/lib/errors";
 import { sanitizePagination } from "@/lib/pagination";
 import { getHotelTodayDateUtc } from "@/lib/date";
+import { RoleName } from "@/modules/auth/auth.types";
 import {
   ROOM_CHANGE_RATE_POLICY,
   AUTO_CANCEL_RESERVATION_WHEN_ALL_ALLOCATIONS_CANCELLED,
+  NO_SHOW_BILLING_POLICY,
+  NO_SHOW_MIN_DATE_POLICY,
+  CANCEL_WITH_PAYMENTS_POLICY,
 } from "@/config/reservations";
 import type {
   CheckAvailabilityInput,
@@ -567,11 +572,19 @@ export class ReservationService {
   static async cancelReservation(
     id: string,
     userId: string,
-    reason?: string
+    reason?: string,
+    userRole?: string
   ) {
     const reservation = await prisma.reservation.findUnique({
       where: { id },
-      include: { rooms: true },
+      include: {
+        rooms: true,
+        invoices: {
+          include: {
+            payments: { where: { status: PaymentStatus.RECORDED } },
+          },
+        },
+      },
     });
 
     if (!reservation) {
@@ -591,6 +604,31 @@ export class ReservationService {
       );
     }
 
+    // Policy check: Cancelling with recorded payments requires void/refund or ADMIN
+    const recordedPaymentsCount = (reservation.invoices || []).reduce(
+      (sum, inv) => sum + (inv.payments?.length || 0),
+      0
+    );
+
+    if (
+      recordedPaymentsCount > 0 &&
+      CANCEL_WITH_PAYMENTS_POLICY === "REQUIRE_VOID_OR_ADMIN"
+    ) {
+      let role = userRole;
+      if (!role) {
+        const caller = await prisma.user.findUnique({
+          where: { id: userId },
+          include: { role: true },
+        });
+        role = caller?.role.name;
+      }
+      if (role !== RoleName.ADMIN) {
+        throw new BadRequestError(
+          "Cannot cancel reservation with recorded payments. Please void or refund the payments first, or request an Administrator."
+        );
+      }
+    }
+
     return await prisma.$transaction(async (tx) => {
       // 1. Cancel all CONFIRMED allocations
       await tx.reservationRoom.updateMany({
@@ -603,7 +641,20 @@ export class ReservationService {
         },
       });
 
-      // 2. Update reservation status
+      // 2. Void invoices if no recorded payments exist
+      if (recordedPaymentsCount === 0) {
+        await tx.invoice.updateMany({
+          where: {
+            reservationId: id,
+            status: { not: InvoiceStatus.VOID },
+          },
+          data: {
+            status: InvoiceStatus.VOID,
+          },
+        });
+      }
+
+      // 3. Update reservation status
       const updatedRes = await tx.reservation.update({
         where: { id },
         data: {
@@ -615,7 +666,7 @@ export class ReservationService {
         },
       });
 
-      // 3. Audit log
+      // 4. Audit log
       await tx.auditLog.create({
         data: {
           userId,
@@ -623,7 +674,11 @@ export class ReservationService {
           entityId: id,
           action: "RESERVATION_CANCELLED",
           oldData: { status: reservation.status },
-          newData: { status: ReservationStatus.CANCELLED, reason: reason || null },
+          newData: {
+            status: ReservationStatus.CANCELLED,
+            reason: reason || null,
+            hadRecordedPayments: recordedPaymentsCount > 0,
+          },
         },
       });
 
@@ -726,6 +781,16 @@ export class ReservationService {
       );
     }
 
+    // Date policy check: NO_SHOW only allowed on/after arrival date
+    const hotelToday = getHotelTodayDateUtc();
+    if (hotelToday.getTime() < allocation.arrivalDate.getTime()) {
+      if (NO_SHOW_MIN_DATE_POLICY === "ON_OR_AFTER_ARRIVAL") {
+        throw new BadRequestError(
+          `Cannot mark allocation as NO_SHOW prior to its scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}). Cancel the reservation instead.`
+        );
+      }
+    }
+
     return await prisma.$transaction(async (tx) => {
       // 1. Transition to NO_SHOW
       const updatedAlloc = await tx.reservationRoom.update({
@@ -735,7 +800,101 @@ export class ReservationService {
         },
       });
 
-      // 2. Audit log
+      // 2. Billing policy for NO_SHOW (default = RETAIN_FIRST_NIGHT)
+      if (NO_SHOW_BILLING_POLICY === "RETAIN_FIRST_NIGHT") {
+        const activeInvoice = await tx.invoice.findFirst({
+          where: {
+            reservationId: allocation.reservationId,
+            status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
+          },
+          include: {
+            payments: { where: { status: PaymentStatus.RECORDED } },
+            items: true,
+          },
+        });
+
+        if (activeInvoice) {
+          const totalNights = Math.max(
+            1,
+            Math.round(
+              (allocation.departureDate.getTime() - allocation.arrivalDate.getTime()) /
+                (24 * 60 * 60 * 1000)
+            )
+          );
+
+          if (totalNights > 1) {
+            const unusedNights = totalNights - 1;
+            const bookedRate = new Prisma.Decimal(allocation.bookedNightlyRate);
+            const nominalReduction = bookedRate.mul(unusedNights);
+
+            if (activeInvoice.status === InvoiceStatus.DRAFT) {
+              const roomItem = activeInvoice.items.find(
+                (i) => i.reservationRoomId === allocationId && i.itemType === InvoiceItemType.ROOM_CHARGE
+              );
+              if (roomItem) {
+                await tx.invoiceItem.update({
+                  where: { id: roomItem.id },
+                  data: {
+                    quantity: new Prisma.Decimal(1),
+                    lineTotal: bookedRate,
+                  },
+                });
+              }
+            } else {
+              await tx.invoiceItem.create({
+                data: {
+                  invoiceId: activeInvoice.id,
+                  reservationRoomId: allocation.id,
+                  description: `No-Show Adjustment: Room charge reduction (${unusedNights} night(s) waived per 1st night retention policy)`,
+                  quantity: new Prisma.Decimal(1),
+                  unitPrice: nominalReduction.negated(),
+                  lineTotal: nominalReduction.negated(),
+                  itemType: InvoiceItemType.DISCOUNT,
+                },
+              });
+            }
+
+            const updatedItems = await tx.invoiceItem.findMany({
+              where: { invoiceId: activeInvoice.id },
+            });
+            const newSubtotal = updatedItems.reduce(
+              (sum, item) => sum.add(item.lineTotal),
+              new Prisma.Decimal(0)
+            );
+            const newGrandTotal = Prisma.Decimal.max(
+              new Prisma.Decimal(0),
+              newSubtotal.sub(activeInvoice.discountTotal).add(activeInvoice.taxTotal)
+            );
+
+            const totalPaid = activeInvoice.payments.reduce(
+              (sum, p) => sum.add(p.amount),
+              new Prisma.Decimal(0)
+            );
+
+            let newStatus = activeInvoice.status;
+            if (activeInvoice.status !== InvoiceStatus.DRAFT) {
+              if (totalPaid.greaterThanOrEqualTo(newGrandTotal)) {
+                newStatus = InvoiceStatus.PAID;
+              } else if (totalPaid.greaterThan(0)) {
+                newStatus = InvoiceStatus.PARTIALLY_PAID;
+              } else {
+                newStatus = InvoiceStatus.ISSUED;
+              }
+            }
+
+            await tx.invoice.update({
+              where: { id: activeInvoice.id },
+              data: {
+                subtotal: newSubtotal,
+                grandTotal: newGrandTotal,
+                status: newStatus,
+              },
+            });
+          }
+        }
+      }
+
+      // 3. Audit log
       await tx.auditLog.create({
         data: {
           userId,
@@ -824,6 +983,80 @@ export class ReservationService {
           departureDate: newDep,
         },
       });
+
+      // Reconcile active invoice: extend stay must add extra nights to invoice
+      const activeInvoice = await tx.invoice.findFirst({
+        where: {
+          reservationId: allocation.reservationId,
+          status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID] },
+        },
+        include: {
+          payments: { where: { status: PaymentStatus.RECORDED } },
+          items: true,
+        },
+      });
+
+      if (activeInvoice) {
+        const extraNights = Math.max(
+          1,
+          Math.round((newDep.getTime() - allocation.departureDate.getTime()) / (24 * 60 * 60 * 1000))
+        );
+        const unitPrice = new Prisma.Decimal(allocation.bookedNightlyRate);
+        const lineTotal = unitPrice.mul(extraNights);
+
+        const arrStr = allocation.departureDate.toISOString().split("T")[0];
+        const depStr = newDep.toISOString().split("T")[0];
+        const desc = `Stay Extension: ${extraNights} extra night(s) (${arrStr} to ${depStr})`;
+
+        await tx.invoiceItem.create({
+          data: {
+            invoiceId: activeInvoice.id,
+            reservationRoomId: allocation.id,
+            description: desc,
+            quantity: new Prisma.Decimal(extraNights),
+            unitPrice,
+            lineTotal,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        });
+
+        const allItems = await tx.invoiceItem.findMany({
+          where: { invoiceId: activeInvoice.id },
+        });
+        const newSubtotal = allItems.reduce(
+          (sum, item) => sum.add(item.lineTotal),
+          new Prisma.Decimal(0)
+        );
+        const newGrandTotal = Prisma.Decimal.max(
+          new Prisma.Decimal(0),
+          newSubtotal.sub(activeInvoice.discountTotal).add(activeInvoice.taxTotal)
+        );
+
+        const totalPaid = activeInvoice.payments.reduce(
+          (sum, p) => sum.add(p.amount),
+          new Prisma.Decimal(0)
+        );
+
+        let newStatus = activeInvoice.status;
+        if (activeInvoice.status !== InvoiceStatus.DRAFT) {
+          if (totalPaid.greaterThanOrEqualTo(newGrandTotal)) {
+            newStatus = InvoiceStatus.PAID;
+          } else if (totalPaid.greaterThan(0)) {
+            newStatus = InvoiceStatus.PARTIALLY_PAID;
+          } else {
+            newStatus = InvoiceStatus.ISSUED;
+          }
+        }
+
+        await tx.invoice.update({
+          where: { id: activeInvoice.id },
+          data: {
+            subtotal: newSubtotal,
+            grandTotal: newGrandTotal,
+            status: newStatus,
+          },
+        });
+      }
 
       // Audit log
       await tx.auditLog.create({
@@ -930,18 +1163,41 @@ export class ReservationService {
         bookedRate = targetRoom.priceOverride || targetRoom.category.basePrice;
       }
 
-      // 1. Update allocation
-      const updatedAlloc = await tx.reservationRoom.update({
-        where: { id: allocationId },
-        data: {
-          roomId: input.newRoomId,
-          roomCategoryId: targetRoom.roomCategoryId,
-          bookedNightlyRate: bookedRate,
-        },
-      });
+      let resultAllocation;
 
-      // 2. Physical room status transitions if already checked in
       if (allocation.status === AllocationStatus.CHECKED_IN) {
+        const today = getHotelTodayDateUtc();
+
+        // 1. End old allocation today: mark CHECKED_OUT with actualCheckoutDate = today
+        await tx.reservationRoom.update({
+          where: { id: allocationId },
+          data: {
+            status: AllocationStatus.CHECKED_OUT,
+            actualCheckoutDate: today,
+            checkedOutAt: new Date(),
+          },
+        });
+
+        // 2. Start new allocation in the target room from today to original departureDate
+        const newAlloc = await tx.reservationRoom.create({
+          data: {
+            reservationId: allocation.reservationId,
+            roomId: input.newRoomId,
+            roomCategoryId: targetRoom.roomCategoryId,
+            arrivalDate: today,
+            departureDate: allocation.departureDate,
+            bookedNightlyRate: bookedRate,
+            status: AllocationStatus.CHECKED_IN,
+            checkedInAt: new Date(),
+          },
+          include: {
+            room: true,
+            roomCategory: true,
+          },
+        });
+        resultAllocation = newAlloc;
+
+        // 3. Physical room status transitions
         await tx.room.update({
           where: { id: allocation.roomId },
           data: { status: RoomStatus.VACANT_DIRTY },
@@ -951,24 +1207,59 @@ export class ReservationService {
           where: { id: input.newRoomId },
           data: { status: RoomStatus.OCCUPIED },
         });
+
+        // 4. Audit log
+        await tx.auditLog.create({
+          data: {
+            userId,
+            entityType: "ReservationRoom",
+            entityId: allocationId,
+            action: "ROOM_CHANGED",
+            oldData: {
+              allocationId,
+              roomId: allocation.roomId,
+              status: allocation.status,
+            },
+            newData: {
+              newAllocationId: newAlloc.id,
+              roomId: input.newRoomId,
+              reason: input.reason || null,
+            },
+          },
+        });
+      } else {
+        // For CONFIRMED allocations: change the room only
+        const updatedAlloc = await tx.reservationRoom.update({
+          where: { id: allocationId },
+          data: {
+            roomId: input.newRoomId,
+            roomCategoryId: targetRoom.roomCategoryId,
+            bookedNightlyRate: bookedRate,
+          },
+          include: {
+            room: true,
+            roomCategory: true,
+          },
+        });
+        resultAllocation = updatedAlloc;
+
+        // Audit log
+        await tx.auditLog.create({
+          data: {
+            userId,
+            entityType: "ReservationRoom",
+            entityId: allocationId,
+            action: "ROOM_CHANGED",
+            oldData: { roomId: allocation.roomId, status: allocation.status },
+            newData: {
+              roomId: input.newRoomId,
+              reason: input.reason || null,
+            },
+          },
+        });
       }
 
-      // 3. Audit log
-      await tx.auditLog.create({
-        data: {
-          userId,
-          entityType: "ReservationRoom",
-          entityId: allocationId,
-          action: "ROOM_CHANGED",
-          oldData: { roomId: allocation.roomId, status: allocation.status },
-          newData: {
-            roomId: input.newRoomId,
-            reason: input.reason || null,
-          },
-        },
-      });
-
-      return updatedAlloc;
+      return resultAllocation;
     });
   }
 }

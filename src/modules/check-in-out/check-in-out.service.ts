@@ -2,6 +2,10 @@ import {
   AllocationStatus,
   RoomStatus,
   ReservationStatus,
+  InvoiceStatus,
+  InvoiceItemType,
+  PaymentStatus,
+  Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
@@ -10,6 +14,10 @@ import {
   NotFoundError,
 } from "@/lib/errors";
 import { getHotelTodayDateUtc } from "@/lib/date";
+import {
+  EARLY_CHECKIN_POLICY,
+  BACKDATED_CHECKOUT_POLICY,
+} from "@/config/reservations";
 import type {
   CheckInInput,
   CheckOutInput,
@@ -71,6 +79,16 @@ export class CheckInOutService {
         throw new BadRequestError(
           `Cannot check in allocation in ${allocation.status} status`
         );
+      }
+
+      // 3.1 Validate scheduled arrival date against hotel today
+      const hotelToday = getHotelTodayDateUtc();
+      if (hotelToday.getTime() < allocation.arrivalDate.getTime()) {
+        if (EARLY_CHECKIN_POLICY === "BLOCK") {
+          throw new BadRequestError(
+            `Cannot check in prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}). Early check-in is restricted by hotel policy.`
+          );
+        }
       }
 
       // 4. Validate physical room operational state
@@ -233,6 +251,14 @@ export class CheckInOutService {
 
       // 4. Update allocation to CHECKED_OUT with actualCheckoutDate
       const actualDate = getHotelTodayDateUtc();
+      if (actualDate.getTime() < allocation.arrivalDate.getTime()) {
+        if (BACKDATED_CHECKOUT_POLICY === "DISALLOW") {
+          throw new BadRequestError(
+            `Cannot check out prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}).`
+          );
+        }
+      }
+
       const updatedAllocation = await tx.reservationRoom.update({
         where: { id: allocation.id },
         data: {
@@ -241,6 +267,89 @@ export class CheckInOutService {
           actualCheckoutDate: actualDate,
         },
       });
+
+      // 4.1 Early checkout invoice adjustment: adds adjustment line, never mutates existing lines, never reduces total below paid
+      if (actualDate.getTime() < allocation.departureDate.getTime()) {
+        const activeInvoice = await tx.invoice.findFirst({
+          where: {
+            reservationId: allocation.reservationId,
+            status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID] },
+          },
+          include: {
+            payments: { where: { status: PaymentStatus.RECORDED } },
+            items: true,
+          },
+        });
+
+        if (activeInvoice) {
+          const departureMs = allocation.departureDate.getTime();
+          const actualCheckoutMs = Math.max(allocation.arrivalDate.getTime(), actualDate.getTime());
+          const unusedNights = Math.max(
+            0,
+            Math.round((departureMs - actualCheckoutMs) / (24 * 60 * 60 * 1000))
+          );
+
+          if (unusedNights > 0) {
+            const bookedRate = new Prisma.Decimal(allocation.bookedNightlyRate);
+            const nominalReduction = bookedRate.mul(unusedNights);
+
+            const totalPaid = activeInvoice.payments.reduce(
+              (sum, p) => sum.add(p.amount),
+              new Prisma.Decimal(0)
+            );
+
+            // Invariant: never reduce total below paid
+            const maxReduction = Prisma.Decimal.max(
+              new Prisma.Decimal(0),
+              activeInvoice.grandTotal.sub(totalPaid)
+            );
+
+            const effectiveReduction = Prisma.Decimal.min(nominalReduction, maxReduction);
+
+            if (effectiveReduction.greaterThan(0)) {
+              await tx.invoiceItem.create({
+                data: {
+                  invoiceId: activeInvoice.id,
+                  reservationRoomId: allocation.id,
+                  description: `Early Checkout Adjustment: Room ${allocation.room.roomNo} (${unusedNights} unused night(s) credited)`,
+                  quantity: new Prisma.Decimal(1),
+                  unitPrice: effectiveReduction.negated(),
+                  lineTotal: effectiveReduction.negated(),
+                  itemType: InvoiceItemType.DISCOUNT,
+                },
+              });
+
+              const allItems = await tx.invoiceItem.findMany({
+                where: { invoiceId: activeInvoice.id },
+              });
+              const newSubtotal = allItems.reduce(
+                (sum, item) => sum.add(item.lineTotal),
+                new Prisma.Decimal(0)
+              );
+              const newGrandTotal = Prisma.Decimal.max(
+                totalPaid,
+                newSubtotal.sub(activeInvoice.discountTotal).add(activeInvoice.taxTotal)
+              );
+
+              let newStatus = activeInvoice.status;
+              if (totalPaid.greaterThanOrEqualTo(newGrandTotal)) {
+                newStatus = InvoiceStatus.PAID;
+              } else if (totalPaid.greaterThan(0)) {
+                newStatus = InvoiceStatus.PARTIALLY_PAID;
+              }
+
+              await tx.invoice.update({
+                where: { id: activeInvoice.id },
+                data: {
+                  subtotal: newSubtotal,
+                  grandTotal: newGrandTotal,
+                  status: newStatus,
+                },
+              });
+            }
+          }
+        }
+      }
 
       // 5. Check if all room allocations in this reservation have now reached terminal state
       const siblingAllocations = allocation.reservation.rooms;

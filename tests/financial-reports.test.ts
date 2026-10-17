@@ -174,14 +174,16 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
 
     // 5. Case 2: Departed Guest (Room 602, 1 night @ $400)
     // Recorded $150 payment (UPI) by Staff 2 -> Checked out with pending balance: $250
+    const yesterdayDate = new Date(Date.now() - 86400000)
+    const yesterdayIso = yesterdayDate.toISOString().slice(0, 10)
     const res2 = await ReservationService.createReservation(
       {
         customerId: customer2Id,
         allocations: [
           {
             roomId: room602Id,
-            arrivalDate: todayIso,
-            departureDate: "2026-12-25",
+            arrivalDate: yesterdayIso,
+            departureDate: todayIso,
           },
         ],
         autoCreateInvoice: true,
@@ -205,7 +207,10 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
     // Check in and check out
     await prisma.reservationRoom.update({
       where: { id: alloc2!.id },
-      data: { status: AllocationStatus.CHECKED_IN },
+      data: {
+        status: AllocationStatus.CHECKED_IN,
+        checkedInAt: yesterdayDate,
+      },
     })
     await CheckInOutService.checkOut(
       { allocationId: alloc2!.id, notes: "Guest departed with pending balance" },

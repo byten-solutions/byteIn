@@ -58,13 +58,22 @@ export function RecordPaymentDialog({
     setSubmitting(true)
 
     try {
+      const idempotencyKey =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `pay-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
       const res = await fetch(`/api/invoices/${invoice.id}/payments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify({
           amount: parsedAmount,
           paymentMethod,
           referenceNumber: referenceNumber.trim() || undefined,
+          idempotencyKey,
         }),
       })
 

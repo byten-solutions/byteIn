@@ -13,6 +13,8 @@ function resolveClientIp(req: NextRequest): string {
       const parts = forwardedFor.split(",").map((s) => s.trim()).filter(Boolean);
       if (parts.length > 0) return parts[0]!;
     }
+    const realIp = req.headers.get("x-real-ip");
+    if (realIp) return realIp.trim();
   }
   return "127.0.0.1";
 }

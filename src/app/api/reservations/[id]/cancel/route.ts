@@ -18,7 +18,8 @@ export async function POST(
     const result = await ReservationService.cancelReservation(
       id,
       session.sub,
-      validated.reason
+      validated.reason,
+      session.role
     );
 
     return NextResponse.json({

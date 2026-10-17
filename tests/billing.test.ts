@@ -16,6 +16,7 @@ import { CustomerService } from "../src/modules/customers/customer.service";
 import { CheckInOutService } from "../src/modules/check-in-out/check-in-out.service";
 import { enforceRole } from "../src/lib/auth-guard";
 import type { SessionPayload } from "../src/modules/auth/auth.types";
+import { getHotelTodayDate } from "../src/lib/date";
 
 describe("Phase 6: Billing & Payments Tests", () => {
   let testStaffUserId: string;
@@ -644,14 +645,16 @@ describe("Phase 6: Billing & Payments Tests", () => {
 
     it("should atomically provision an itemized draft invoice upon reservation creation when autoCreateInvoice is true", async () => {
       // Create new reservation with autoCreateInvoice = true (3 nights in Room 301 @ $150 = $450)
+      const todayIso = getHotelTodayDate();
+      const pastArrival = new Date(Date.now() - 86400000 * 3).toISOString().slice(0, 10);
       const res = await ReservationService.createReservation(
         {
           customerId: testCustomerId,
           allocations: [
             {
               roomId: room301Id,
-              arrivalDate: "2026-11-20",
-              departureDate: "2026-11-23", // 3 nights @ $150
+              arrivalDate: pastArrival,
+              departureDate: todayIso, // 3 nights @ $150
             },
           ],
           autoCreateInvoice: true,
@@ -726,7 +729,10 @@ describe("Phase 6: Billing & Payments Tests", () => {
       // Check-in first
       await prisma.reservationRoom.update({
         where: { id: allocId },
-        data: { status: AllocationStatus.CHECKED_IN },
+        data: {
+          status: AllocationStatus.CHECKED_IN,
+          checkedInAt: new Date(Date.now() - 86400000 * 3),
+        },
       });
       await prisma.room.update({
         where: { id: room301Id },

@@ -13,6 +13,7 @@ import { CustomerService } from "../src/modules/customers/customer.service";
 import { ReservationService } from "../src/modules/reservations/reservation.service";
 import { enforceRole, AuthError } from "../src/lib/auth-guard";
 import type { SessionPayload } from "../src/modules/auth/auth.types";
+import { getHotelTodayDate } from "../src/lib/date";
 
 describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
   let testStaffUserId: string;
@@ -25,6 +26,10 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
   let room203MaintId: string;
   let room204CleanId: string;
   let testCustomerId: string;
+
+  const todayStr = getHotelTodayDate();
+  const futureDate = new Date(Date.now() + 86400000 * 3);
+  const futureStr = futureDate.toISOString().slice(0, 10);
 
   const receptionistSession: SessionPayload = {
     sub: "receptionist-id-1",
@@ -281,8 +286,8 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           allocations: [
             {
               roomId: room201CleanId,
-              arrivalDate: "2026-11-01",
-              departureDate: "2026-11-04",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
           ],
         },
@@ -355,8 +360,8 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           allocations: [
             {
               roomId: room202DirtyId,
-              arrivalDate: "2026-11-01",
-              departureDate: "2026-11-04",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
           ],
         },
@@ -393,8 +398,8 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           )!.id,
           roomId: room203MaintId,
           roomCategoryId: testCategoryId,
-          arrivalDate: new Date("2026-11-01"),
-          departureDate: new Date("2026-11-04"),
+          arrivalDate: new Date(`${todayStr}T00:00:00.000Z`),
+          departureDate: new Date(`${futureStr}T00:00:00.000Z`),
           bookedNightlyRate: new Prisma.Decimal("150.00"),
           status: AllocationStatus.CONFIRMED,
         },
@@ -422,6 +427,17 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
         /Room allocation not found/
       );
     });
+
+    after(async () => {
+      await prisma.reservationRoom.updateMany({
+        where: { roomId: room201CleanId },
+        data: { status: AllocationStatus.CHECKED_OUT },
+      });
+      await prisma.room.update({
+        where: { id: room201CleanId },
+        data: { status: RoomStatus.VACANT_CLEAN },
+      });
+    });
   });
 
   describe("3. Check-Out Workflow", () => {
@@ -440,8 +456,8 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           allocations: [
             {
               roomId: room201CleanId,
-              arrivalDate: "2026-11-05",
-              departureDate: "2026-11-08",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
           ],
         },
@@ -549,6 +565,17 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
         /Room allocation not found/
       );
     });
+
+    after(async () => {
+      await prisma.reservationRoom.updateMany({
+        where: { roomId: room201CleanId },
+        data: { status: AllocationStatus.CHECKED_OUT },
+      });
+      await prisma.room.update({
+        where: { id: room201CleanId },
+        data: { status: RoomStatus.VACANT_CLEAN },
+      });
+    });
   });
 
   describe("4. Multi-Room Independent Lifecycles & Reservation Progression", () => {
@@ -574,13 +601,13 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           allocations: [
             {
               roomId: room201CleanId,
-              arrivalDate: "2026-11-10",
-              departureDate: "2026-11-14",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
             {
               roomId: room204CleanId,
-              arrivalDate: "2026-11-12",
-              departureDate: "2026-11-16",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
           ],
         },
@@ -660,8 +687,8 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
           allocations: [
             {
               roomId: room201CleanId,
-              arrivalDate: "2026-11-20",
-              departureDate: "2026-11-25",
+              arrivalDate: todayStr,
+              departureDate: futureStr,
             },
           ],
         },
