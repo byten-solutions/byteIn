@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import {
   BarChart3,
@@ -10,12 +11,16 @@ import {
   TrendingUp,
   CreditCard,
   BedDouble,
-  Users,
-  XCircle,
   Clock,
   Receipt,
   Wallet,
   AlertCircle,
+  CalendarCheck,
+  Phone,
+  Mail,
+  ExternalLink,
+  ChevronRight,
+  ShieldAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,39 +32,154 @@ import type {
   OccupancyReportDTO,
   RevenueReportDTO,
   ReservationStatusReportDTO,
+  DailyOperationsReportDTO,
+  AvailabilityGridDTO,
+  ShiftCollectionsReportDTO,
+  ReceivablesReportDTO,
 } from "@/modules/reports/reports.types"
 
 interface ReportsViewProps {
   initialStartDate: string
   initialEndDate: string
+  initialTodayDate: string
+  initialWeekLaterDate: string
   initialOccupancy: OccupancyReportDTO
   initialRevenue: RevenueReportDTO
   initialReservations: ReservationStatusReportDTO
+  initialDailyOps: DailyOperationsReportDTO
+  initialAvailabilityGrid: AvailabilityGridDTO
+  initialCollections: ShiftCollectionsReportDTO
+  initialReceivables: ReceivablesReportDTO
 }
 
-type ReportTab = "occupancy" | "revenue" | "reservations"
+type MainTab = "daily_ops" | "availability_grid" | "financial" | "performance"
 
 export function ReportsView({
   initialStartDate,
   initialEndDate,
+  initialTodayDate,
+  initialWeekLaterDate,
   initialOccupancy,
   initialRevenue,
   initialReservations,
+  initialDailyOps,
+  initialAvailabilityGrid,
+  initialCollections,
+  initialReceivables,
 }: ReportsViewProps) {
-  const [activeTab, setActiveTab] = React.useState<ReportTab>("occupancy")
+  const [activeTab, setActiveTab] = React.useState<MainTab>("daily_ops")
+
+  // Date filters
   const [startDate, setStartDate] = React.useState(initialStartDate)
   const [endDate, setEndDate] = React.useState(initialEndDate)
-  const [loading, setLoading] = React.useState(false)
+  const [opsDate, setOpsDate] = React.useState(initialTodayDate)
+  const [gridStart, setGridStart] = React.useState(initialTodayDate)
+  const [gridEnd, setGridEnd] = React.useState(initialWeekLaterDate)
 
+  // Sub-tab states
+  const [opsSubTab, setOpsSubTab] = React.useState<"arrivals" | "departures" | "in_house" | "pending">("arrivals")
+  const [receivablesFilter, setReceivablesFilter] = React.useState<"all" | "in_house" | "departed">("all")
+
+  // Data states
+  const [loading, setLoading] = React.useState(false)
   const [occupancyData, setOccupancyData] = React.useState<OccupancyReportDTO>(initialOccupancy)
   const [revenueData, setRevenueData] = React.useState<RevenueReportDTO>(initialRevenue)
   const [reservationsData, setReservationsData] = React.useState<ReservationStatusReportDTO>(initialReservations)
+  const [dailyOpsData, setDailyOpsData] = React.useState<DailyOperationsReportDTO>(initialDailyOps)
+  const [gridData, setGridData] = React.useState<AvailabilityGridDTO>(initialAvailabilityGrid)
+  const [collectionsData, setCollectionsData] = React.useState<ShiftCollectionsReportDTO>(initialCollections)
+  const [receivablesData, setReceivablesData] = React.useState<ReceivablesReportDTO>(initialReceivables)
 
-  // Preset Date Range Helpers
+  // Refetch helpers
+  const fetchPerformanceReports = async (start: string, end: string) => {
+    setLoading(true)
+    try {
+      const [occRes, revRes, resRes] = await Promise.all([
+        fetch(`/api/reports/occupancy?startDate=${start}&endDate=${end}`),
+        fetch(`/api/reports/revenue?startDate=${start}&endDate=${end}`),
+        fetch(`/api/reports/reservations?startDate=${start}&endDate=${end}`),
+      ])
+
+      const [occJson, revJson, resJson] = await Promise.all([
+        occRes.json(),
+        revRes.json(),
+        resRes.json(),
+      ])
+
+      if (occJson.success) setOccupancyData(occJson.data)
+      if (revJson.success) setRevenueData(revJson.data)
+      if (resJson.success) setReservationsData(resJson.data)
+      toast.success("Performance metrics updated")
+    } catch {
+      toast.error("Failed to load performance metrics")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchDailyOperations = async (date: string) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/reports/daily-operations?date=${date}`)
+      const json = await res.json()
+      if (json.success) {
+        setDailyOpsData(json.data)
+        toast.success(`Daily operations updated for ${date}`)
+      } else {
+        toast.error(json.error || "Failed to load operations")
+      }
+    } catch {
+      toast.error("Failed to fetch daily operations")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchAvailabilityGrid = async (start: string, end: string) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/reports/availability-grid?startDate=${start}&endDate=${end}`)
+      const json = await res.json()
+      if (json.success) {
+        setGridData(json.data)
+        toast.success("Availability grid updated")
+      } else {
+        toast.error(json.error || "Failed to load grid")
+      }
+    } catch {
+      toast.error("Failed to fetch availability grid")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchFinancials = async (date: string) => {
+    setLoading(true)
+    try {
+      const [colRes, recRes] = await Promise.all([
+        fetch(`/api/reports/collections?date=${date}`),
+        fetch(`/api/reports/receivables`),
+      ])
+      const [colJson, recJson] = await Promise.all([colRes.json(), recRes.json()])
+      if (colJson.success) setCollectionsData(colJson.data)
+      if (recJson.success) setReceivablesData(recJson.data)
+      toast.success("Financial reports updated")
+    } catch {
+      toast.error("Failed to load financial reports")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePrint = () => {
+    window.print()
+  }
+
+  // Preset Date Range Helpers for Performance Tab
   const setPreset = (preset: "last7" | "thisMonth" | "last30" | "lastMonth") => {
     const today = new Date()
     const y = today.getUTCFullYear()
-    const m = today.getUTCMonth() // 0-indexed
+    const m = today.getUTCMonth()
 
     let start = ""
     let end = today.toISOString().split("T")[0]!
@@ -84,287 +204,538 @@ export function ReportsView({
 
     setStartDate(start)
     setEndDate(end)
-    fetchReports(start, end)
+    fetchPerformanceReports(start, end)
   }
 
-  const fetchReports = async (start: string, end: string) => {
-    setLoading(true)
-    try {
-      const [occRes, revRes, resRes] = await Promise.all([
-        fetch(`/api/reports/occupancy?startDate=${start}&endDate=${end}`),
-        fetch(`/api/reports/revenue?startDate=${start}&endDate=${end}`),
-        fetch(`/api/reports/reservations?startDate=${start}&endDate=${end}`),
-      ])
+  // Active sub-list for daily operations
+  const currentOpsList =
+    opsSubTab === "arrivals"
+      ? dailyOpsData.arrivals
+      : opsSubTab === "departures"
+      ? dailyOpsData.departures
+      : opsSubTab === "in_house"
+      ? dailyOpsData.inHouse
+      : dailyOpsData.pendingArrivals
 
-      const [occJson, revJson, resJson] = await Promise.all([
-        occRes.json(),
-        revRes.json(),
-        resRes.json(),
-      ])
-
-      if (!occRes.ok) throw new Error(occJson.error || "Failed to load occupancy report")
-      if (!revRes.ok) throw new Error(revJson.error || "Failed to load revenue report")
-      if (!resRes.ok) throw new Error(resJson.error || "Failed to load reservations report")
-
-      setOccupancyData(occJson.data)
-      setRevenueData(revJson.data)
-      setReservationsData(resJson.data)
-      toast.success("Reports refreshed successfully")
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to load reports"
-      toast.error(msg)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleApplyFilter = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (new Date(endDate).getTime() < new Date(startDate).getTime()) {
-      toast.error("End date must be on or after start date")
-      return
-    }
-    fetchReports(startDate, endDate)
-  }
+  // Filtered receivables
+  const filteredReceivables = receivablesData.items.filter((item) => {
+    if (receivablesFilter === "in_house") return item.isGuestInHouse
+    if (receivablesFilter === "departed") return !item.isGuestInHouse
+    return true
+  })
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* --------------------------------------------------------------------- */}
+      {/* 1. Header & Navigation Controls                                       */}
+      {/* --------------------------------------------------------------------- */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <BarChart3 className="size-6 text-primary" />
-            <span>Reports & Analytics</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            PMS Operations & Analytics
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-            Historical occupancy tracking, billed revenue vs collections, and reservation breakdown.
+          <p className="text-sm text-muted-foreground">
+            Daily front desk operations, room tape chart, shift collections, and financial performance.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handlePrint} className="gap-2">
+            <Printer className="size-4" />
+            Print Report
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
-            onClick={() => window.print()}
-            className="text-xs h-9 gap-1.5 print:hidden"
-          >
-            <Printer className="size-3.5" />
-            <span>Print Report</span>
-          </Button>
-        </div>
-      </div>
-
-      {/* Date Range & Filter Bar */}
-      <div className="rounded-xl border border-border/80 bg-card p-4 shadow-xs space-y-3 print:hidden">
-        <form onSubmit={handleApplyFilter} className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">From Date</Label>
-            <Input
-              type="date"
-              className="h-9 text-xs w-36"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-[11px] text-muted-foreground">To Date</Label>
-            <Input
-              type="date"
-              className="h-9 text-xs w-36"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
-          </div>
-
-          <Button
-            type="submit"
-            size="sm"
             disabled={loading}
-            className="h-9 text-xs gap-1.5"
+            onClick={() => {
+              if (activeTab === "daily_ops") fetchDailyOperations(opsDate)
+              else if (activeTab === "availability_grid") fetchAvailabilityGrid(gridStart, gridEnd)
+              else if (activeTab === "financial") fetchFinancials(opsDate)
+              else fetchPerformanceReports(startDate, endDate)
+            }}
+            className="gap-2"
           >
-            <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-            <span>Apply Filter</span>
+            <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+            Refresh
           </Button>
-
-          {/* Quick Preset Buttons */}
-          <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-            <span className="text-[11px] text-muted-foreground mr-1 hidden md:inline">Presets:</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPreset("last7")}
-              className="h-7 text-[11px] px-2"
-            >
-              Last 7 Days
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPreset("thisMonth")}
-              className="h-7 text-[11px] px-2"
-            >
-              This Month
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPreset("last30")}
-              className="h-7 text-[11px] px-2"
-            >
-              Last 30 Days
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setPreset("lastMonth")}
-              className="h-7 text-[11px] px-2"
-            >
-              Last Month
-            </Button>
-          </div>
-        </form>
-
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 pt-1 border-t border-border/40">
-          <CalendarDays className="size-3.5 text-primary" />
-          <span>
-            Active reporting interval: <strong>{startDate}</strong> to <strong>{endDate}</strong> ({occupancyData.totalDays} day{occupancyData.totalDays === 1 ? "" : "s"})
-          </span>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex border-b border-border/80 gap-2 print:hidden">
+      {/* --------------------------------------------------------------------- */}
+      {/* 2. Primary Tab Switcher                                               */}
+      {/* --------------------------------------------------------------------- */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2 print:hidden">
         <button
-          onClick={() => setActiveTab("occupancy")}
+          onClick={() => setActiveTab("daily_ops")}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors",
-            activeTab === "occupancy"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            activeTab === "daily_ops"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
         >
-          <BedDouble className="size-4" />
-          <span>Occupancy Report</span>
+          <CalendarCheck className="size-4" />
+          Daily Operations
+          {dailyOpsData.summary.expectedArrivalsCount > 0 && (
+            <span className="rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-xs font-semibold">
+              {dailyOpsData.summary.expectedArrivalsCount}
+            </span>
+          )}
         </button>
 
         <button
-          onClick={() => setActiveTab("revenue")}
+          onClick={() => setActiveTab("availability_grid")}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors",
-            activeTab === "revenue"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            activeTab === "availability_grid"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
         >
-          <Receipt className="size-4" />
-          <span>Revenue & Collections</span>
+          <CalendarDays className="size-4" />
+          Availability Grid
         </button>
 
         <button
-          onClick={() => setActiveTab("reservations")}
+          onClick={() => setActiveTab("financial")}
           className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors",
-            activeTab === "reservations"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
+            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            activeTab === "financial"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
         >
-          <Users className="size-4" />
-          <span>Reservation Breakdown</span>
+          <Wallet className="size-4" />
+          Financial & Collections
+        </button>
+
+        <button
+          onClick={() => setActiveTab("performance")}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            activeTab === "performance"
+              ? "bg-primary text-primary-foreground shadow-xs"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+        >
+          <TrendingUp className="size-4" />
+          Performance & KPIs
         </button>
       </div>
 
-      {/* TAB 1: OCCUPANCY REPORT */}
-      {activeTab === "occupancy" && (
+      {/* --------------------------------------------------------------------- */}
+      {/* 3. TAB 1: DAILY OPERATIONS                                            */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === "daily_ops" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Date Selector */}
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+            <div className="flex items-center gap-3">
+              <Label htmlFor="opsDate" className="whitespace-nowrap font-medium">
+                Shift Date:
+              </Label>
+              <Input
+                id="opsDate"
+                type="date"
+                value={opsDate}
+                onChange={(e) => {
+                  setOpsDate(e.target.value)
+                  fetchDailyOperations(e.target.value)
+                }}
+                className="w-44"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const today = new Date().toISOString().split("T")[0]!
+                  setOpsDate(today)
+                  fetchDailyOperations(today)
+                }}
+              >
+                Today
+              </Button>
+            </div>
+
+            <div className="text-xs text-muted-foreground">
+              Showing reception shift operations for <span className="font-semibold text-foreground">{opsDate}</span>
+            </div>
+          </div>
+
+          {/* Daily Ops KPI Cards */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <StatCard
-              label="Occupancy Rate"
-              value={`${occupancyData.occupancyRate.toFixed(1)}%`}
-              icon={<TrendingUp className="size-4" />}
-              subtext={`Across ${occupancyData.totalRooms} rooms over ${occupancyData.totalDays} days`}
+              label="Expected Arrivals"
+              value={dailyOpsData.summary.expectedArrivalsCount}
+              subtext={`${dailyOpsData.summary.checkedInArrivalsCount} already checked in`}
+              icon={<CalendarCheck className="size-4" />}
             />
             <StatCard
-              label="Occupied Room Nights"
-              value={occupancyData.totalOccupiedRoomNights.toLocaleString()}
+              label="Expected Departures"
+              value={dailyOpsData.summary.expectedDeparturesCount}
+              subtext={`${dailyOpsData.summary.checkedOutDeparturesCount} checked out`}
+              icon={<Clock className="size-4" />}
+            />
+            <StatCard
+              label="In-House Guests"
+              value={dailyOpsData.summary.inHouseCount}
+              subtext={`₹${dailyOpsData.summary.totalInHouseBalanceDue} pending balance`}
               icon={<BedDouble className="size-4" />}
-              subtext="Nights occupied by active stays"
             />
             <StatCard
-              label="Available Room Nights"
-              value={occupancyData.totalAvailableRoomNights.toLocaleString()}
-              icon={<CalendarDays className="size-4" />}
-              subtext="Total capacity in period"
-            />
-            <StatCard
-              label="Avg Daily Occupancy"
-              value={`${occupancyData.averageDailyOccupancy.toFixed(1)} rooms`}
-              icon={<BarChart3 className="size-4" />}
-              subtext="Mean rooms occupied per night"
+              label="Pending / No-Shows"
+              value={dailyOpsData.summary.pendingArrivalsCount}
+              subtext="Overdue check-ins"
+              icon={<AlertCircle className="size-4" />}
             />
           </div>
 
-          {/* Daily Occupancy Table */}
-          <div className="rounded-xl border border-border/80 bg-card overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-border/60 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">
-                Daily Occupancy Breakdown ({occupancyData.dailyBreakdown.length} days)
-              </h3>
-              <span className="text-xs text-muted-foreground">
-                Inventory: {occupancyData.totalRooms} physical rooms
+          {/* Operations Sub-Tabs */}
+          <div className="rounded-xl border border-border bg-card">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
+              <button
+                onClick={() => setOpsSubTab("arrivals")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  opsSubTab === "arrivals"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Today&apos;s Arrivals ({dailyOpsData.arrivals.length})
+              </button>
+              <button
+                onClick={() => setOpsSubTab("departures")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  opsSubTab === "departures"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Today&apos;s Departures ({dailyOpsData.departures.length})
+              </button>
+              <button
+                onClick={() => setOpsSubTab("in_house")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  opsSubTab === "in_house"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                In-House Guests ({dailyOpsData.inHouse.length})
+              </button>
+              <button
+                onClick={() => setOpsSubTab("pending")}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  opsSubTab === "pending"
+                    ? "bg-amber-600 text-white"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                Overdue / No-Shows ({dailyOpsData.pendingArrivals.length})
+              </button>
+            </div>
+
+            {/* Shift Operations Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 text-xs font-medium text-muted-foreground">
+                    <th className="px-4 py-3">Room</th>
+                    <th className="px-4 py-3">Guest & Contact</th>
+                    <th className="px-4 py-3">Dates & Stay</th>
+                    <th className="px-4 py-3">Nightly Rate</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Invoice & Balance</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {currentOpsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                        No records found for this operational filter on {opsDate}.
+                      </td>
+                    </tr>
+                  ) : (
+                    currentOpsList.map((item) => {
+                      const hasBalance =
+                        item.invoiceBalanceDue && parseFloat(item.invoiceBalanceDue) > 0
+                      return (
+                        <tr key={item.allocationId} className="hover:bg-muted/30">
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-foreground">
+                              Room {item.roomNo}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {item.roomCategoryName} • {item.buildingName} F{item.floorNo}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-foreground">
+                              {item.guestName}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {item.guestPhone && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Phone className="size-3" /> {item.guestPhone}
+                                </span>
+                              )}
+                              {item.guestEmail && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Mail className="size-3" /> {item.guestEmail}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="text-xs">
+                              <span className="font-medium">{item.arrivalDate}</span> →{" "}
+                              <span className="font-medium">{item.departureDate}</span>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {item.stayNights} night{item.stayNights > 1 ? "s" : ""}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3 font-medium">
+                            {formatMoney(parseFloat(item.bookedNightlyRate))}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <StatusBadge status={item.allocationStatus} />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {item.invoiceNumber ? (
+                              <div>
+                                <div className="text-xs font-mono font-medium">
+                                  {item.invoiceNumber}
+                                </div>
+                                <div className="text-xs">
+                                  {hasBalance ? (
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      Balance: {formatMoney(parseFloat(item.invoiceBalanceDue!))}
+                                    </span>
+                                  ) : (
+                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                      Fully Paid
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No Invoice</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {item.invoiceId && hasBalance && (
+                                <Link
+                                  href={`/billing/${item.invoiceId}`}
+                                  className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
+                                >
+                                  Collect
+                                </Link>
+                              )}
+                              <Link
+                                href={`/reservations/${item.reservationId}`}
+                                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs font-medium hover:bg-muted/80"
+                              >
+                                View
+                                <ExternalLink className="size-3" />
+                              </Link>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* 4. TAB 2: AVAILABILITY GRID (TAPE CHART)                              */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === "availability_grid" && (
+        <div className="space-y-4">
+          {/* Grid Controls */}
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+            <div className="flex flex-wrap items-center gap-3">
+              <Label className="font-medium">Window:</Label>
+              <Input
+                type="date"
+                value={gridStart}
+                onChange={(e) => {
+                  setGridStart(e.target.value)
+                  fetchAvailabilityGrid(e.target.value, gridEnd)
+                }}
+                className="w-40"
+              />
+              <span className="text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={gridEnd}
+                onChange={(e) => {
+                  setGridEnd(e.target.value)
+                  fetchAvailabilityGrid(gridStart, e.target.value)
+                }}
+                className="w-40"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const now = new Date()
+                  const s = now.toISOString().split("T")[0]!
+                  const e = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!
+                  setGridStart(s)
+                  setGridEnd(e)
+                  fetchAvailabilityGrid(s, e)
+                }}
+              >
+                Next 7 Days
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const now = new Date()
+                  const s = now.toISOString().split("T")[0]!
+                  const e = new Date(now.getTime() + 13 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!
+                  setGridStart(s)
+                  setGridEnd(e)
+                  fetchAvailabilityGrid(s, e)
+                }}
+              >
+                14 Days
+              </Button>
+            </div>
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-4 text-xs">
+              <span className="flex items-center gap-1.5">
+                <span className="size-3 rounded-xs bg-emerald-100 border border-emerald-300 dark:bg-emerald-950/60 dark:border-emerald-800" />
+                Available
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-3 rounded-xs bg-blue-500 text-white" />
+                Booked
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-3 rounded-xs bg-amber-500 text-white" />
+                Checked In
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-3 rounded-xs bg-rose-500 text-white" />
+                Maintenance
               </span>
             </div>
+          </div>
 
+          {/* Tape Chart Matrix */}
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/30 border-b border-border/60 text-muted-foreground font-medium">
-                  <tr>
-                    <th className="py-2.5 px-4">Date</th>
-                    <th className="py-2.5 px-4">Day</th>
-                    <th className="py-2.5 px-4 text-right">Occupied Rooms</th>
-                    <th className="py-2.5 px-4 text-right">Available Rooms</th>
-                    <th className="py-2.5 px-4 text-right">Occupancy %</th>
-                    <th className="py-2.5 px-4 w-40">Progress</th>
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/60">
+                    <th className="sticky left-0 z-20 min-w-[140px] border-r border-border bg-muted px-3 py-2.5 font-semibold">
+                      Room / Cat
+                    </th>
+                    {gridData.dates.map((dateStr) => {
+                      const d = new Date(`${dateStr}T00:00:00.000Z`)
+                      const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]
+                      const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6
+                      return (
+                        <th
+                          key={dateStr}
+                          className={cn(
+                            "min-w-[90px] border-r border-border px-2 py-2 text-center",
+                            isWeekend && "bg-muted/80"
+                          )}
+                        >
+                          <div className="font-semibold">{dayName}</div>
+                          <div className="text-[11px] text-muted-foreground">{dateStr.slice(5)}</div>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/40 font-mono">
-                  {occupancyData.dailyBreakdown.map((row) => (
-                    <tr key={row.date} className="hover:bg-muted/10 transition-colors">
-                      <td className="py-2.5 px-4 font-sans font-medium text-foreground">
-                        {row.date}
-                      </td>
-                      <td className="py-2.5 px-4 text-muted-foreground font-sans">
-                        {row.dayOfWeek}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-medium text-foreground">
-                        {row.occupiedRooms}
-                      </td>
-                      <td className="py-2.5 px-4 text-right text-muted-foreground">
-                        {row.availableRooms}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-bold text-foreground">
-                        {row.occupancyRate.toFixed(1)}%
-                      </td>
-                      <td className="py-2.5 px-4">
-                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-all",
-                              row.occupancyRate >= 75
-                                ? "bg-emerald-600"
-                                : row.occupancyRate >= 40
-                                ? "bg-primary"
-                                : "bg-amber-500"
-                            )}
-                            style={{ width: `${Math.min(100, row.occupancyRate)}%` }}
-                          />
+                <tbody className="divide-y divide-border">
+                  {gridData.rooms.map((room) => (
+                    <tr key={room.roomId} className="hover:bg-muted/10">
+                      {/* Fixed Left Header Column */}
+                      <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 font-medium">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-foreground">Room {room.roomNo}</span>
+                          <span className="text-[10px] text-muted-foreground">F{room.floorNo}</span>
+                        </div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {room.categoryName}
                         </div>
                       </td>
+
+                      {/* Day Slot Cells */}
+                      {room.slots.map((slot) => {
+                        if (slot.isOccupied) {
+                          const isCheckedIn = slot.allocationStatus === "CHECKED_IN"
+                          return (
+                            <td
+                              key={slot.date}
+                              className="border-r border-border p-1"
+                            >
+                              <Link
+                                href={`/reservations/${slot.reservationId}`}
+                                title={`${slot.guestName || "Guest"} (${slot.reservationNo})`}
+                                className={cn(
+                                  "block rounded-md p-1.5 text-[11px] font-medium transition-opacity hover:opacity-80 text-white",
+                                  isCheckedIn ? "bg-amber-600" : "bg-blue-600"
+                                )}
+                              >
+                                <div className="truncate font-semibold">{slot.guestName || "Guest"}</div>
+                                <div className="truncate text-[9px] opacity-90">{slot.reservationNo}</div>
+                              </Link>
+                            </td>
+                          )
+                        }
+
+                        if (slot.isMaintenance) {
+                          return (
+                            <td
+                              key={slot.date}
+                              className="border-r border-border bg-rose-50 p-1 text-center dark:bg-rose-950/20"
+                            >
+                              <div className="rounded-md bg-rose-500/20 py-2 text-[10px] font-semibold text-rose-700 dark:text-rose-400">
+                                Mnt
+                              </div>
+                            </td>
+                          )
+                        }
+
+                        // Free / Available
+                        return (
+                          <td
+                            key={slot.date}
+                            className="border-r border-border bg-emerald-50/40 p-1 text-center hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30"
+                          >
+                            <div className="py-2 text-[11px] font-medium text-emerald-800 dark:text-emerald-400">
+                              {formatMoney(parseFloat(slot.nightlyRate))}
+                            </div>
+                          </td>
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -374,233 +745,507 @@ export function ReportsView({
         </div>
       )}
 
-      {/* TAB 2: REVENUE & COLLECTIONS */}
-      {activeTab === "revenue" && (
+      {/* --------------------------------------------------------------------- */}
+      {/* 5. TAB 3: FINANCIAL & COLLECTIONS                                     */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === "financial" && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Billed Revenue"
-              value={formatMoney(revenueData.totalInvoiced)}
-              icon={<Receipt className="size-4" />}
-              subtext={`${revenueData.invoiceCount} invoices created/issued`}
-            />
-            <StatCard
-              label="Collections Recorded"
-              value={formatMoney(revenueData.totalCollected)}
-              icon={<Wallet className="size-4" />}
-              subtext={`${revenueData.paymentCount} payments received`}
-            />
-            <StatCard
-              label="Outstanding Balance"
-              value={formatMoney(revenueData.totalOutstanding)}
-              icon={<AlertCircle className="size-4" />}
-              subtext="Unpaid balance on period invoices"
-            />
-            <StatCard
-              label="Room Charges"
-              value={formatMoney(revenueData.roomChargesTotal)}
-              icon={<BedDouble className="size-4" />}
-              subtext={`Extra charges: ${formatMoney(revenueData.extraChargesTotal)}`}
-            />
-          </div>
-
-          {/* Breakdown Grids */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Payment Methods */}
-            <div className="rounded-xl border border-border/80 bg-card p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-border/60">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <CreditCard className="size-4 text-primary" />
-                  <span>Collections by Payment Method</span>
-                </h4>
-                <span className="text-xs font-mono font-medium text-foreground">
-                  {formatMoney(revenueData.totalCollected)}
-                </span>
-              </div>
-
-              {revenueData.paymentMethodBreakdown.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4 text-center">
-                  No payments recorded during this period.
-                </p>
-              ) : (
-                <div className="space-y-2.5">
-                  {revenueData.paymentMethodBreakdown.map((pm) => (
-                    <div key={pm.method} className="space-y-1 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium text-foreground">{pm.method}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground text-[11px]">
-                            ({pm.count} pay{pm.count === 1 ? "" : "s"})
-                          </span>
-                          <span className="font-mono font-semibold text-foreground">
-                            {formatMoney(pm.amount)}
-                          </span>
-                          <span className="text-xs font-mono text-muted-foreground w-12 text-right">
-                            {pm.percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-primary h-full rounded-full"
-                          style={{ width: `${Math.min(100, pm.percentage)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Charge Types Breakdown */}
-            <div className="rounded-xl border border-border/80 bg-card p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between pb-2 border-b border-border/60">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <Receipt className="size-4 text-primary" />
-                  <span>Billed Charges Breakdown</span>
-                </h4>
-                <span className="text-xs font-mono font-medium text-foreground">
-                  {formatMoney(revenueData.totalInvoiced)}
-                </span>
-              </div>
-
-              {revenueData.chargeTypeBreakdown.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4 text-center">
-                  No invoices created during this period.
-                </p>
-              ) : (
-                <div className="space-y-2.5">
-                  {revenueData.chargeTypeBreakdown.map((ct) => (
-                    <div key={ct.itemType} className="space-y-1 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="font-medium text-foreground">
-                          {ct.itemType.replace("_", " ")}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground text-[11px]">
-                            ({ct.count} item{ct.count === 1 ? "" : "s"})
-                          </span>
-                          <span className="font-mono font-semibold text-foreground">
-                            {formatMoney(ct.amount)}
-                          </span>
-                          <span className="text-xs font-mono text-muted-foreground w-12 text-right">
-                            {ct.percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-emerald-600 h-full rounded-full"
-                          style={{ width: `${Math.min(100, ct.percentage)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Daily Revenue Table */}
-          <div className="rounded-xl border border-border/80 bg-card overflow-hidden shadow-xs">
-            <div className="p-4 border-b border-border/60 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">
-                Daily Financial Overview ({revenueData.dailyBreakdown.length} days)
-              </h3>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/30 border-b border-border/60 text-muted-foreground font-medium">
-                  <tr>
-                    <th className="py-2.5 px-4">Date</th>
-                    <th className="py-2.5 px-4 text-right">Invoiced Amount</th>
-                    <th className="py-2.5 px-4 text-right">Collections Recorded</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40 font-mono">
-                  {revenueData.dailyBreakdown.map((row) => (
-                    <tr key={row.date} className="hover:bg-muted/10 transition-colors">
-                      <td className="py-2.5 px-4 font-sans font-medium text-foreground">
-                        {row.date}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-medium text-foreground">
-                        {formatMoney(row.invoicedAmount)}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-semibold text-emerald-600 dark:text-emerald-400">
-                        {formatMoney(row.collectedAmount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: RESERVATIONS BREAKDOWN */}
-      {activeTab === "reservations" && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard
-              label="Total Reservations"
-              value={reservationsData.totalReservations.toLocaleString()}
-              icon={<CalendarDays className="size-4" />}
-              subtext="Bookings created in date range"
-            />
-            <StatCard
-              label="Allocated Rooms"
-              value={reservationsData.totalAllocations.toLocaleString()}
-              icon={<BedDouble className="size-4" />}
-              subtext={`Across ${reservationsData.totalStayNights} stay nights`}
-            />
-            <StatCard
-              label="Avg Length of Stay"
-              value={`${reservationsData.averageLengthOfStay.toFixed(1)} nights`}
-              icon={<Clock className="size-4" />}
-              subtext="Average nights per reservation"
-            />
-            <StatCard
-              label="Cancellation Rate"
-              value={`${reservationsData.cancellationRate.toFixed(1)}%`}
-              icon={<XCircle className="size-4" />}
-              subtext={`Completion rate: ${reservationsData.completionRate.toFixed(1)}%`}
-            />
-          </div>
-
-          {/* Status Breakdown Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {reservationsData.statusBreakdown.map((item) => (
-              <div
-                key={item.status}
-                className="rounded-xl border border-border/80 bg-card p-4 shadow-xs space-y-3"
+          {/* Shift Date Filter */}
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+            <div className="flex items-center gap-3">
+              <Label className="whitespace-nowrap font-medium">Reconciliation Date:</Label>
+              <Input
+                type="date"
+                value={opsDate}
+                onChange={(e) => {
+                  setOpsDate(e.target.value)
+                  fetchFinancials(e.target.value)
+                }}
+                className="w-44"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const today = new Date().toISOString().split("T")[0]!
+                  setOpsDate(today)
+                  fetchFinancials(today)
+                }}
               >
-                <div className="flex items-center justify-between pb-2 border-b border-border/60">
-                  <StatusBadge status={item.status} />
-                  <span className="text-xs font-mono font-bold text-foreground">
-                    {item.percentage.toFixed(1)}%
-                  </span>
-                </div>
+                Today
+              </Button>
+            </div>
 
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Reservations</span>
-                    <span className="font-mono font-medium text-foreground">{item.count}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Total Room Nights</span>
-                    <span className="font-mono font-medium text-foreground">{item.roomNights}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground pt-1 border-t border-border/40">
-                    <span>Total Booking Value</span>
-                    <span className="font-mono font-semibold text-foreground">
-                      {formatMoney(item.totalValue)}
-                    </span>
-                  </div>
+            <div className="text-xs text-muted-foreground">
+              End-of-shift drawer reconciliation & receivables as of {opsDate}
+            </div>
+          </div>
+
+          {/* Financial Summary KPIs */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatCard
+              label="Shift Collections"
+              value={formatMoney(parseFloat(collectionsData.totalCollected))}
+              subtext={`${collectionsData.totalTransactions} recorded payments`}
+              icon={<Wallet className="size-4" />}
+            />
+            <StatCard
+              label="Total Receivables"
+              value={formatMoney(parseFloat(receivablesData.totalReceivables))}
+              subtext={`${receivablesData.totalInvoices} unpaid folios`}
+              icon={<Receipt className="size-4" />}
+            />
+            <StatCard
+              label="In-House Receivables"
+              value={formatMoney(parseFloat(receivablesData.inHouseReceivables))}
+              subtext={`${receivablesData.inHouseCount} active staying guests`}
+              icon={<BedDouble className="size-4" />}
+            />
+            <StatCard
+              label="Departed Debtors"
+              value={formatMoney(parseFloat(receivablesData.departedReceivables))}
+              subtext={`${receivablesData.departedCount} unpaid after checkout`}
+              icon={<ShieldAlert className="size-4" />}
+            />
+          </div>
+
+          {/* Shift Cash Drawer Reconciliation */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* By Payment Method */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h3 className="font-semibold text-foreground">Shift Collections by Method</h3>
+                <span className="text-xs text-muted-foreground">
+                  Total: {formatMoney(parseFloat(collectionsData.totalCollected))}
+                </span>
+              </div>
+
+              {collectionsData.methodBreakdown.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground">
+                  No payments recorded for this shift date.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {collectionsData.methodBreakdown.map((pm) => (
+                    <div key={pm.method} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs font-medium">
+                        <span className="flex items-center gap-1.5">
+                          <CreditCard className="size-3.5 text-muted-foreground" />
+                          {pm.method} ({pm.count})
+                        </span>
+                        <span>{formatMoney(parseFloat(pm.amount))}</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{ width: `${pm.percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* By Front Desk Staff */}
+            <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-2">
+                <h3 className="font-semibold text-foreground">Collections by Staff User</h3>
+                <span className="text-xs text-muted-foreground">Shift Accountability</span>
+              </div>
+
+              {collectionsData.staffBreakdown.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground">
+                  No staff payment entries recorded on {opsDate}.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {collectionsData.staffBreakdown.map((staff) => (
+                    <div
+                      key={staff.userId}
+                      className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-3"
+                    >
+                      <div>
+                        <div className="font-medium text-foreground">{staff.userName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {staff.paymentCount} payments • {staff.userEmail}
+                        </div>
+                      </div>
+                      <div className="text-right font-semibold text-foreground">
+                        {formatMoney(parseFloat(staff.totalCollected))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Receivables & Aging Report */}
+          <div className="rounded-xl border border-border bg-card space-y-4 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="font-semibold text-foreground">Outstanding Balances & Aging</h3>
+                <p className="text-xs text-muted-foreground">
+                  All active uncollected folios categorized by aging and guest stay status.
+                </p>
+              </div>
+
+              {/* Filter */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setReceivablesFilter("all")}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium",
+                    receivablesFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted"
+                  )}
+                >
+                  All ({receivablesData.items.length})
+                </button>
+                <button
+                  onClick={() => setReceivablesFilter("in_house")}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium",
+                    receivablesFilter === "in_house" ? "bg-primary text-primary-foreground" : "bg-muted"
+                  )}
+                >
+                  In-House ({receivablesData.inHouseCount})
+                </button>
+                <button
+                  onClick={() => setReceivablesFilter("departed")}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-xs font-medium",
+                    receivablesFilter === "departed" ? "bg-primary text-primary-foreground" : "bg-muted"
+                  )}
+                >
+                  Departed ({receivablesData.departedCount})
+                </button>
+              </div>
+            </div>
+
+            {/* Aging summary cards */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                <div className="text-[11px] text-muted-foreground">0 - 7 Days (Current)</div>
+                <div className="text-sm font-semibold text-foreground">
+                  {formatMoney(parseFloat(receivablesData.agingSummary.bucket0to7))}
                 </div>
               </div>
-            ))}
+              <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                <div className="text-[11px] text-muted-foreground">8 - 30 Days</div>
+                <div className="text-sm font-semibold text-foreground">
+                  {formatMoney(parseFloat(receivablesData.agingSummary.bucket8to30))}
+                </div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                <div className="text-[11px] text-muted-foreground">31 - 60 Days</div>
+                <div className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                  {formatMoney(parseFloat(receivablesData.agingSummary.bucket31to60))}
+                </div>
+              </div>
+              <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                <div className="text-[11px] text-muted-foreground">60+ Days (Delinquent)</div>
+                <div className="text-sm font-semibold text-rose-600 dark:text-rose-400">
+                  {formatMoney(parseFloat(receivablesData.agingSummary.bucket60Plus))}
+                </div>
+              </div>
+            </div>
+
+            {/* Receivables Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Invoice / Res No</th>
+                    <th className="px-3 py-2">Guest Name & Phone</th>
+                    <th className="px-3 py-2">Rooms</th>
+                    <th className="px-3 py-2">Guest Status</th>
+                    <th className="px-3 py-2">Aging</th>
+                    <th className="px-3 py-2">Grand Total</th>
+                    <th className="px-3 py-2">Balance Due</th>
+                    <th className="px-3 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filteredReceivables.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-6 text-center text-muted-foreground">
+                        No outstanding balances in this view.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredReceivables.map((rec) => (
+                      <tr key={rec.invoiceId} className="hover:bg-muted/20">
+                        <td className="px-3 py-2">
+                          <div className="font-mono font-medium">{rec.invoiceNumber}</div>
+                          <div className="text-[11px] text-muted-foreground">{rec.reservationNo}</div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="font-medium text-foreground">{rec.guestName}</div>
+                          <div className="text-[11px] text-muted-foreground">{rec.guestPhone || "No phone"}</div>
+                        </td>
+                        <td className="px-3 py-2 font-medium">
+                          {rec.roomNumbers.join(", ") || "N/A"}
+                        </td>
+                        <td className="px-3 py-2">
+                          {rec.isGuestInHouse ? (
+                            <span className="inline-flex rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                              In-House
+                            </span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                              Departed
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={cn(
+                              "font-medium",
+                              rec.daysAging > 30 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
+                            )}
+                          >
+                            {rec.daysAging} days ({rec.agingBucket})
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">{formatMoney(parseFloat(rec.grandTotal))}</td>
+                        <td className="px-3 py-2 font-semibold text-amber-600 dark:text-amber-400">
+                          {formatMoney(parseFloat(rec.balanceDue))}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Link
+                            href={`/billing/${rec.invoiceId}`}
+                            className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+                          >
+                            Collect
+                            <ChevronRight className="size-3" />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------------------------- */}
+      {/* 6. TAB 4: PERFORMANCE & KPIS (ADR, RevPAR, Categories)                */}
+      {/* --------------------------------------------------------------------- */}
+      {activeTab === "performance" && (
+        <div className="space-y-6">
+          {/* Preset buttons & custom date filter */}
+          <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">Presets:</span>
+              <Button variant="outline" size="sm" onClick={() => setPreset("last7")}>
+                Last 7 Days
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("thisMonth")}>
+                This Month (MTD)
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("last30")}>
+                Last 30 Days
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setPreset("lastMonth")}>
+                Last Month
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-36 text-xs"
+              />
+              <span className="text-muted-foreground">to</span>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-36 text-xs"
+              />
+              <Button
+                size="sm"
+                onClick={() => fetchPerformanceReports(startDate, endDate)}
+                disabled={loading}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
+
+          {/* Performance KPIs: Occupancy, ADR, RevPAR, Room Revenue */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <StatCard
+              label="Occupancy Rate"
+              value={`${occupancyData.occupancyRate}%`}
+              subtext={`${occupancyData.totalOccupiedRoomNights} of ${occupancyData.totalAvailableRoomNights} nights`}
+              icon={<TrendingUp className="size-4" />}
+            />
+            <StatCard
+              label="ADR (Avg Daily Rate)"
+              value={formatMoney(parseFloat(occupancyData.adr))}
+              subtext="Room revenue / rooms sold"
+              icon={<CreditCard className="size-4" />}
+            />
+            <StatCard
+              label="RevPAR"
+              value={formatMoney(parseFloat(occupancyData.revpar))}
+              subtext="Room revenue / available rooms"
+              icon={<BarChart3 className="size-4" />}
+            />
+            <StatCard
+              label="Total Room Revenue"
+              value={formatMoney(parseFloat(occupancyData.totalRoomRevenue))}
+              subtext={`${occupancyData.totalDays} calendar days`}
+              icon={<Receipt className="size-4" />}
+            />
+          </div>
+
+          {/* Room Category Performance Table */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+            <div className="border-b border-border pb-2">
+              <h3 className="font-semibold text-foreground">Room Category Performance Breakdown</h3>
+              <p className="text-xs text-muted-foreground">
+                Category sales volume, occupancy rates, ADR, and revenue generation.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
+                    <th className="px-3 py-2.5">Room Category</th>
+                    <th className="px-3 py-2.5">Total Rooms</th>
+                    <th className="px-3 py-2.5">Available Nights</th>
+                    <th className="px-3 py-2.5">Occupied Nights</th>
+                    <th className="px-3 py-2.5">Occupancy %</th>
+                    <th className="px-3 py-2.5">Room Revenue</th>
+                    <th className="px-3 py-2.5">ADR</th>
+                    <th className="px-3 py-2.5">RevPAR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {occupancyData.categoryBreakdown.map((cat) => (
+                    <tr key={cat.categoryId} className="hover:bg-muted/20">
+                      <td className="px-3 py-2.5 font-semibold text-foreground">
+                        {cat.categoryName}
+                      </td>
+                      <td className="px-3 py-2.5">{cat.totalRooms}</td>
+                      <td className="px-3 py-2.5">{cat.availableRoomNights}</td>
+                      <td className="px-3 py-2.5 font-medium">{cat.occupiedRoomNights}</td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{cat.occupancyRate}%</span>
+                          <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full"
+                              style={{ width: `${Math.min(100, cat.occupancyRate)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 font-medium">{formatMoney(parseFloat(cat.roomRevenue))}</td>
+                      <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.adr))}</td>
+                      <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.revpar))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Daily Occupancy Trend Table */}
+          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+            <div className="border-b border-border pb-2">
+              <h3 className="font-semibold text-foreground">Daily Occupancy & Revenue Trend</h3>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Day</th>
+                    <th className="px-3 py-2">Occupied / Total</th>
+                    <th className="px-3 py-2">Occupancy Rate</th>
+                    <th className="px-3 py-2">Room Revenue</th>
+                    <th className="px-3 py-2">ADR</th>
+                    <th className="px-3 py-2">RevPAR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {occupancyData.dailyBreakdown.map((d) => (
+                    <tr key={d.date} className="hover:bg-muted/20">
+                      <td className="px-3 py-2 font-mono">{d.date}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{d.dayOfWeek}</td>
+                      <td className="px-3 py-2">
+                        {d.occupiedRooms} / {d.totalRooms}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold">{d.occupancyRate}%</span>
+                          <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full"
+                              style={{ width: `${Math.min(100, d.occupancyRate)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 font-medium">{formatMoney(parseFloat(d.roomRevenue))}</td>
+                      <td className="px-3 py-2">{formatMoney(parseFloat(d.adr))}</td>
+                      <td className="px-3 py-2">{formatMoney(parseFloat(d.revpar))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Period Financial & Reservation Totals */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="font-semibold text-foreground">Invoiced vs Collected ({startDate} to {endDate})</h3>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="rounded-lg bg-muted/40 p-2.5">
+                  <div className="text-muted-foreground">Total Invoiced</div>
+                  <div className="text-base font-bold text-foreground">
+                    {formatMoney(parseFloat(revenueData.totalInvoiced))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{revenueData.invoiceCount} invoices</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-2.5">
+                  <div className="text-muted-foreground">Total Collected</div>
+                  <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">
+                    {formatMoney(parseFloat(revenueData.totalCollected))}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">{revenueData.paymentCount} payments</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+              <h3 className="font-semibold text-foreground">Reservation Volume & Stay Metrics</h3>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                  <div className="text-muted-foreground">Total Bookings</div>
+                  <div className="text-base font-bold text-foreground">{reservationsData.totalReservations}</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                  <div className="text-muted-foreground">Avg Stay (ALOS)</div>
+                  <div className="text-base font-bold text-foreground">{reservationsData.averageLengthOfStay} nights</div>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                  <div className="text-muted-foreground">Cancellation %</div>
+                  <div className="text-base font-bold text-rose-600 dark:text-rose-400">{reservationsData.cancellationRate}%</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -49,7 +49,7 @@ src/
 │   ├── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
 │   ├── reservations/      # ReservationService, validations, and types
 │   ├── billing/           # BillingService, invoice calculation, receipts, and validations
-│   └── reports/           # ReportsService (Occupancy, Revenue vs Collections, Reservation Status)
+│   └── reports/           # ReportsService (Daily Operations, Availability Tape Chart, Shift Collections, Receivables Aging, Occupancy, ADR, RevPAR, Revenue)
 └── README.md              # Source architecture guide
 ```
 
@@ -60,6 +60,14 @@ src/
 The backend API is implemented as **Next.js App Router Route Handlers** within the unified application:
 
 - **Route Location**: `src/app/api/<feature>/route.ts` (e.g., `src/app/api/reservations/route.ts`).
+- **Reports Endpoints**:
+  - `GET /api/reports/daily-operations?date=YYYY-MM-DD`: Arrivals (with balances), Departures (balance due), In-House guests, Overdue check-ins.
+  - `GET /api/reports/availability-grid?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD`: Room-by-date tape chart matrix with booked/vacant/maintenance slots.
+  - `GET /api/reports/collections?date=YYYY-MM-DD&staffUserId=...`: Cash drawer and shift collection reconciliation split by payment method and staff.
+  - `GET /api/reports/receivables?filter=all|in_house|departed`: Outstanding balances with 0-7d, 8-30d, 31-60d, 60d+ aging buckets and debtor list.
+  - `GET /api/reports/occupancy?startDate=...&endDate=...`: Occupancy %, total room revenue, ADR, RevPAR, and room category performance.
+  - `GET /api/reports/revenue?startDate=...&endDate=...`: Room charges, extra charges, taxes, discounts, net invoiced vs collected.
+  - `GET /api/reports/reservations?startDate=...&endDate=...`: Status distribution, total allocations, and average stay length.
 - **Thin Route Handlers**: Route handlers are strictly responsible for:
   1. Extracting and validating request parameters / JSON payloads.
   2. Verifying user authentication and role authorization (`ADMIN` vs `RECEPTIONIST`).

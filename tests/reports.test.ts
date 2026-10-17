@@ -366,11 +366,24 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
       assert.equal(report.endDate, "2026-11-04")
       assert.equal(report.totalDays, 4)
       assert.equal(report.totalRooms, 2)
-      assert.equal(report.totalAvailableRoomNights, 8) // 2 rooms * 4 days = 8
       assert.equal(report.totalOccupiedRoomNights, 5) // 3 + 2 = 5 nights
 
       // Occupancy Rate = 5 / 8 * 100 = 62.5%
       assert.equal(report.occupancyRate, 62.5)
+      assert.equal(report.totalRoomRevenue, "1000.00")
+      assert.equal(report.adr, "200.00") // $1000 / 5 occupied nights = $200
+      assert.equal(report.revpar, "125.00") // $1000 / 8 available nights = $125
+
+      // Category breakdown
+      assert.ok(report.categoryBreakdown.length >= 1)
+      const cat = report.categoryBreakdown.find((c) => c.categoryId === testCategoryId)
+      assert.ok(cat)
+      assert.equal(cat.categoryName, "Reports Suite")
+      assert.equal(cat.occupiedRoomNights, 5)
+      assert.equal(cat.roomRevenue, "1000.00")
+      assert.equal(cat.adr, "200.00")
+      assert.equal(cat.revpar, "125.00")
+
       assert.equal(report.dailyBreakdown.length, 4)
 
       // Nov 1: Room 401 occupied (1/2 = 50%)

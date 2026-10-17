@@ -126,13 +126,15 @@ V1 can support one or multiple properties within the same installation. Do not i
 - Preserve the agreed rate saved on each room allocation. Later changes to the room category's default price must not change existing bookings.
 
 ### Reports
-Start with:
-- Occupancy
-- Revenue / payments
-- Arrivals
-- Departures
+PMS operational and financial reporting suite:
+- **Occupancy & KPIs**: Occupancy rate %, occupied room nights, total room revenue, Average Daily Rate (ADR), Revenue Per Available Room (RevPAR), and room category performance breakdown.
+- **Revenue & Collections**: Room charges, extra charges, taxes, discounts, net invoiced vs collected payments, and payment method distribution.
+- **Daily Operations (Shift Management)**: Today's arrivals (with invoice balance), departures (with balance due), in-house guests, and overdue check-ins / no-shows.
+- **Room Availability / Tape Chart Grid**: Date-by-room visual grid (7-day / 14-day) showing booked slots (with guest names and reservation links), vacant slots (with nightly rates), and maintenance blocks.
+- **Daily Collections Report**: End-of-shift drawer reconciliation by payment method (cash, card, UPI, bank transfer) and by staff user.
+- **Outstanding Balances & Receivables Aging**: Aging buckets (0–7 days, 8–30 days, 31–60 days, 60+ days) and itemized debtor list filtered by in-house vs departed guests.
 
-Define report calculations consistently before implementing them. Distinguish billed revenue from money actually collected.
+Define report calculations consistently before implementing them. Distinguish billed revenue from money actually collected. All monetary metrics enforce Decimal fixed precision.
 
 ### Audit
 Record important actions such as reservation creation/modification/cancellation, room assignment, check-in/out, invoice changes, and payment/refund activity. Keep the audit implementation simple and centralized.

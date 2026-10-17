@@ -72,14 +72,17 @@ Keep the backend as a single application organized by feature. Do not introduce 
 - Issue receipts
 - Record refunds if refunds are allowed by the final cancellation/payment policy
 
-### Phase 7 — Reports (Completed)
-- Occupancy report (REP-004: historical room nights, half-open intervals, zero-division guards)
-- Revenue report (REP-005: invoiced revenue vs collected payments, payment methods, extra charges)
-- Today's arrivals and departures (Phase 5 check-in/out board & Phase 7 reporting)
+### Phase 7 — Reports & PMS Operations Suite (Completed)
+- Occupancy & KPI report (REP-004: historical room nights, half-open intervals, zero-division guards, ADR, RevPAR, and room category breakdown)
+- Revenue & Collections report (REP-005: invoiced revenue vs collected payments, payment methods, extra charges, taxes, discounts)
+- Daily Operations shift dashboard (today's arrivals with balances, today's departures with balance due, currently in-house guests, overdue check-ins / no-shows)
+- Room Availability / Tariff Tape Chart (interactive 7/14-day date-by-room grid with booking blocks, guest details, vacant rates, and maintenance status)
+- Daily Shift Collections & Drawer Reconciliation (end-of-shift collections split by payment method and staff member)
+- Outstanding Balances & Receivables Aging (0–7d, 8–30d, 31–60d, 60d+ aging buckets with debtor breakdown and in-house/departed filtering)
 - Reservation status report (REP-006: confirmed, in-house, completed, cancelled counts, ALOS)
-- Dedicated `/reports` page and navigation (REP-007: filters, stat cards, progress bars, print view)
+- Dedicated `/reports` unified 4-tab PMS console and navigation (REP-007: filters, stat cards, progress bars, shift controls, print view)
 
-Use clearly defined calculation rules for each report; do not treat room price, invoiced revenue, and collected payments as interchangeable figures.
+Use clearly defined calculation rules for each report; do not treat room price, invoiced revenue, and collected payments as interchangeable figures. Enforce PostgreSQL `numeric` / Prisma `Decimal` across all monetary calculations.
 
 ### Phase 8 — Stabilization & Deployment Readiness (Completed)
 - Test booking conflicts and overlapping date ranges

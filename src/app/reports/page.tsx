@@ -4,6 +4,8 @@ import { ReportsService } from "@/modules/reports/reports.service"
 import { AppShell } from "@/components/app-shell"
 import { ReportsView } from "./reports-view"
 
+export const dynamic = "force-dynamic"
+
 export default async function ReportsPage() {
   const session = await getSession()
   if (!session) {
@@ -19,7 +21,18 @@ export default async function ReportsPage() {
   const defaultStartDate = `${y}-${m}-01`
   const defaultEndDate = `${y}-${m}-${d}`
 
-  const [initialOccupancy, initialRevenue, initialReservations] = await Promise.all([
+  const weekLater = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 6))
+  const weekLaterStr = weekLater.toISOString().split("T")[0]!
+
+  const [
+    initialOccupancy,
+    initialRevenue,
+    initialReservations,
+    initialDailyOps,
+    initialAvailabilityGrid,
+    initialCollections,
+    initialReceivables,
+  ] = await Promise.all([
     ReportsService.getOccupancyReport({
       startDate: defaultStartDate,
       endDate: defaultEndDate,
@@ -32,17 +45,27 @@ export default async function ReportsPage() {
       startDate: defaultStartDate,
       endDate: defaultEndDate,
     }),
+    ReportsService.getDailyOperations(defaultEndDate),
+    ReportsService.getAvailabilityGrid(defaultEndDate, weekLaterStr),
+    ReportsService.getShiftCollections(defaultEndDate),
+    ReportsService.getReceivablesReport(),
   ])
 
   return (
     <AppShell session={session}>
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
         <ReportsView
           initialStartDate={defaultStartDate}
           initialEndDate={defaultEndDate}
+          initialTodayDate={defaultEndDate}
+          initialWeekLaterDate={weekLaterStr}
           initialOccupancy={initialOccupancy}
           initialRevenue={initialRevenue}
           initialReservations={initialReservations}
+          initialDailyOps={initialDailyOps}
+          initialAvailabilityGrid={initialAvailabilityGrid}
+          initialCollections={initialCollections}
+          initialReceivables={initialReceivables}
         />
       </div>
     </AppShell>
