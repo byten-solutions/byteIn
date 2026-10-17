@@ -23,24 +23,26 @@
 
 ---
 
-## 2. Remaining Work: Batch 3 (Deployment Readiness Only)
-
-The following 3 items are strictly deployment and infrastructure readiness tasks deferred to Batch 3:
-
-| Item | Scope | Description | Priority |
-| :--- | :--- | :--- | :--- |
-| **`DEP-001`** | CI Workflow | GitHub Actions workflow executing `npm run validate` on push/PR | Low (Batch 3) |
-| **`DEP-002`** | Containerization | Multi-stage production `Dockerfile` and `docker-compose.yml` for self-hosted deployment | Low (Batch 3) |
-| **`DEP-003`** | Health Probes | Public `/api/health` endpoint returning database ping and uptime for orchestrators | Low (Batch 3) |
+## 2. Batch 3: Deployment Readiness — COMPLETE
+- [x] **`DEP-001` CI Workflow:** GitHub Actions workflow (`.github/workflows/ci.yml`) automatically validating typecheck, lint, test, and build on push/PR with PostgreSQL service.
+- [x] **`DEP-002` Containerization:** Multi-stage production `Dockerfile` (Node 20 Alpine, unprivileged `nextjs:nodejs` user, standalone bundle), `.dockerignore`, and `docker-compose.yml` for self-hosted orchestration.
+- [x] **`DEP-003` Health Probes:** Public `/api/health` probe verifying database connectivity, uptime, version, and cache-control headers (`src/app/api/health/route.ts` & `tests/health.test.ts`).
 
 ---
 
-## 3. V1 Release Gate Status
+## 3. Remaining Work
+
+**None.** All 88 requirements across Phases 1 through 8 are 100% implemented, verified, and passing quality gates.
+
+---
+
+## 4. V1 Release Gate Status
 
 | Quality Gate | Requirement | Actual Status |
 | :--- | :--- | :--- |
 | TypeScript Compiler | `tsc --noEmit` with zero errors | **PASSED (0 errors)** |
 | ESLint Standards | `eslint` with zero errors/warnings | **PASSED (0 errors, 0 warnings)** |
-| Test Suite | Full suite pass with isolated fixtures | **PASSED (162/162 tests passed across 52 suites)** |
-| Next.js App Router Build | `next build` static + dynamic routes | **PASSED (30/30 routes compiled)** |
+| Test Suite | Full suite pass with isolated fixtures | **PASSED (164/164 tests passed across 53 suites)** |
+| Next.js App Router Build | `next build` static + dynamic standalone routes | **PASSED (30/30 routes compiled)** |
 | Prisma Schema | `npx prisma validate` | **PASSED (Valid schema)** |
+| Live Health Probe | `GET /api/health` | **PASSED (HTTP 200 OK, database connected)** |

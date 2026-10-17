@@ -19,7 +19,8 @@ src/
 │   │   ├── reservations/  # Reservation endpoints (/api/reservations, /api/reservations/[id])
 │   │   ├── room-allocations/# Allocation check-in and check-out endpoints
 │   │   ├── invoices/      # Billing & payment endpoints (/api/invoices, items, payments, void)
-│   │   └── reports/       # Phase 7 operational & financial reports (/api/reports/occupancy, revenue, reservations)
+│   │   ├── reports/       # Phase 7 operational & financial reports (/api/reports/occupancy, revenue, reservations)
+│   │   └── health/        # Public container & database healthcheck probe (/api/health)
 │   ├── categories/        # Room Categories & Setup view (/categories)
 │   ├── rooms/             # Room Inventory & Status Board (/rooms)
 │   ├── reservations/      # Reservation list, detail, and booking view (/reservations)

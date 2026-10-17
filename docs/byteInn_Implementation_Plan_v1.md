@@ -81,7 +81,7 @@ Keep the backend as a single application organized by feature. Do not introduce 
 
 Use clearly defined calculation rules for each report; do not treat room price, invoiced revenue, and collected payments as interchangeable figures.
 
-### Phase 8 — Stabilization
+### Phase 8 — Stabilization & Deployment Readiness (Completed)
 - Test booking conflicts and overlapping date ranges
 - Test reservations with multiple rooms and different dates
 - Test partial payments and outstanding balances
@@ -89,6 +89,9 @@ Use clearly defined calculation rules for each report; do not treat room price, 
 - Test role permissions and unauthorized access
 - Verify audit coverage, validation, error handling, and backup/recovery basics
 - Review performance and security
+- Public container health check probe `/api/health` (`DEP-003`)
+- Production Dockerfile and docker-compose.yml orchestration (`DEP-002`)
+- Automated GitHub Actions CI workflow for test & build validation (`DEP-001`)
 
 ## 5. Key Data Model Rules
 
