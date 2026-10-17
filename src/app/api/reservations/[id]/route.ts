@@ -4,11 +4,11 @@ import { handleApiError } from "@/lib/errors";
 import { ReservationService } from "@/modules/reservations/reservation.service";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const { id } = await params;
     const reservation = await ReservationService.getReservationById(id);
     return NextResponse.json({ success: true, reservation });

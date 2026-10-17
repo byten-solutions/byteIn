@@ -234,7 +234,7 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
       assert.ok(guest.id);
       assert.equal(guest.firstName, "Sarah");
       assert.equal(guest.lastName, "Connor");
-      assert.equal(guest.idProofNumber, "DL123456");
+      assert.equal(guest.idProofNumber, "•••• 3456");
 
       const fetched = await CustomerService.getCustomerById(guest.id);
       assert.equal(fetched.id, guest.id);
@@ -251,7 +251,7 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
 
       assert.equal(updated.phone, "+1-555-9988");
       assert.equal(updated.idProofType, "National ID");
-      assert.equal(updated.idProofNumber, "NID-112233");
+      assert.equal(updated.idProofNumber, "•••• 2233");
       assert.equal(updated.remarks, "Frequent flyer member");
     });
 
@@ -325,7 +325,7 @@ describe("Phase 5: Guest Operations, Check-In & Check-Out Tests", () => {
 
       // Verify customer verified ID was updated
       const customer = await prisma.customer.findUnique({ where: { id: testCustomerId } });
-      assert.equal(customer?.idProofNumber, "VERIFIED-9999");
+      assert.equal(customer?.idProofNumber, "9999");
 
       // Verify Audit Log
       const audit = await prisma.auditLog.findFirst({

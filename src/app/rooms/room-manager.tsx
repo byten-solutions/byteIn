@@ -573,25 +573,13 @@ export function RoomManager({
                 key={room.id}
                 className="flex flex-col justify-between shadow-xs hover:border-foreground/20 transition-colors group"
               >
-                <CardHeader className="p-4 pb-2 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xl font-bold font-mono tracking-tight text-foreground">
-                          {room.roomNo}
-                        </span>
-                        <Badge variant="secondary" className="text-[11px] font-normal py-0 truncate">
-                          {room.category.name}
-                        </Badge>
-                      </div>
-                      {room.displayName && (
-                        <p className="text-xs text-muted-foreground truncate max-w-[180px]">
-                          {room.displayName}
-                        </p>
-                      )}
-                    </div>
+                <CardHeader className="p-4 pb-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <span className="text-xl font-bold font-mono tracking-tight text-foreground truncate min-w-0">
+                      {room.roomNo}
+                    </span>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1 shrink-0 ml-auto">
                       {/* Clickable status badge button */}
                       <button
                         type="button"
@@ -620,6 +608,24 @@ export function RoomManager({
                         />
                       )}
                     </div>
+                  </div>
+
+                  <div className="space-y-0.5 min-w-0">
+                    <Badge
+                      variant="secondary"
+                      className="text-[11px] font-normal py-0 truncate max-w-full inline-block"
+                      title={room.category.name}
+                    >
+                      {room.category.name}
+                    </Badge>
+                    {room.displayName && (
+                      <p
+                        className="text-xs text-muted-foreground truncate w-full"
+                        title={room.displayName}
+                      >
+                        {room.displayName}
+                      </p>
+                    )}
                   </div>
                 </CardHeader>
 
@@ -807,10 +813,7 @@ export function RoomManager({
           </DialogHeader>
 
           <form onSubmit={handleSaveRoom} className="space-y-4">
-            <FormSection
-              title="Location"
-              description="Assign physical property, building, and floor location"
-            >
+            <FormSection title="Location">
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="roomProperty">Property *</Label>
@@ -865,11 +868,8 @@ export function RoomManager({
               </div>
             </FormSection>
 
-            <FormSection
-              title="Room Details"
-              description="Number, category, and maximum occupancy limit"
-            >
-              <div className="grid grid-cols-3 gap-3">
+            <FormSection title="Room Details">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="roomNo">Room No *</Label>
                   <Input
@@ -883,8 +883,8 @@ export function RoomManager({
                   />
                 </div>
 
-                <div className="space-y-1.5 col-span-2">
-                  <Label htmlFor="roomCategory">Room Category *</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="roomCategory">Category *</Label>
                   <select
                     id="roomCategory"
                     value={formCategoryId}
@@ -899,9 +899,7 @@ export function RoomManager({
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="roomCapacity">Capacity *</Label>
                   <Input
@@ -915,7 +913,11 @@ export function RoomManager({
                     className="text-xs"
                   />
                 </div>
+              </div>
+            </FormSection>
 
+            <FormSection title="Pricing & Notes">
+              <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="priceOverride">Rate Override</Label>
                   <div className="relative">
@@ -927,7 +929,7 @@ export function RoomManager({
                       type="number"
                       step="0.01"
                       min="0"
-                      placeholder="Optional override"
+                      placeholder="Optional override per night"
                       value={formPriceOverride}
                       onChange={(e) => setFormPriceOverride(e.target.value)}
                       disabled={loading}
@@ -935,14 +937,7 @@ export function RoomManager({
                     />
                   </div>
                 </div>
-              </div>
-            </FormSection>
 
-            <FormSection
-              title="Pricing & Notes"
-              description="Custom display name and operational reception notes"
-            >
-              <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="displayName">Display Name</Label>
                   <Input

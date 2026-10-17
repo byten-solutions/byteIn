@@ -61,11 +61,26 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
     badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
 
-  // Reservation statuses
+  // Reservation / Allocation statuses
   CONFIRMED: {
     label: "Confirmed",
     dotClass: "bg-sky-500",
     badgeClass: "bg-sky-500/12 text-sky-900 dark:text-sky-300 border-sky-500/25 font-semibold",
+  },
+  CHECKED_IN: {
+    label: "Checked In",
+    dotClass: "bg-emerald-500",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
+  },
+  CHECKED_OUT: {
+    label: "Checked Out",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
+  },
+  NO_SHOW: {
+    label: "No Show",
+    dotClass: "bg-rose-500",
+    badgeClass: "bg-rose-500/12 text-rose-900 dark:text-rose-300 border-rose-500/25 font-semibold",
   },
   COMPLETED: {
     label: "Completed",
@@ -136,6 +151,16 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
     dotClass: "bg-stone-400",
     badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
+  RECORDED: {
+    label: "Recorded",
+    dotClass: "bg-emerald-500",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
+  },
+  VOID: {
+    label: "Void",
+    dotClass: "bg-stone-400",
+    badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
+  },
 }
 
 export interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
@@ -180,7 +205,7 @@ export function StatusBadge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 font-medium border rounded-full select-none shrink-0 transition-colors",
+        "inline-flex items-center gap-1.5 font-medium border rounded-full select-none shrink-0 transition-colors whitespace-nowrap",
         size === "sm" ? "px-2 py-0.5 text-xs" : "px-2.5 py-1 text-xs",
         config.badgeClass,
         className

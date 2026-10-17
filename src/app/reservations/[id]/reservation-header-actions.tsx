@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { BedDouble, CreditCard, LogOut, Plus } from "lucide-react"
+import { BedDouble, LogOut, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface ReservationHeaderActionsProps {
@@ -38,17 +38,6 @@ export function ReservationHeaderActions({
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {invoiceId && (
-        <Link href={`/billing/${invoiceId}`}>
-          <Button
-            variant="outline"
-            className="h-10 text-xs font-semibold gap-1.5 border-border/80"
-          >
-            <CreditCard className="size-3.5 text-primary" />
-            <span>Open Invoice</span>
-          </Button>
-        </Link>
-      )}
 
       {nextConfirmedRoom && (
         <Button

@@ -18,6 +18,7 @@ import {
   EARLY_CHECKIN_POLICY,
   BACKDATED_CHECKOUT_POLICY,
 } from "@/config/reservations";
+import { RoleName } from "@/modules/auth/auth.types";
 import type {
   CheckInInput,
   CheckOutInput,
@@ -89,6 +90,70 @@ export class CheckInOutService {
             `Cannot check in prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}). Early check-in is restricted by hotel policy.`
           );
         }
+        if (EARLY_CHECKIN_POLICY === "ALLOW_WITH_ARRIVAL_UPDATE") {
+          // Check target room is free from hotelToday until scheduled arrivalDate
+          const conflicts = await tx.reservationRoom.findMany({
+            where: {
+              roomId: allocation.roomId,
+              id: { not: allocation.id },
+              status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
+              arrivalDate: { lt: allocation.arrivalDate },
+              departureDate: { gt: hotelToday },
+            },
+          });
+          if (conflicts.length > 0) {
+            throw new BadRequestError(
+              `Cannot check in early: Room ${allocation.room.roomNo} is booked by another reservation prior to ${allocation.arrivalDate.toISOString().split("T")[0]}.`
+            );
+          }
+
+          // Bill extra night(s) on active invoice
+          const extraNights = Math.round(
+            (allocation.arrivalDate.getTime() - hotelToday.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          if (extraNights > 0) {
+            const activeInvoice = await tx.invoice.findFirst({
+              where: {
+                reservationId: allocation.reservationId,
+                status: { not: InvoiceStatus.VOID },
+              },
+            });
+            if (activeInvoice) {
+              const extraCharge = allocation.bookedNightlyRate.mul(extraNights);
+              await tx.invoiceItem.create({
+                data: {
+                  invoiceId: activeInvoice.id,
+                  reservationRoomId: allocation.id,
+                  description: `Early Check-in Extra Charge: Room ${allocation.room.roomNo} (${extraNights} extra night(s) from ${hotelToday.toISOString().split("T")[0]})`,
+                  quantity: new Prisma.Decimal(extraNights),
+                  unitPrice: allocation.bookedNightlyRate,
+                  lineTotal: extraCharge,
+                  itemType: InvoiceItemType.ROOM_CHARGE,
+                },
+              });
+              const newSubtotal = activeInvoice.subtotal.add(extraCharge);
+              const newGrandTotal = activeInvoice.grandTotal.add(extraCharge);
+              await tx.invoice.update({
+                where: { id: activeInvoice.id },
+                data: {
+                  subtotal: newSubtotal,
+                  grandTotal: newGrandTotal,
+                  status:
+                    activeInvoice.status === InvoiceStatus.PAID
+                      ? InvoiceStatus.PARTIALLY_PAID
+                      : activeInvoice.status,
+                },
+              });
+            }
+
+            // Update arrivalDate to hotelToday
+            await tx.reservationRoom.update({
+              where: { id: allocation.id },
+              data: { arrivalDate: hotelToday },
+            });
+            allocation.arrivalDate = hotelToday;
+          }
+        }
       }
 
       // 4. Validate physical room operational state
@@ -138,12 +203,13 @@ export class CheckInOutService {
         },
       });
 
-      // 7. Update guest ID verification details if provided
+      // 7. Update guest ID verification details if provided (store only last 4)
       if (input.verifiedIdNumber && input.verifiedIdNumber.trim()) {
+        const last4 = input.verifiedIdNumber.trim().replace(/^[•\s*]+/, "").slice(-4);
         await tx.customer.update({
           where: { id: allocation.reservation.customerId },
           data: {
-            idProofNumber: input.verifiedIdNumber.trim(),
+            idProofNumber: last4,
             ...(input.verifiedIdType?.trim()
               ? { idProofType: input.verifiedIdType.trim() }
               : {}),
@@ -252,7 +318,17 @@ export class CheckInOutService {
       // 4. Update allocation to CHECKED_OUT with actualCheckoutDate
       const actualDate = getHotelTodayDateUtc();
       if (actualDate.getTime() < allocation.arrivalDate.getTime()) {
-        if (BACKDATED_CHECKOUT_POLICY === "DISALLOW") {
+        if (BACKDATED_CHECKOUT_POLICY === "ADMIN_ONLY") {
+          const caller = await tx.user.findUnique({
+            where: { id: staffUserId },
+            include: { role: true },
+          });
+          if (caller?.role.name !== RoleName.ADMIN) {
+            throw new BadRequestError(
+              `Cannot check out prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}). Backdated checkout requires Administrator privileges.`
+            );
+          }
+        } else if (BACKDATED_CHECKOUT_POLICY === "DISALLOW") {
           throw new BadRequestError(
             `Cannot check out prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}).`
           );
@@ -315,7 +391,7 @@ export class CheckInOutService {
                   quantity: new Prisma.Decimal(1),
                   unitPrice: effectiveReduction.negated(),
                   lineTotal: effectiveReduction.negated(),
-                  itemType: InvoiceItemType.DISCOUNT,
+                  itemType: InvoiceItemType.ADJUSTMENT,
                 },
               });
 

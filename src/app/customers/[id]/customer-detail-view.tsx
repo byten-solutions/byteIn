@@ -79,6 +79,7 @@ export function CustomerDetailView({
 
   const [formData, setFormData] = React.useState(initialFormData)
   const [savedData, setSavedData] = React.useState(initialFormData)
+  const [isReplacingId, setIsReplacingId] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
 
   // Compute dirty state
@@ -98,6 +99,7 @@ export function CustomerDetailView({
 
   const handleDiscard = () => {
     setFormData(savedData)
+    setIsReplacingId(false)
   }
 
   const handleUpdate = async (e: React.FormEvent) => {
@@ -125,7 +127,13 @@ export function CustomerDetailView({
         ...prev,
         ...data.customer,
       }))
-      setSavedData(formData)
+      const nextData = {
+        ...formData,
+        idProofNumber: data.customer?.idProofNumber || "",
+      }
+      setSavedData(nextData)
+      setFormData(nextData)
+      setIsReplacingId(false)
       toast.success("Guest profile updated successfully")
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to update guest details"
@@ -253,12 +261,49 @@ export function CustomerDetailView({
 
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">ID Proof Number</Label>
-                  <Input
-                    placeholder="e.g. Pass No or National ID"
-                    className="h-10 text-xs sm:text-sm font-mono"
-                    value={formData.idProofNumber}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, idProofNumber: e.target.value }))}
-                  />
+                  {savedData.idProofNumber && !isReplacingId ? (
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-10 flex-1 items-center rounded-md border border-input bg-muted/30 px-3 font-mono text-xs sm:text-sm text-foreground select-all">
+                        {formData.idProofNumber || savedData.idProofNumber}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-10 text-xs gap-1.5"
+                        onClick={() => {
+                          setIsReplacingId(true);
+                          setFormData((prev) => ({ ...prev, idProofNumber: "" }));
+                        }}
+                      >
+                        Replace
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Enter new ID (last 4 digits stored)"
+                        className="h-10 text-xs sm:text-sm font-mono flex-1"
+                        value={formData.idProofNumber}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, idProofNumber: e.target.value }))}
+                        autoFocus={isReplacingId}
+                      />
+                      {savedData.idProofNumber && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-10 text-xs text-muted-foreground hover:text-foreground"
+                          onClick={() => {
+                            setIsReplacingId(false);
+                            setFormData((prev) => ({ ...prev, idProofNumber: savedData.idProofNumber }));
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">

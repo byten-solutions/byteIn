@@ -8,9 +8,41 @@ import type {
   CustomerFilterOptions,
 } from "./customer.types";
 
+/**
+ * Normalizes government ID input: stores only the last 4 characters/digits.
+ * Strips out bullet characters if previously masked.
+ */
+export function normalizeIdProofNumber(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const cleaned = trimmed.replace(/^[•\s*]+/, "").trim();
+  if (!cleaned) return null;
+  return cleaned.length > 4 ? cleaned.slice(-4) : cleaned;
+}
+
+/**
+ * Formats an ID proof number with bullet masking ("•••• 1234").
+ */
+export function maskIdProofNumber(id: string | null | undefined): string | null {
+  if (!id) return null;
+  const trimmed = id.trim();
+  if (!trimmed) return null;
+  const last4 = trimmed.replace(/^[•\s*]+/, "").trim().slice(-4);
+  if (!last4) return null;
+  return `•••• ${last4}`;
+}
+
+export function maskCustomer<T extends { idProofNumber?: string | null }>(customer: T): T {
+  return {
+    ...customer,
+    idProofNumber: maskIdProofNumber(customer.idProofNumber),
+  };
+}
+
 export class CustomerService {
   static async createCustomer(input: CreateCustomerInput) {
-    return prisma.customer.create({
+    const created = await prisma.customer.create({
       data: {
         firstName: input.firstName.trim(),
         lastName: input.lastName?.trim() || null,
@@ -19,10 +51,11 @@ export class CustomerService {
         nationality: input.nationality?.trim() || null,
         address: input.address?.trim() || null,
         idProofType: input.idProofType?.trim() || null,
-        idProofNumber: input.idProofNumber?.trim() || null,
+        idProofNumber: normalizeIdProofNumber(input.idProofNumber),
         remarks: input.remarks?.trim() || null,
       },
     });
+    return maskCustomer(created);
   }
 
   static async getCustomers(options: CustomerFilterOptions = {}) {
@@ -33,11 +66,15 @@ export class CustomerService {
 
     if (search && search.trim() !== "") {
       const q = search.trim();
+      const last4 = q.replace(/^[•\s*]+/, "").trim().slice(-4);
       where.OR = [
         { firstName: { contains: q, mode: "insensitive" } },
         { lastName: { contains: q, mode: "insensitive" } },
         { phone: { contains: q, mode: "insensitive" } },
         { email: { contains: q, mode: "insensitive" } },
+        ...(last4.length > 0
+          ? [{ idProofNumber: { contains: last4, mode: "insensitive" as const } }]
+          : []),
       ];
     }
 
@@ -57,7 +94,7 @@ export class CustomerService {
     ]);
 
     return {
-      customers,
+      customers: customers.map((c) => maskCustomer(c)),
       pagination: {
         total,
         page,
@@ -90,7 +127,7 @@ export class CustomerService {
       throw new NotFoundError("Customer not found");
     }
 
-    return customer;
+    return maskCustomer(customer);
   }
 
   static async updateCustomer(id: string, input: UpdateCustomerInput) {
@@ -99,7 +136,7 @@ export class CustomerService {
       throw new NotFoundError("Customer not found");
     }
 
-    return prisma.customer.update({
+    const updated = await prisma.customer.update({
       where: { id },
       data: {
         ...(input.firstName !== undefined && { firstName: input.firstName.trim() }),
@@ -114,10 +151,38 @@ export class CustomerService {
           idProofType: input.idProofType?.trim() || null,
         }),
         ...(input.idProofNumber !== undefined && {
-          idProofNumber: input.idProofNumber?.trim() || null,
+          idProofNumber: normalizeIdProofNumber(input.idProofNumber),
         }),
         ...(input.remarks !== undefined && { remarks: input.remarks?.trim() || null }),
       },
     });
+
+    return maskCustomer(updated);
+  }
+
+  /**
+   * Migrates existing customer records in PostgreSQL to only retain the last 4 characters of ID proof.
+   */
+  static async migrateExistingCustomerIds(): Promise<number> {
+    const customersWithId = await prisma.customer.findMany({
+      where: {
+        idProofNumber: { not: null },
+      },
+      select: { id: true, idProofNumber: true },
+    });
+
+    let migratedCount = 0;
+    for (const c of customersWithId) {
+      if (c.idProofNumber && c.idProofNumber.length > 4) {
+        const last4 = c.idProofNumber.slice(-4);
+        await prisma.customer.update({
+          where: { id: c.id },
+          data: { idProofNumber: last4 },
+        });
+        migratedCount++;
+      }
+    }
+    return migratedCount;
   }
 }
+

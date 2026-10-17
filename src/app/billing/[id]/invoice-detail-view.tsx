@@ -19,7 +19,6 @@ import {
   CreditCard,
   Send,
   Loader2,
-  Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -222,34 +221,20 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
           </div>
         </div>
 
-        {/* Balance Due / Paid in Full & Primary Actions */}
+        {/* Balance Due & Primary Actions */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 shrink-0">
-          {balanceDueNum === 0 && invoice.status === InvoiceStatus.PAID ? (
-            <div className="flex items-center gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-left sm:text-right">
-              <Check className="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-              <div>
-                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 block">
-                  Paid in full
-                </span>
-                <span className="text-[11px] text-muted-foreground">
-                  Total <MoneyText value={invoice.grandTotal} className="font-semibold text-foreground" /> (Paid <MoneyText value={invoice.totalPaid} className="font-semibold text-foreground" />)
-                </span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-left sm:text-right">
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">
-                Balance Due
-              </span>
-              <MoneyText
-                value={invoice.balanceDue}
-                className={cn(
-                  "text-2xl font-extrabold tracking-tight block",
-                  balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
-                )}
-              />
-            </div>
-          )}
+          <div className="text-left sm:text-right">
+            <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider block">
+              Balance Due
+            </span>
+            <MoneyText
+              value={invoice.balanceDue}
+              className={cn(
+                "text-2xl font-extrabold tracking-tight block",
+                balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
+              )}
+            />
+          </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             {balanceDueNum > 0 && invoice.status !== InvoiceStatus.PAID && (

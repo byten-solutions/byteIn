@@ -201,7 +201,7 @@ export function AllocationActionRow({
             <span className="text-xs text-muted-foreground">
               • {allocation.categoryName}
             </span>
-            <StatusBadge status={allocation.roomStatus} size="sm" />
+            <StatusBadge status={allocation.status} size="sm" />
           </div>
 
           <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -270,18 +270,6 @@ export function AllocationActionRow({
               <LogOut className="size-3.5 mr-1" />
               Check Out
             </Button>
-          )}
-
-          {allocation.status === "CHECKED_OUT" && (
-            <StatusBadge status="CHECKED_OUT" size="sm" label="Checked Out" />
-          )}
-
-          {allocation.status === "CANCELLED" && (
-            <StatusBadge status="CANCELLED" size="sm" label="Cancelled" />
-          )}
-
-          {allocation.status === "NO_SHOW" && (
-            <StatusBadge status="CANCELLED" size="sm" label="No Show" />
           )}
         </div>
       </div>

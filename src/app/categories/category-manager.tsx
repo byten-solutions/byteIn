@@ -483,7 +483,7 @@ export function CategoryManager({
 
       {/* Create / Edit Category Modal */}
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingCategory ? "Edit Room Category" : "Add Room Category"}
@@ -544,7 +544,7 @@ export function CategoryManager({
                       step="0.01"
                       min="0"
                       required
-                      placeholder="3500.00"
+                      placeholder="e.g. 1500"
                       value={categoryPrice}
                       onChange={(e) => setCategoryPrice(e.target.value)}
                       disabled={loading}
@@ -574,7 +574,7 @@ export function CategoryManager({
               title="Amenities"
               description="Select all included amenities for this room category"
             >
-              <div className="max-h-36 overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/20">
+              <div className="flex flex-wrap gap-2 pt-1">
                 {allAmenities.length === 0 ? (
                   <p className="text-xs text-muted-foreground p-1">No amenities created yet.</p>
                 ) : (
@@ -586,14 +586,14 @@ export function CategoryManager({
                         type="button"
                         onClick={() => toggleAmenity(amenity.id)}
                         className={cn(
-                          "flex items-center justify-between w-full p-1.5 rounded text-xs text-left transition-colors cursor-pointer",
+                          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer",
                           isSelected
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "hover:bg-muted text-foreground"
+                            ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                            : "bg-muted/40 hover:bg-muted text-foreground border-border/60"
                         )}
                       >
+                        {isSelected && <Check className="size-3.5 shrink-0" />}
                         <span>{amenity.name}</span>
-                        {isSelected && <Check className="size-3.5 text-primary" />}
                       </button>
                     );
                   })

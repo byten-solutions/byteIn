@@ -19,11 +19,16 @@ import { sanitizePagination } from "@/lib/pagination";
 import { getHotelTodayDateUtc } from "@/lib/date";
 import { RoleName } from "@/modules/auth/auth.types";
 import {
+  normalizeIdProofNumber,
+  maskIdProofNumber,
+} from "@/modules/customers/customer.service";
+import {
   ROOM_CHANGE_RATE_POLICY,
   AUTO_CANCEL_RESERVATION_WHEN_ALL_ALLOCATIONS_CANCELLED,
   NO_SHOW_BILLING_POLICY,
   NO_SHOW_MIN_DATE_POLICY,
   CANCEL_WITH_PAYMENTS_POLICY,
+  ADMIN_CANCEL_WITH_PAYMENTS_INVOICE_STATE,
 } from "@/config/reservations";
 import type {
   CheckAvailabilityInput,
@@ -213,7 +218,7 @@ export class ReservationService {
                 nationality: input.newCustomer.nationality?.trim() || null,
                 address: input.newCustomer.address?.trim() || null,
                 idProofType: input.newCustomer.idProofType?.trim() || null,
-                idProofNumber: input.newCustomer.idProofNumber?.trim() || null,
+                idProofNumber: normalizeIdProofNumber(input.newCustomer.idProofNumber),
                 remarks: input.newCustomer.remarks?.trim() || null,
               },
             });
@@ -563,7 +568,15 @@ export class ReservationService {
     ]);
 
     return {
-      reservations,
+      reservations: reservations.map((r) => ({
+        ...r,
+        customer: r.customer
+          ? {
+              ...r.customer,
+              idProofNumber: maskIdProofNumber(r.customer.idProofNumber),
+            }
+          : r.customer,
+      })),
       pagination: {
         total,
         page,
@@ -603,7 +616,15 @@ export class ReservationService {
       throw new NotFoundError("Reservation not found");
     }
 
-    return reservation;
+    return {
+      ...reservation,
+      customer: reservation.customer
+        ? {
+            ...reservation.customer,
+            idProofNumber: maskIdProofNumber(reservation.customer.idProofNumber),
+          }
+        : reservation.customer,
+    };
   }
 
   /**
@@ -693,7 +714,30 @@ export class ReservationService {
             status: InvoiceStatus.VOID,
           },
         });
+      } else if (
+        ADMIN_CANCEL_WITH_PAYMENTS_INVOICE_STATE === "VOID_INVOICE_AND_PAYMENTS"
+      ) {
+        await tx.invoice.updateMany({
+          where: {
+            reservationId: id,
+            status: { not: InvoiceStatus.VOID },
+          },
+          data: {
+            status: InvoiceStatus.VOID,
+          },
+        });
+        const invIds = (reservation.invoices || []).map((i) => i.id);
+        await tx.payment.updateMany({
+          where: {
+            invoiceId: { in: invIds },
+            status: PaymentStatus.RECORDED,
+          },
+          data: {
+            status: PaymentStatus.VOIDED,
+          },
+        });
       }
+      // If RETAIN_AS_CREDIT_BALANCE (default): invoice and payments remain intact as customer credit.
 
       // 3. Update reservation status
       const updatedRes = await tx.reservation.update({
@@ -890,7 +934,7 @@ export class ReservationService {
                   quantity: new Prisma.Decimal(1),
                   unitPrice: nominalReduction.negated(),
                   lineTotal: nominalReduction.negated(),
-                  itemType: InvoiceItemType.DISCOUNT,
+                  itemType: InvoiceItemType.ADJUSTMENT,
                 },
               });
             }

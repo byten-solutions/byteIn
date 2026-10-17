@@ -45,3 +45,6 @@ next-env.d.ts
 # git worktrees
 .worktrees/
 
+# database backups
+prisma/backups/
+

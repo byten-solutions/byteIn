@@ -7,7 +7,7 @@ import { createCustomerSchema } from "@/modules/customers/customer.validation";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
     const search = searchParams.get("search") || undefined;
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const body = await req.json();
     const validated = createCustomerSchema.parse(body);
     const customer = await CustomerService.createCustomer(validated);

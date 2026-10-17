@@ -5,11 +5,11 @@ import { CustomerService } from "@/modules/customers/customer.service";
 import { updateCustomerSchema } from "@/modules/customers/customer.validation";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const { id } = await params;
     const customer = await CustomerService.getCustomerById(id);
     return NextResponse.json({ success: true, customer });
@@ -23,7 +23,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    await requireAuth(undefined, req);
     const { id } = await params;
     const body = await req.json();
     const validated = updateCustomerSchema.parse(body);
