@@ -209,6 +209,7 @@ export function DateRangePicker({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger
+        nativeButton={false}
         render={
           <div
             id={id}

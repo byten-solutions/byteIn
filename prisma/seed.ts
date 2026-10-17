@@ -103,12 +103,12 @@ async function main() {
   }
   console.log(`Property ensured: ${property.name} (${property.id})`);
 
-  // 4. Seed Building
-  let building = await prisma.building.findFirst({
+  // 4. Seed Buildings (Main Wing & West Wing)
+  let mainWing = await prisma.building.findFirst({
     where: { propertyId: property.id, name: "Main Wing" },
   });
-  if (!building) {
-    building = await prisma.building.create({
+  if (!mainWing) {
+    mainWing = await prisma.building.create({
       data: {
         propertyId: property.id,
         name: "Main Wing",
@@ -116,35 +116,61 @@ async function main() {
       },
     });
   }
-  console.log(`Building ensured: ${building.name} (${building.id})`);
+
+  let westWing = await prisma.building.findFirst({
+    where: { name: "West Wing" },
+  });
+  if (!westWing) {
+    westWing = await prisma.building.create({
+      data: {
+        propertyId: property.id,
+        name: "West Wing",
+        description: "West Wing suites and extended stay rooms",
+      },
+    });
+  }
+  console.log(`Buildings ensured: ${mainWing.name}, ${westWing.name}`);
 
   // 5. Seed Floors
-  let floor1 = await prisma.floor.findFirst({
-    where: { buildingId: building.id, floorNo: 1 },
+  let floor1Main = await prisma.floor.findFirst({
+    where: { buildingId: mainWing.id, floorNo: 1 },
   });
-  if (!floor1) {
-    floor1 = await prisma.floor.create({
+  if (!floor1Main) {
+    floor1Main = await prisma.floor.create({
       data: {
-        buildingId: building.id,
+        buildingId: mainWing.id,
         floorNo: 1,
         name: "First Floor",
       },
     });
   }
 
-  let floor2 = await prisma.floor.findFirst({
-    where: { buildingId: building.id, floorNo: 2 },
+  let floor2Main = await prisma.floor.findFirst({
+    where: { buildingId: mainWing.id, floorNo: 2 },
   });
-  if (!floor2) {
-    floor2 = await prisma.floor.create({
+  if (!floor2Main) {
+    floor2Main = await prisma.floor.create({
       data: {
-        buildingId: building.id,
+        buildingId: mainWing.id,
         floorNo: 2,
         name: "Second Floor",
       },
     });
   }
-  console.log(`Floors ensured: Floor 1, Floor 2`);
+
+  let floor1West = await prisma.floor.findFirst({
+    where: { buildingId: westWing.id, floorNo: 1 },
+  });
+  if (!floor1West) {
+    floor1West = await prisma.floor.create({
+      data: {
+        buildingId: westWing.id,
+        floorNo: 1,
+        name: "Floor 1",
+      },
+    });
+  }
+  console.log(`Floors ensured: Main Wing (F1, F2), West Wing (F1)`);
 
   // 6. Seed Amenities
   const amenityNames = [
@@ -166,34 +192,41 @@ async function main() {
   }
   console.log(`Amenities ensured (${amenityMap.size})`);
 
-  // 7. Seed Room Categories
+  // 7. Seed Room Categories (5 core categories)
   const categoryConfigs = [
     {
       name: "Standard Single",
       description: "Cozy single room ideal for solo travelers",
-      basePrice: new Prisma.Decimal("2500.00"),
+      basePrice: new Prisma.Decimal("75.00"),
       maxOccupancy: 1,
       amenities: ["Wi-Fi", "Air Conditioning", "Flat Screen TV"],
     },
     {
       name: "Deluxe Suite",
       description: "Comfortable suite with private balcony and desk",
-      basePrice: new Prisma.Decimal("3500.00"),
+      basePrice: new Prisma.Decimal("100.00"),
       maxOccupancy: 3,
       amenities: ["Wi-Fi", "Air Conditioning", "Flat Screen TV", "Safe Deposit Box"],
     },
     {
       name: "Deluxe Double",
       description: "Spacious double bedroom with king bed and workspace",
-      basePrice: new Prisma.Decimal("4000.00"),
+      basePrice: new Prisma.Decimal("120.00"),
       maxOccupancy: 2,
       amenities: ["Wi-Fi", "Air Conditioning", "Flat Screen TV", "Safe Deposit Box"],
     },
     {
       name: "Executive Suite",
       description: "Luxury suite featuring lounge area and scenic views",
-      basePrice: new Prisma.Decimal("7500.00"),
+      basePrice: new Prisma.Decimal("220.00"),
       maxOccupancy: 4,
+      amenities: ["Wi-Fi", "Air Conditioning", "Flat Screen TV", "Mini Bar", "Safe Deposit Box"],
+    },
+    {
+      name: "Presidential Suite",
+      description: "Premier luxury suite featuring spacious lounge and panoramic views",
+      basePrice: new Prisma.Decimal("1000.00"),
+      maxOccupancy: 6,
       amenities: ["Wi-Fi", "Air Conditioning", "Flat Screen TV", "Mini Bar", "Safe Deposit Box"],
     },
   ];
@@ -201,7 +234,7 @@ async function main() {
   const categoryMap = new Map<string, string>();
   for (const cfg of categoryConfigs) {
     let cat = await prisma.roomCategory.findFirst({
-      where: { propertyId: property.id, name: cfg.name },
+      where: { name: cfg.name },
     });
     if (!cat) {
       cat = await prisma.roomCategory.create({
@@ -213,29 +246,47 @@ async function main() {
           maxOccupancy: cfg.maxOccupancy,
         },
       });
+    } else {
+      cat = await prisma.roomCategory.update({
+        where: { id: cat.id },
+        data: {
+          description: cfg.description,
+          basePrice: cfg.basePrice,
+          maxOccupancy: cfg.maxOccupancy,
+        },
+      });
+    }
 
-      for (const amenName of cfg.amenities) {
-        const amenId = amenityMap.get(amenName);
-        if (amenId) {
-          await prisma.roomCategoryAmenity.create({
-            data: {
+    for (const amenName of cfg.amenities) {
+      const amenId = amenityMap.get(amenName);
+      if (amenId) {
+        await prisma.roomCategoryAmenity.upsert({
+          where: {
+            roomCategoryId_amenityId: {
               roomCategoryId: cat.id,
               amenityId: amenId,
             },
-          });
-        }
+          },
+          update: {},
+          create: {
+            roomCategoryId: cat.id,
+            amenityId: amenId,
+          },
+        });
       }
     }
     categoryMap.set(cfg.name, cat.id);
   }
   console.log(`Room categories ensured (${categoryMap.size})`);
 
-  // 8. Seed Rooms
+  // 8. Seed Rooms (Original 10 rooms across Main Wing & West Wing)
   const sampleRooms = [
+    // Main Wing (6 rooms)
     {
+      buildingId: mainWing.id,
+      floorId: floor1Main.id,
       roomNo: "101",
       displayName: "Room 101 (Standard)",
-      floorId: floor1.id,
       categoryName: "Standard Single",
       capacity: 1,
       status: RoomStatus.VACANT_CLEAN,
@@ -243,9 +294,10 @@ async function main() {
       notes: "Facing courtyard",
     },
     {
+      buildingId: mainWing.id,
+      floorId: floor1Main.id,
       roomNo: "102",
       displayName: "Room 102 (Standard)",
-      floorId: floor1.id,
       categoryName: "Standard Single",
       capacity: 1,
       status: RoomStatus.VACANT_DIRTY,
@@ -253,19 +305,21 @@ async function main() {
       notes: "Requires standard turnover",
     },
     {
+      buildingId: mainWing.id,
+      floorId: floor1Main.id,
       roomNo: "103",
       displayName: "Room 103 (Deluxe)",
-      floorId: floor1.id,
       categoryName: "Deluxe Double",
       capacity: 2,
-      status: RoomStatus.VACANT_CLEAN,
+      status: RoomStatus.VACANT_DIRTY,
       priceOverride: null,
       notes: null,
     },
     {
+      buildingId: mainWing.id,
+      floorId: floor2Main.id,
       roomNo: "201",
       displayName: "Room 201 (Deluxe)",
-      floorId: floor2.id,
       categoryName: "Deluxe Double",
       capacity: 2,
       status: RoomStatus.MAINTENANCE,
@@ -273,24 +327,71 @@ async function main() {
       notes: "AC maintenance check in progress",
     },
     {
+      buildingId: mainWing.id,
+      floorId: floor2Main.id,
       roomNo: "202",
       displayName: "Room 202 (Suite)",
-      floorId: floor2.id,
       categoryName: "Executive Suite",
       capacity: 4,
-      status: RoomStatus.VACANT_CLEAN,
-      priceOverride: new Prisma.Decimal("6500.00"),
+      status: RoomStatus.VACANT_DIRTY,
+      priceOverride: new Prisma.Decimal("200.00"),
       notes: "Corporate rate override applied",
     },
     {
+      buildingId: mainWing.id,
+      floorId: floor2Main.id,
       roomNo: "203",
       displayName: "Room 203 (Suite)",
-      floorId: floor2.id,
       categoryName: "Executive Suite",
       capacity: 4,
       status: RoomStatus.OUT_OF_SERVICE,
       priceOverride: null,
       notes: "Annual deep renovation",
+    },
+    // West Wing (4 rooms)
+    {
+      buildingId: westWing.id,
+      floorId: floor1West.id,
+      roomNo: "101",
+      displayName: "Room 101 (Deluxe Suite)",
+      categoryName: "Deluxe Suite",
+      capacity: 2,
+      status: RoomStatus.VACANT_DIRTY,
+      priceOverride: null,
+      notes: null,
+    },
+    {
+      buildingId: westWing.id,
+      floorId: floor1West.id,
+      roomNo: "102",
+      displayName: "Room 102 (Deluxe Suite)",
+      categoryName: "Deluxe Suite",
+      capacity: 2,
+      status: RoomStatus.VACANT_CLEAN,
+      priceOverride: new Prisma.Decimal("125.00"),
+      notes: null,
+    },
+    {
+      buildingId: westWing.id,
+      floorId: floor1West.id,
+      roomNo: "103",
+      displayName: "Room 103 (Deluxe Suite)",
+      categoryName: "Deluxe Suite",
+      capacity: 2,
+      status: RoomStatus.MAINTENANCE,
+      priceOverride: null,
+      notes: null,
+    },
+    {
+      buildingId: westWing.id,
+      floorId: floor1West.id,
+      roomNo: "104",
+      displayName: "Room 104 (Deluxe Suite)",
+      categoryName: "Deluxe Suite",
+      capacity: 2,
+      status: RoomStatus.VACANT_DIRTY,
+      priceOverride: null,
+      notes: null,
     },
   ];
 
@@ -298,31 +399,35 @@ async function main() {
     const catId = categoryMap.get(r.categoryName);
     if (!catId) continue;
 
-    const existingRoom = await prisma.room.findUnique({
+    await prisma.room.upsert({
       where: {
         buildingId_roomNo: {
-          buildingId: building.id,
+          buildingId: r.buildingId,
           roomNo: r.roomNo,
         },
       },
+      update: {
+        floorId: r.floorId,
+        roomCategoryId: catId,
+        displayName: r.displayName,
+        capacity: r.capacity,
+        status: r.status,
+        priceOverride: r.priceOverride,
+        notes: r.notes,
+      },
+      create: {
+        propertyId: property.id,
+        buildingId: r.buildingId,
+        floorId: r.floorId,
+        roomCategoryId: catId,
+        roomNo: r.roomNo,
+        displayName: r.displayName,
+        capacity: r.capacity,
+        status: r.status,
+        priceOverride: r.priceOverride,
+        notes: r.notes,
+      },
     });
-
-    if (!existingRoom) {
-      await prisma.room.create({
-        data: {
-          propertyId: property.id,
-          buildingId: building.id,
-          floorId: r.floorId,
-          roomCategoryId: catId,
-          roomNo: r.roomNo,
-          displayName: r.displayName,
-          capacity: r.capacity,
-          status: r.status,
-          priceOverride: r.priceOverride,
-          notes: r.notes,
-        },
-      });
-    }
   }
   console.log(`Sample rooms ensured (${sampleRooms.length})`);
 
