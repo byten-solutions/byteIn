@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 import { handleApiError } from "@/lib/errors";
 
@@ -16,7 +16,7 @@ export async function POST(
     const { id } = await params;
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     // Verify invoice belongs to the caller's hotel before issuing
     await BillingService.getInvoiceById(id, propertyId);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 import { updateInvoiceItemSchema } from "@/modules/billing/billing.validation";
 import { handleApiError } from "@/lib/errors";
@@ -17,7 +17,7 @@ export async function PATCH(
     const { id, itemId } = await params;
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     // Verify invoice belongs to the caller's hotel
     await BillingService.getInvoiceById(id, propertyId);
@@ -54,7 +54,7 @@ export async function DELETE(
     const { id, itemId } = await params;
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     // Verify invoice belongs to the caller's hotel
     await BillingService.getInvoiceById(id, propertyId);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { ReportsService } from "@/modules/reports/reports.service";
 import { handleApiError } from "@/lib/errors";
 
@@ -14,9 +14,7 @@ export async function GET(req: NextRequest) {
     const propertyId = searchParams.get("propertyId") || undefined;
 
     const effectivePropertyId =
-      session.role === RoleName.SUPER_ADMIN
-        ? propertyId
-        : (session.propertyId || undefined);
+      resolveScope(session, propertyId, { allowSuperAdminGlobal: true }) ?? undefined;
 
     const report = await ReportsService.getDiscountsReport({
       startDate,

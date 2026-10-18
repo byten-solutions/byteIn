@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 import { voidPaymentSchema } from "@/modules/billing/billing.validation";
 import { handleApiError } from "@/lib/errors";
@@ -19,7 +19,7 @@ export async function POST(
     const validated = voidPaymentSchema.parse(body);
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     const updated = await BillingService.voidPayment(
       invoiceId,

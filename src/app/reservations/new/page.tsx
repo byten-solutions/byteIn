@@ -1,16 +1,21 @@
 import { redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { RoomCategoryService } from "@/modules/rooms/room.service"
 import { AppShell } from "@/components/app-shell"
 import { NewReservationForm } from "./new-reservation-form"
 
-export default async function NewReservationPage() {
+export default async function NewReservationPage(props: {
+  searchParams?: Promise<{ propertyId?: string }>
+}) {
   const session = await getSession()
   if (!session) {
     redirect("/login")
   }
 
-  const categories = await RoomCategoryService.getCategories()
+  const searchParams = props.searchParams ? await props.searchParams : undefined
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
+
+  const categories = await RoomCategoryService.getCategories(scope ?? undefined)
   const serializedCategories = categories.map((c) => ({
     id: c.id,
     name: c.name,

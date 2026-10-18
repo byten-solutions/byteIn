@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { BillingService } from "@/modules/billing/billing.service"
 import { AppShell } from "@/components/app-shell"
 import { InvoiceList } from "./invoice-list"
 
-export default async function BillingPage() {
+export default async function BillingPage(props: {
+  searchParams?: Promise<{ propertyId?: string }>
+}) {
   const session = await getSession()
   if (!session) {
     redirect("/login")
@@ -13,7 +15,14 @@ export default async function BillingPage() {
     redirect("/change-password")
   }
 
-  const initialData = await BillingService.getInvoices({ page: 1, limit: 25 })
+  const searchParams = props.searchParams ? await props.searchParams : undefined
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
+
+  const initialData = await BillingService.getInvoices({
+    page: 1,
+    limit: 25,
+    propertyId: scope ?? undefined,
+  })
 
   return (
     <AppShell session={session}>

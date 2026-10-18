@@ -820,6 +820,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           email: `forced-${Date.now()}@byteinn.local`,
           passwordHash: await AuthService.hashPassword("DefaultPass@123"),
           roleId: receptionistRoleId,
+          propertyId: testPropertyId,
           status: "ACTIVE",
           mustChangePassword: true,
           tokenVersion: 1,

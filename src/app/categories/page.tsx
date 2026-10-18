@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth-guard";
+import { getSession, resolveScope } from "@/lib/auth-guard";
 import { RoomCategoryService, AmenityService } from "@/modules/rooms/room.service";
 import { AppShell } from "@/components/app-shell";
 import { CategoryManager } from "./category-manager";
 
-export default async function CategoriesPage() {
+export default async function CategoriesPage(props: {
+  searchParams?: Promise<{ propertyId?: string }>
+}) {
   const session = await getSession();
   if (!session) {
     redirect("/login");
@@ -13,8 +15,11 @@ export default async function CategoriesPage() {
     redirect("/change-password");
   }
 
+  const searchParams = props.searchParams ? await props.searchParams : undefined;
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true });
+
   const [categories, amenities] = await Promise.all([
-    RoomCategoryService.getCategories(),
+    RoomCategoryService.getCategories(scope ?? undefined),
     AmenityService.getAmenities(),
   ]);
 

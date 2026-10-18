@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { ReservationService } from "@/modules/reservations/reservation.service"
 import { AppShell } from "@/components/app-shell"
 import { ReservationList } from "./reservation-list"
 
-export default async function ReservationsPage() {
+export default async function ReservationsPage(props: {
+  searchParams?: Promise<{ propertyId?: string }>
+}) {
   const session = await getSession()
   if (!session) {
     redirect("/login")
@@ -13,7 +15,14 @@ export default async function ReservationsPage() {
     redirect("/change-password")
   }
 
-  const result = await ReservationService.getReservations({ page: 1, limit: 20 })
+  const searchParams = props.searchParams ? await props.searchParams : undefined
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
+
+  const result = await ReservationService.getReservations({
+    page: 1,
+    limit: 20,
+    propertyId: scope ?? undefined,
+  })
 
   // Serialize Decimal objects and Date objects for client component
   const serializedReservations = result.reservations.map((r) => ({

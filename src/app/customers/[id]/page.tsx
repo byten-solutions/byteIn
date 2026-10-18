@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { CustomerService } from "@/modules/customers/customer.service"
 import { AppShell } from "@/components/app-shell"
 import { CustomerDetailView } from "./customer-detail-view"
@@ -15,9 +15,10 @@ export default async function CustomerDetailPage({
   }
 
   const { id } = await params
+  const scope = resolveScope(session, null, { allowSuperAdminGlobal: true })
   let customer
   try {
-    customer = await CustomerService.getCustomerById(id)
+    customer = await CustomerService.getCustomerById(id, scope ?? undefined)
   } catch {
     notFound()
   }

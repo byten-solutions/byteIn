@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ReservationStatus, RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { handleApiError, ForbiddenError } from "@/lib/errors";
 import { paginationQuerySchema } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
@@ -19,11 +19,8 @@ export async function GET(req: NextRequest) {
         ? (statusParam as ReservationStatus)
         : undefined;
 
-    const propertyIdParam = searchParams.get("propertyId") || undefined;
     const effectivePropertyId =
-      session.role === RoleName.SUPER_ADMIN
-        ? propertyIdParam
-        : (session.propertyId || undefined);
+      resolveScope(session, searchParams.get("propertyId"), { allowSuperAdminGlobal: true }) ?? undefined;
 
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");

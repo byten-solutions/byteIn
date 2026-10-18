@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { BillingService } from "@/modules/billing/billing.service"
 import { AppShell } from "@/components/app-shell"
 import { InvoiceDetailView } from "./invoice-detail-view"
@@ -15,9 +15,10 @@ export default async function InvoiceDetailPage({ params }: InvoicePageProps) {
   }
 
   const { id } = await params
+  const scope = resolveScope(session, null, { allowSuperAdminGlobal: true })
   let invoice
   try {
-    invoice = await BillingService.getInvoiceById(id)
+    invoice = await BillingService.getInvoiceById(id, scope ?? undefined)
   } catch {
     notFound()
   }

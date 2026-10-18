@@ -10,6 +10,7 @@ import { ReportsService } from "../src/modules/reports/reports.service";
 import { ForbiddenError, NotFoundError } from "../src/lib/errors";
 import { getHotelTodayDateUtc } from "../src/lib/date";
 import type { SessionPayload } from "../src/modules/auth/auth.types";
+import { resolveScope, AuthError } from "../src/lib/auth-guard";
 
 describe("Multi-Hotel Isolation & Access Control Tests", () => {
   // Test entities
@@ -530,6 +531,66 @@ describe("Multi-Hotel Isolation & Access Control Tests", () => {
       assert.ok(reportB !== null);
       assert.ok(typeof reportB.totalInvoiced === "string");
       assert.ok(typeof reportB.totalCollected === "string");
+    });
+
+    describe("resolveScope fail-closed access control", () => {
+      it("hotel ADMIN without propertyId throws AuthError 403", () => {
+        const unassignedAdminSession: SessionPayload = {
+          ...hotelAAdminSession,
+          propertyId: null,
+          property: null,
+        };
+        assert.throws(
+          () => resolveScope(unassignedAdminSession),
+          (err: unknown) => err instanceof AuthError && err.statusCode === 403
+        );
+      });
+
+      it("hotel RECEPTIONIST without propertyId throws AuthError 403", () => {
+        const unassignedRecepSession: SessionPayload = {
+          ...hotelARecepSession,
+          propertyId: null,
+          property: null,
+        };
+        assert.throws(
+          () => resolveScope(unassignedRecepSession),
+          (err: unknown) => err instanceof AuthError && err.statusCode === 403
+        );
+      });
+
+      it("hotel ADMIN requesting a different hotel throws AuthError 403", () => {
+        assert.throws(
+          () => resolveScope(hotelAAdminSession, propertyB.id),
+          (err: unknown) => err instanceof AuthError && err.statusCode === 403
+        );
+      });
+
+      it("hotel ADMIN requesting their assigned hotel returns their hotel id", () => {
+        const scope = resolveScope(hotelAAdminSession, propertyA.id);
+        assert.equal(scope, propertyA.id);
+      });
+
+      it("hotel ADMIN without requesting a property returns their assigned hotel id", () => {
+        const scope = resolveScope(hotelAAdminSession);
+        assert.equal(scope, propertyA.id);
+      });
+
+      it("SUPER_ADMIN requesting specific hotel returns that hotel id", () => {
+        const scope = resolveScope(superAdminSession, propertyB.id);
+        assert.equal(scope, propertyB.id);
+      });
+
+      it("SUPER_ADMIN without property returns null when allowSuperAdminGlobal is true", () => {
+        const scope = resolveScope(superAdminSession, null, { allowSuperAdminGlobal: true });
+        assert.equal(scope, null);
+      });
+
+      it("SUPER_ADMIN without property throws AuthError 400 when allowSuperAdminGlobal is false", () => {
+        assert.throws(
+          () => resolveScope(superAdminSession, null, { allowSuperAdminGlobal: false }),
+          (err: unknown) => err instanceof AuthError && err.statusCode === 400
+        );
+      });
     });
   });
 });

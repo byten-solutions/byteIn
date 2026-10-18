@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RoleName } from "@prisma/client"
-import { requireAuth } from "@/lib/auth-guard"
+import { requireAuth, resolveScope } from "@/lib/auth-guard"
 import { handleApiError } from "@/lib/errors"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { availabilityGridSchema } from "@/modules/reports/reports.validation"
@@ -20,9 +20,7 @@ export async function GET(req: NextRequest) {
     })
 
     const effectivePropertyId =
-      session.role === RoleName.SUPER_ADMIN
-        ? query.propertyId
-        : (session.propertyId || undefined)
+      resolveScope(session, query.propertyId, { allowSuperAdminGlobal: true }) ?? undefined
 
     const report = await ReportsService.getAvailabilityGrid(
       query.startDate,

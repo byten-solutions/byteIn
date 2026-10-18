@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth, requireHotelContext } from "@/lib/auth-guard";
+import { requireAuth, requireHotelContext, resolveScope } from "@/lib/auth-guard";
 import { handleApiError } from "@/lib/errors";
 import { BillingService } from "@/modules/billing/billing.service";
 import {
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const validated = createInvoiceSchema.parse(body);
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     try {
       const invoice = await BillingService.createInvoiceForReservation(

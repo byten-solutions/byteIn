@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth-guard";
+import { getSession, resolveScope } from "@/lib/auth-guard";
 import { RoomService, RoomCategoryService } from "@/modules/rooms/room.service";
 import { PropertyService } from "@/modules/properties/property.service";
 import { AppShell } from "@/components/app-shell";
@@ -36,20 +36,14 @@ export default async function RoomsPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined;
   const rawStatus = searchParams?.status;
   const initialStatus = rawStatus && VALID_STATUSES.has(rawStatus) ? rawStatus : undefined;
+  const effectivePropertyId =
+    resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true }) ?? undefined;
 
   const [summary, categories, properties] = await Promise.all([
-    RoomService.getRoomsSummary(),
-    RoomCategoryService.getCategories(),
+    RoomService.getRoomsSummary(effectivePropertyId),
+    RoomCategoryService.getCategories(effectivePropertyId),
     PropertyService.getProperties(),
   ]);
-
-  // Determine property scoping:
-  // - Super Admin: only filter by property if searchParams.propertyId is explicitly provided.
-  // - Hotel Admin / Receptionist: strictly scoped to session.propertyId.
-  const effectivePropertyId =
-    session.role === RoleName.SUPER_ADMIN
-      ? searchParams?.propertyId || undefined
-      : session.propertyId || undefined;
 
   // No default building or floor filters when opening rooms section!
   // Only filter if explicitly passed in searchParams.

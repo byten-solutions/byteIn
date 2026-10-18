@@ -8,7 +8,7 @@ import {
   BedDouble,
   ChevronRight,
 } from "lucide-react"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { ReservationService } from "@/modules/reservations/reservation.service"
 import { BillingService } from "@/modules/billing/billing.service"
 import { AppShell } from "@/components/app-shell"
@@ -32,9 +32,10 @@ export default async function ReservationDetailPage({
   }
 
   const { id } = await params
+  const scope = resolveScope(session, null, { allowSuperAdminGlobal: true })
   let reservation
   try {
-    reservation = await ReservationService.getReservationById(id)
+    reservation = await ReservationService.getReservationById(id, scope ?? undefined)
   } catch {
     notFound()
   }

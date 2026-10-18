@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation"
-import { getSession } from "@/lib/auth-guard"
+import { getSession, resolveScope } from "@/lib/auth-guard"
 import { CustomerService } from "@/modules/customers/customer.service"
 import { AppShell } from "@/components/app-shell"
 import { CustomerList } from "./customer-list"
 
-export default async function CustomersPage() {
+export default async function CustomersPage(props: {
+  searchParams?: Promise<{ propertyId?: string }>
+}) {
   const session = await getSession()
   if (!session) {
     redirect("/login")
@@ -13,7 +15,14 @@ export default async function CustomersPage() {
     redirect("/change-password")
   }
 
-  const result = await CustomerService.getCustomers({ page: 1, limit: 20 })
+  const searchParams = props.searchParams ? await props.searchParams : undefined
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
+
+  const result = await CustomerService.getCustomers({
+    page: 1,
+    limit: 20,
+    propertyId: scope ?? undefined,
+  })
 
   const serializedCustomers = result.customers.map((c) => ({
     id: c.id,

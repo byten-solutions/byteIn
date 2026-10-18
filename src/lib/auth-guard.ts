@@ -230,45 +230,32 @@ export async function requireHotelAdmin(
   return requireAuth([RoleName.ADMIN], explicitTokenOrReq);
 }
 
-/**
- * Resolves and validates hotel context for hotel-scoped operations.
- * - For ADMIN and RECEPTIONIST: strictly enforces that user is assigned to a hotel
- *   and rejects any attempt to specify or access another hotel (returns session.propertyId).
- * - For SUPER_ADMIN: allows accessing a specific requested hotel (or null if platform-wide allowed).
- */
-export function requireHotelContext(
+export function resolveScope(
   session: SessionPayload,
   requestedPropertyId?: string | null,
   options?: { allowSuperAdminGlobal?: boolean }
 ): string | null {
+  const requested = requestedPropertyId?.trim() || null;
+
   if (session.role === RoleName.SUPER_ADMIN) {
-    if (requestedPropertyId && requestedPropertyId.trim()) {
-      return requestedPropertyId.trim();
-    }
-    if (options?.allowSuperAdminGlobal) {
-      return null;
-    }
+    if (requested) return requested;
+    if (options?.allowSuperAdminGlobal) return null; // platform-wide, SUPER_ADMIN only
     throw new AuthError("Hotel selection (propertyId) is required for this operation", 400);
   }
 
-  // Hotel Admin and Receptionist must have an assigned property
+  // Fail closed: a hotel-level user without an assigned hotel must NEVER fall through to "all hotels".
   if (!session.propertyId) {
-    return requestedPropertyId || null;
+    throw new AuthError("Your account is not assigned to a hotel. Contact a platform administrator.", 403);
   }
-
-  // If a propertyId was explicitly requested in payload/query, it MUST match the user's assigned property
-  if (
-    requestedPropertyId &&
-    requestedPropertyId.trim() &&
-    requestedPropertyId.trim() !== session.propertyId
-  ) {
+  if (requested && requested !== session.propertyId) {
     throw new AuthError(
       "Access denied: You cannot access or modify records belonging to another hotel.",
       403
     );
   }
-
   return session.propertyId;
 }
+
+export const requireHotelContext = resolveScope;
 
 

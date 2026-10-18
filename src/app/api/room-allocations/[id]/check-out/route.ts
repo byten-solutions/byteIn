@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { handleApiError } from "@/lib/errors";
 import { CheckInOutService } from "@/modules/check-in-out/check-in-out.service";
 import { checkOutSchema } from "@/modules/check-in-out/check-in-out.validation";
@@ -23,7 +23,7 @@ export async function POST(
     });
 
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     const result = await CheckInOutService.checkOut(validated, session.sub, propertyId);
 

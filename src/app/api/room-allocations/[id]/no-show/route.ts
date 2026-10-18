@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { handleApiError } from "@/lib/errors";
 import { ReservationService } from "@/modules/reservations/reservation.service";
 import { markNoShowSchema } from "@/modules/reservations/reservation.validation";
@@ -19,7 +19,7 @@ export async function POST(
 
     const validated = markNoShowSchema.parse(body);
     const propertyId =
-      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+      resolveScope(session, null, { allowSuperAdminGlobal: true }) ?? undefined;
 
     const result = await ReservationService.markNoShow(
       id,
