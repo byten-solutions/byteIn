@@ -16,12 +16,14 @@ export async function GET(req: NextRequest) {
       startDate: searchParams.get("startDate") || undefined,
       endDate: searchParams.get("endDate") || undefined,
       propertyId: searchParams.get("propertyId") || undefined,
+      buildingId: searchParams.get("buildingId") || undefined,
     })
 
     const report = await ReportsService.getAvailabilityGrid(
       query.startDate,
       query.endDate,
-      query.propertyId
+      query.propertyId,
+      query.buildingId
     )
 
     return NextResponse.json({ success: true, data: report })

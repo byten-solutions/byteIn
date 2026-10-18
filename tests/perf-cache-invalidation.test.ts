@@ -78,5 +78,30 @@ describe("Phase 3: Performance Cache & Scoped Queries Tests", () => {
       RoomService.invalidateRoomsCache();
     });
   });
+
+  it("ReportsService.getAvailabilityGrid() returns scoped grid within date limits", async () => {
+    const { ReportsService } = await import("../src/modules/reports/reports.service");
+    const today = new Date().toISOString().split("T")[0]!;
+    const grid = await ReportsService.getAvailabilityGrid(today, today);
+    assert.ok(Array.isArray(grid.dates));
+    assert.ok(Array.isArray(grid.rooms));
+    assert.ok(grid.rooms.length <= 100);
+  });
+
+  it("ReportsService.getReceivablesReport() returns paginated items and summary", async () => {
+    const { ReportsService } = await import("../src/modules/reports/reports.service");
+    const report = await ReportsService.getReceivablesReport(undefined, "all", {
+      page: 1,
+      limit: 10,
+    });
+    assert.ok(typeof report.totalReceivables === "string");
+    assert.ok(typeof report.totalInvoices === "number");
+    assert.ok(typeof report.agingSummary === "object");
+    assert.ok(Array.isArray(report.items));
+    assert.ok(report.items.length <= 10);
+    assert.ok(report.pagination);
+    assert.equal(report.pagination.page, 1);
+    assert.equal(report.pagination.limit, 10);
+  });
 });
 

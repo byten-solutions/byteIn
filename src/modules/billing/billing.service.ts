@@ -59,6 +59,7 @@ export class BillingService {
     try {
       revalidateTag("billing-summary", "max");
       revalidateTag("invoice-count", "max");
+      revalidateTag("daily-operations", "max");
     } catch {
       // Ignore outside Next.js request context (e.g. tests or worker tasks)
     }

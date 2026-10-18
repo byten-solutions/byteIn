@@ -15,9 +15,14 @@ export async function GET(req: NextRequest) {
     const query = receivablesReportSchema.parse({
       propertyId: searchParams.get("propertyId") || undefined,
       filter: (searchParams.get("filter") as "all" | "in_house" | "future" | "departed") || undefined,
+      page: searchParams.get("page") || undefined,
+      limit: searchParams.get("limit") || undefined,
     })
 
-    const report = await ReportsService.getReceivablesReport(query.propertyId, query.filter)
+    const report = await ReportsService.getReceivablesReport(query.propertyId, query.filter, {
+      page: query.page,
+      limit: query.limit,
+    })
 
     return NextResponse.json({ success: true, data: report })
   } catch (error) {

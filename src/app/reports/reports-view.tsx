@@ -20,6 +20,7 @@ import {
   Mail,
   ExternalLink,
   ChevronRight,
+  ChevronLeft,
   ShieldAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -43,13 +44,13 @@ interface ReportsViewProps {
   initialEndDate: string
   initialTodayDate: string
   initialWeekLaterDate: string
-  initialOccupancy: OccupancyReportDTO
-  initialRevenue: RevenueReportDTO
-  initialReservations: ReservationStatusReportDTO
-  initialDailyOps: DailyOperationsReportDTO
-  initialAvailabilityGrid: AvailabilityGridDTO
-  initialCollections: ShiftCollectionsReportDTO
-  initialReceivables: ReceivablesReportDTO
+  initialOccupancy?: OccupancyReportDTO | null
+  initialRevenue?: RevenueReportDTO | null
+  initialReservations?: ReservationStatusReportDTO | null
+  initialDailyOps?: DailyOperationsReportDTO | null
+  initialAvailabilityGrid?: AvailabilityGridDTO | null
+  initialCollections?: ShiftCollectionsReportDTO | null
+  initialReceivables?: ReceivablesReportDTO | null
 }
 
 type MainTab = "daily_ops" | "availability_grid" | "financial" | "performance"
@@ -82,15 +83,54 @@ export function ReportsView({
 
   // Data states
   const [loading, setLoading] = React.useState(false)
-  const [occupancyData, setOccupancyData] = React.useState<OccupancyReportDTO>(initialOccupancy)
-  const [revenueData, setRevenueData] = React.useState<RevenueReportDTO>(initialRevenue)
-  const [reservationsData, setReservationsData] = React.useState<ReservationStatusReportDTO>(initialReservations)
-  const [dailyOpsData, setDailyOpsData] = React.useState<DailyOperationsReportDTO>(initialDailyOps)
-  const [gridData, setGridData] = React.useState<AvailabilityGridDTO>(initialAvailabilityGrid)
-  const [collectionsData, setCollectionsData] = React.useState<ShiftCollectionsReportDTO>(initialCollections)
-  const [receivablesData, setReceivablesData] = React.useState<ReceivablesReportDTO>(initialReceivables)
+  const [occupancyData, setOccupancyData] = React.useState<OccupancyReportDTO | null>(initialOccupancy ?? null)
+  const [revenueData, setRevenueData] = React.useState<RevenueReportDTO | null>(initialRevenue ?? null)
+  const [reservationsData, setReservationsData] = React.useState<ReservationStatusReportDTO | null>(initialReservations ?? null)
+  const [dailyOpsData, setDailyOpsData] = React.useState<DailyOperationsReportDTO | null>(initialDailyOps ?? null)
+  const [gridData, setGridData] = React.useState<AvailabilityGridDTO | null>(initialAvailabilityGrid ?? null)
+  const [collectionsData, setCollectionsData] = React.useState<ShiftCollectionsReportDTO | null>(initialCollections ?? null)
+  const [receivablesData, setReceivablesData] = React.useState<ReceivablesReportDTO | null>(initialReceivables ?? null)
 
   // Refetch helpers
+  const fetchDailyOperations = React.useCallback(async (date: string) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/reports/daily-operations?date=${date}`)
+      const json = await res.json()
+      if (json.success) {
+        setDailyOpsData(json.data)
+        toast.success(`Daily operations updated for ${date}`)
+      } else {
+        toast.error(json.error || "Failed to load operations")
+      }
+    } catch {
+      toast.error("Failed to fetch daily operations")
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    let ignore = false
+    if (!dailyOpsData) {
+      fetch(`/api/reports/daily-operations?date=${opsDate}`)
+        .then((res) => res.json())
+        .then((json) => {
+          if (!ignore && json.success) {
+            setDailyOpsData(json.data)
+          }
+        })
+        .catch((err) => {
+          if (!ignore) {
+            console.error("Failed to load daily operations", err)
+          }
+        })
+    }
+    return () => {
+      ignore = true
+    }
+  }, [dailyOpsData, opsDate])
+
   const fetchPerformanceReports = async (start: string, end: string) => {
     setLoading(true)
     try {
@@ -117,24 +157,6 @@ export function ReportsView({
     }
   }
 
-  const fetchDailyOperations = async (date: string) => {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/reports/daily-operations?date=${date}`)
-      const json = await res.json()
-      if (json.success) {
-        setDailyOpsData(json.data)
-        toast.success(`Daily operations updated for ${date}`)
-      } else {
-        toast.error(json.error || "Failed to load operations")
-      }
-    } catch {
-      toast.error("Failed to fetch daily operations")
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const fetchAvailabilityGrid = async (start: string, end: string) => {
     setLoading(true)
     try {
@@ -153,21 +175,56 @@ export function ReportsView({
     }
   }
 
-  const fetchFinancials = async (date: string) => {
+  const fetchFinancials = async (
+    date: string,
+    recFilter: "all" | "in_house" | "departed" = receivablesFilter,
+    page: number = 1
+  ) => {
     setLoading(true)
     try {
       const [colRes, recRes] = await Promise.all([
         fetch(`/api/reports/collections?date=${date}`),
-        fetch(`/api/reports/receivables`),
+        fetch(`/api/reports/receivables?filter=${recFilter}&page=${page}&limit=50`),
       ])
       const [colJson, recJson] = await Promise.all([colRes.json(), recRes.json()])
       if (colJson.success) setCollectionsData(colJson.data)
-      if (recJson.success) setReceivablesData(recJson.data)
+      if (recJson.success) {
+        setReceivablesData(recJson.data)
+      }
       toast.success("Financial reports updated")
     } catch {
       toast.error("Failed to load financial reports")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchReceivablesPage = async (
+    page: number,
+    filter: "all" | "in_house" | "departed" = receivablesFilter
+  ) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/reports/receivables?filter=${filter}&page=${page}&limit=50`)
+      const json = await res.json()
+      if (json.success) {
+        setReceivablesData(json.data)
+      }
+    } catch {
+      toast.error("Failed to load receivables")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleTabSelect = (tab: MainTab) => {
+    setActiveTab(tab)
+    if (tab === "availability_grid" && !gridData) {
+      fetchAvailabilityGrid(gridStart, gridEnd)
+    } else if (tab === "financial" && (!collectionsData || !receivablesData)) {
+      fetchFinancials(opsDate)
+    } else if (tab === "performance" && (!occupancyData || !revenueData || !reservationsData)) {
+      fetchPerformanceReports(startDate, endDate)
     }
   }
 
@@ -209,7 +266,9 @@ export function ReportsView({
 
   // Active sub-list for daily operations
   const currentOpsList =
-    opsSubTab === "arrivals"
+    !dailyOpsData
+      ? []
+      : opsSubTab === "arrivals"
       ? dailyOpsData.arrivals
       : opsSubTab === "departures"
       ? dailyOpsData.departures
@@ -217,12 +276,8 @@ export function ReportsView({
       ? dailyOpsData.inHouse
       : dailyOpsData.pendingArrivals
 
-  // Filtered receivables
-  const filteredReceivables = receivablesData.items.filter((item) => {
-    if (receivablesFilter === "in_house") return item.isGuestInHouse
-    if (receivablesFilter === "departed") return !item.isGuestInHouse
-    return true
-  })
+  // Receivables items
+  const displayedReceivables = receivablesData?.items || []
 
   return (
     <div className="space-y-6">
@@ -268,7 +323,7 @@ export function ReportsView({
       {/* --------------------------------------------------------------------- */}
       <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2 print:hidden">
         <button
-          onClick={() => setActiveTab("daily_ops")}
+          onClick={() => handleTabSelect("daily_ops")}
           className={cn(
             "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
             activeTab === "daily_ops"
@@ -278,7 +333,7 @@ export function ReportsView({
         >
           <CalendarCheck className="size-4" />
           Daily Operations
-          {dailyOpsData.summary.expectedArrivalsCount > 0 && (
+          {dailyOpsData && dailyOpsData.summary.expectedArrivalsCount > 0 && (
             <span className="rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-xs font-semibold">
               {dailyOpsData.summary.expectedArrivalsCount}
             </span>
@@ -286,7 +341,7 @@ export function ReportsView({
         </button>
 
         <button
-          onClick={() => setActiveTab("availability_grid")}
+          onClick={() => handleTabSelect("availability_grid")}
           className={cn(
             "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
             activeTab === "availability_grid"
@@ -299,7 +354,7 @@ export function ReportsView({
         </button>
 
         <button
-          onClick={() => setActiveTab("financial")}
+          onClick={() => handleTabSelect("financial")}
           className={cn(
             "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
             activeTab === "financial"
@@ -312,7 +367,7 @@ export function ReportsView({
         </button>
 
         <button
-          onClick={() => setActiveTab("performance")}
+          onClick={() => handleTabSelect("performance")}
           className={cn(
             "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
             activeTab === "performance"
@@ -364,8 +419,16 @@ export function ReportsView({
             </div>
           </div>
 
-          {/* Daily Ops KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Daily Ops Content */}
+          {!dailyOpsData ? (
+            <div className="flex flex-col items-center justify-center p-16 space-y-3 rounded-xl border border-border bg-card">
+              <RefreshCw className="size-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground font-medium">Loading reception daily operations and schedule...</p>
+            </div>
+          ) : (
+            <>
+              {/* Daily Ops KPI Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               label="Expected Arrivals"
               value={dailyOpsData.summary.expectedArrivalsCount}
@@ -563,8 +626,10 @@ export function ReportsView({
               </table>
             </div>
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
+    )}
 
       {/* --------------------------------------------------------------------- */}
       {/* 4. TAB 2: AVAILABILITY GRID (TAPE CHART)                              */}
@@ -646,102 +711,109 @@ export function ReportsView({
           </div>
 
           {/* Tape Chart Matrix */}
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-muted/60">
-                    <th className="sticky left-0 z-20 min-w-[140px] border-r border-border bg-muted px-3 py-2.5 font-semibold">
-                      Room / Cat
-                    </th>
-                    {gridData.dates.map((dateStr) => {
-                      const d = new Date(`${dateStr}T00:00:00.000Z`)
-                      const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]
-                      const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6
-                      return (
-                        <th
-                          key={dateStr}
-                          className={cn(
-                            "min-w-[90px] border-r border-border px-2 py-2 text-center",
-                            isWeekend && "bg-muted/80"
-                          )}
-                        >
-                          <div className="font-semibold">{dayName}</div>
-                          <div className="text-[11px] text-muted-foreground">{dateStr.slice(5)}</div>
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {gridData.rooms.map((room) => (
-                    <tr key={room.roomId} className="hover:bg-muted/10">
-                      {/* Fixed Left Header Column */}
-                      <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 font-medium">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-foreground">Room {room.roomNo}</span>
-                          <span className="text-[10px] text-muted-foreground">F{room.floorNo}</span>
-                        </div>
-                        <div className="truncate text-[11px] text-muted-foreground">
-                          {room.categoryName}
-                        </div>
-                      </td>
-
-                      {/* Day Slot Cells */}
-                      {room.slots.map((slot) => {
-                        if (slot.isOccupied) {
-                          const isCheckedIn = slot.allocationStatus === "CHECKED_IN"
-                          return (
-                            <td
-                              key={slot.date}
-                              className="border-r border-border p-1"
-                            >
-                              <Link
-                                href={`/reservations/${slot.reservationId}`}
-                                title={`${slot.guestName || "Guest"} (${slot.reservationNo})`}
-                                className={cn(
-                                  "block rounded-md p-1.5 text-[11px] font-medium transition-opacity hover:opacity-80 text-white",
-                                  isCheckedIn ? "bg-amber-600" : "bg-blue-600"
-                                )}
-                              >
-                                <div className="truncate font-semibold">{slot.guestName || "Guest"}</div>
-                                <div className="truncate text-[9px] opacity-90">{slot.reservationNo}</div>
-                              </Link>
-                            </td>
-                          )
-                        }
-
-                        if (slot.isMaintenance) {
-                          return (
-                            <td
-                              key={slot.date}
-                              className="border-r border-border bg-rose-50 p-1 text-center dark:bg-rose-950/20"
-                            >
-                              <div className="rounded-md bg-rose-500/20 py-2 text-[10px] font-semibold text-rose-700 dark:text-rose-400">
-                                Mnt
-                              </div>
-                            </td>
-                          )
-                        }
-
-                        // Free / Available
+          {!gridData ? (
+            <div className="flex flex-col items-center justify-center p-16 space-y-3 rounded-xl border border-border bg-card">
+              <RefreshCw className="size-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground font-medium">Loading room tape chart & availability grid...</p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/60">
+                      <th className="sticky left-0 z-20 min-w-[140px] border-r border-border bg-muted px-3 py-2.5 font-semibold">
+                        Room / Cat
+                      </th>
+                      {gridData.dates.map((dateStr) => {
+                        const d = new Date(`${dateStr}T00:00:00.000Z`)
+                        const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getUTCDay()]
+                        const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6
                         return (
-                          <td
-                            key={slot.date}
-                            className="border-r border-border bg-emerald-50/40 p-1 text-center hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30"
+                          <th
+                            key={dateStr}
+                            className={cn(
+                              "min-w-[90px] border-r border-border px-2 py-2 text-center",
+                              isWeekend && "bg-muted/80"
+                            )}
                           >
-                            <div className="py-2 text-[11px] font-medium text-emerald-800 dark:text-emerald-400">
-                              {formatMoney(parseFloat(slot.nightlyRate))}
-                            </div>
-                          </td>
+                            <div className="font-semibold">{dayName}</div>
+                            <div className="text-[11px] text-muted-foreground">{dateStr.slice(5)}</div>
+                          </th>
                         )
                       })}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {gridData.rooms.map((room) => (
+                      <tr key={room.roomId} className="hover:bg-muted/10">
+                        {/* Fixed Left Header Column */}
+                        <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 font-medium">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-foreground">Room {room.roomNo}</span>
+                            <span className="text-[10px] text-muted-foreground">F{room.floorNo}</span>
+                          </div>
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {room.categoryName}
+                          </div>
+                        </td>
+
+                        {/* Day Slot Cells */}
+                        {room.slots.map((slot) => {
+                          if (slot.isOccupied) {
+                            const isCheckedIn = slot.allocationStatus === "CHECKED_IN"
+                            return (
+                              <td
+                                key={slot.date}
+                                className="border-r border-border p-1"
+                              >
+                                <Link
+                                  href={`/reservations/${slot.reservationId}`}
+                                  title={`${slot.guestName || "Guest"} (${slot.reservationNo})`}
+                                  className={cn(
+                                    "block rounded-md p-1.5 text-[11px] font-medium transition-opacity hover:opacity-80 text-white",
+                                    isCheckedIn ? "bg-amber-600" : "bg-blue-600"
+                                  )}
+                                >
+                                  <div className="truncate font-semibold">{slot.guestName || "Guest"}</div>
+                                  <div className="truncate text-[9px] opacity-90">{slot.reservationNo}</div>
+                                </Link>
+                              </td>
+                            )
+                          }
+
+                          if (slot.isMaintenance) {
+                            return (
+                              <td
+                                key={slot.date}
+                                className="border-r border-border bg-rose-50 p-1 text-center dark:bg-rose-950/20"
+                              >
+                                <div className="rounded-md bg-rose-500/20 py-2 text-[10px] font-semibold text-rose-700 dark:text-rose-400">
+                                  Mnt
+                                </div>
+                              </td>
+                            )
+                          }
+
+                          // Free / Available
+                          return (
+                            <td
+                              key={slot.date}
+                              className="border-r border-border bg-emerald-50/40 p-1 text-center hover:bg-emerald-100/60 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30"
+                            >
+                              <div className="py-2 text-[11px] font-medium text-emerald-800 dark:text-emerald-400">
+                                {formatMoney(parseFloat(slot.nightlyRate))}
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -781,8 +853,16 @@ export function ReportsView({
             </div>
           </div>
 
-          {/* Financial Summary KPIs */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Financial Content */}
+          {!collectionsData || !receivablesData ? (
+            <div className="flex flex-col items-center justify-center p-16 space-y-3 rounded-xl border border-border bg-card">
+              <RefreshCw className="size-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground font-medium">Loading shift collections and outstanding receivables...</p>
+            </div>
+          ) : (
+            <>
+              {/* Financial Summary KPIs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               label="Shift Collections"
               value={formatMoney(parseFloat(collectionsData.totalCollected))}
@@ -894,16 +974,22 @@ export function ReportsView({
               {/* Filter */}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setReceivablesFilter("all")}
+                  onClick={() => {
+                    setReceivablesFilter("all")
+                    fetchReceivablesPage(1, "all")
+                  }}
                   className={cn(
                     "rounded-md px-2.5 py-1 text-xs font-medium",
                     receivablesFilter === "all" ? "bg-primary text-primary-foreground" : "bg-muted"
                   )}
                 >
-                  All ({receivablesData.items.length})
+                  All ({receivablesData.totalInvoices})
                 </button>
                 <button
-                  onClick={() => setReceivablesFilter("in_house")}
+                  onClick={() => {
+                    setReceivablesFilter("in_house")
+                    fetchReceivablesPage(1, "in_house")
+                  }}
                   className={cn(
                     "rounded-md px-2.5 py-1 text-xs font-medium",
                     receivablesFilter === "in_house" ? "bg-primary text-primary-foreground" : "bg-muted"
@@ -912,7 +998,10 @@ export function ReportsView({
                   In-House ({receivablesData.inHouseCount})
                 </button>
                 <button
-                  onClick={() => setReceivablesFilter("departed")}
+                  onClick={() => {
+                    setReceivablesFilter("departed")
+                    fetchReceivablesPage(1, "departed")
+                  }}
                   className={cn(
                     "rounded-md px-2.5 py-1 text-xs font-medium",
                     receivablesFilter === "departed" ? "bg-primary text-primary-foreground" : "bg-muted"
@@ -967,14 +1056,14 @@ export function ReportsView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredReceivables.length === 0 ? (
+                  {displayedReceivables.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-6 text-center text-muted-foreground">
                         No outstanding balances in this view.
                       </td>
                     </tr>
                   ) : (
-                    filteredReceivables.map((rec) => (
+                    displayedReceivables.map((rec) => (
                       <tr key={rec.invoiceId} className="hover:bg-muted/20">
                         <td className="px-3 py-2">
                           <div className="font-mono font-medium">{rec.invoiceNumber}</div>
@@ -1027,9 +1116,43 @@ export function ReportsView({
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {receivablesData.pagination && receivablesData.pagination.totalPages > 1 && (
+              <div className="flex items-center justify-between border-t border-border pt-4 text-xs text-muted-foreground">
+                <div>
+                  Showing page <span className="font-medium text-foreground">{receivablesData.pagination.page}</span> of{" "}
+                  <span className="font-medium text-foreground">{receivablesData.pagination.totalPages}</span> ({receivablesData.pagination.total} total)
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || receivablesData.pagination.page <= 1}
+                    onClick={() => fetchReceivablesPage(receivablesData.pagination!.page - 1, receivablesFilter)}
+                    className="h-7 text-xs"
+                  >
+                    <ChevronLeft className="size-3.5 mr-1" />
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loading || receivablesData.pagination.page >= receivablesData.pagination.totalPages}
+                    onClick={() => fetchReceivablesPage(receivablesData.pagination!.page + 1, receivablesFilter)}
+                    className="h-7 text-xs"
+                  >
+                    Next
+                    <ChevronRight className="size-3.5 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
+    )}
 
       {/* --------------------------------------------------------------------- */}
       {/* 6. TAB 4: PERFORMANCE & KPIS (ADR, RevPAR, Categories)                */}
@@ -1078,175 +1201,185 @@ export function ReportsView({
             </div>
           </div>
 
-          {/* Performance KPIs: Occupancy, ADR, RevPAR, Room Revenue */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            <StatCard
-              label="Occupancy Rate"
-              value={`${occupancyData.occupancyRate}%`}
-              subtext={`${occupancyData.totalOccupiedRoomNights} of ${occupancyData.totalAvailableRoomNights} nights`}
-              icon={<TrendingUp className="size-4" />}
-            />
-            <StatCard
-              label="ADR (Avg Daily Rate)"
-              value={formatMoney(parseFloat(occupancyData.adr))}
-              subtext="Room revenue / rooms sold"
-              icon={<CreditCard className="size-4" />}
-            />
-            <StatCard
-              label="RevPAR"
-              value={formatMoney(parseFloat(occupancyData.revpar))}
-              subtext="Room revenue / available rooms"
-              icon={<BarChart3 className="size-4" />}
-            />
-            <StatCard
-              label="Total Room Revenue"
-              value={formatMoney(parseFloat(occupancyData.totalRoomRevenue))}
-              subtext={`${occupancyData.totalDays} calendar days`}
-              icon={<Receipt className="size-4" />}
-            />
-          </div>
-
-          {/* Room Category Performance Table */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-            <div className="border-b border-border pb-2">
-              <h3 className="font-semibold text-foreground">Room Category Performance Breakdown</h3>
-              <p className="text-xs text-muted-foreground">
-                Category sales volume, occupancy rates, ADR, and revenue generation.
-              </p>
+          {/* Performance KPIs & Charts */}
+          {!occupancyData || !revenueData || !reservationsData ? (
+            <div className="flex flex-col items-center justify-center p-16 space-y-3 rounded-xl border border-border bg-card">
+              <RefreshCw className="size-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground font-medium">Loading performance metrics, occupancy, and KPIs...</p>
             </div>
+          ) : (
+            <>
+              {/* Performance KPIs: Occupancy, ADR, RevPAR, Room Revenue */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <StatCard
+                  label="Occupancy Rate"
+                  value={`${occupancyData.occupancyRate}%`}
+                  subtext={`${occupancyData.totalOccupiedRoomNights} of ${occupancyData.totalAvailableRoomNights} nights`}
+                  icon={<TrendingUp className="size-4" />}
+                />
+                <StatCard
+                  label="ADR (Avg Daily Rate)"
+                  value={formatMoney(parseFloat(occupancyData.adr))}
+                  subtext="Room revenue / rooms sold"
+                  icon={<CreditCard className="size-4" />}
+                />
+                <StatCard
+                  label="RevPAR"
+                  value={formatMoney(parseFloat(occupancyData.revpar))}
+                  subtext="Room revenue / available rooms"
+                  icon={<BarChart3 className="size-4" />}
+                />
+                <StatCard
+                  label="Total Room Revenue"
+                  value={formatMoney(parseFloat(occupancyData.totalRoomRevenue))}
+                  subtext={`${occupancyData.totalDays} calendar days`}
+                  icon={<Receipt className="size-4" />}
+                />
+              </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
-                    <th className="px-3 py-2.5">Room Category</th>
-                    <th className="px-3 py-2.5">Total Rooms</th>
-                    <th className="px-3 py-2.5">Available Nights</th>
-                    <th className="px-3 py-2.5">Occupied Nights</th>
-                    <th className="px-3 py-2.5">Occupancy %</th>
-                    <th className="px-3 py-2.5">Room Revenue</th>
-                    <th className="px-3 py-2.5">ADR</th>
-                    <th className="px-3 py-2.5">RevPAR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {occupancyData.categoryBreakdown.map((cat) => (
-                    <tr key={cat.categoryId} className="hover:bg-muted/20">
-                      <td className="px-3 py-2.5 font-semibold text-foreground">
-                        {cat.categoryName}
-                      </td>
-                      <td className="px-3 py-2.5">{cat.totalRooms}</td>
-                      <td className="px-3 py-2.5">{cat.availableRoomNights}</td>
-                      <td className="px-3 py-2.5 font-medium">{cat.occupiedRoomNights}</td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{cat.occupancyRate}%</span>
-                          <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full"
-                              style={{ width: `${Math.min(100, cat.occupancyRate)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 font-medium">{formatMoney(parseFloat(cat.roomRevenue))}</td>
-                      <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.adr))}</td>
-                      <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.revpar))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Daily Occupancy Trend Table */}
-          <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-            <div className="border-b border-border pb-2">
-              <h3 className="font-semibold text-foreground">Daily Occupancy & Revenue Trend</h3>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Day</th>
-                    <th className="px-3 py-2">Occupied / Total</th>
-                    <th className="px-3 py-2">Occupancy Rate</th>
-                    <th className="px-3 py-2">Room Revenue</th>
-                    <th className="px-3 py-2">ADR</th>
-                    <th className="px-3 py-2">RevPAR</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {occupancyData.dailyBreakdown.map((d) => (
-                    <tr key={d.date} className="hover:bg-muted/20">
-                      <td className="px-3 py-2 font-mono">{d.date}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{d.dayOfWeek}</td>
-                      <td className="px-3 py-2">
-                        {d.occupiedRooms} / {d.totalRooms}
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{d.occupancyRate}%</span>
-                          <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full"
-                              style={{ width: `${Math.min(100, d.occupancyRate)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 font-medium">{formatMoney(parseFloat(d.roomRevenue))}</td>
-                      <td className="px-3 py-2">{formatMoney(parseFloat(d.adr))}</td>
-                      <td className="px-3 py-2">{formatMoney(parseFloat(d.revpar))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Period Financial & Reservation Totals */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <h3 className="font-semibold text-foreground">Invoiced vs Collected ({startDate} to {endDate})</h3>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="rounded-lg bg-muted/40 p-2.5">
-                  <div className="text-muted-foreground">Total Invoiced</div>
-                  <div className="text-base font-bold text-foreground">
-                    {formatMoney(parseFloat(revenueData.totalInvoiced))}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">{revenueData.invoiceCount} invoices</div>
+              {/* Room Category Performance Table */}
+              <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                <div className="border-b border-border pb-2">
+                  <h3 className="font-semibold text-foreground">Room Category Performance Breakdown</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Category sales volume, occupancy rates, ADR, and revenue generation.
+                  </p>
                 </div>
-                <div className="rounded-lg bg-muted/40 p-2.5">
-                  <div className="text-muted-foreground">Total Collected</div>
-                  <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">
-                    {formatMoney(parseFloat(revenueData.totalCollected))}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">{revenueData.paymentCount} payments</div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
+                        <th className="px-3 py-2.5">Room Category</th>
+                        <th className="px-3 py-2.5">Total Rooms</th>
+                        <th className="px-3 py-2.5">Available Nights</th>
+                        <th className="px-3 py-2.5">Occupied Nights</th>
+                        <th className="px-3 py-2.5">Occupancy %</th>
+                        <th className="px-3 py-2.5">Room Revenue</th>
+                        <th className="px-3 py-2.5">ADR</th>
+                        <th className="px-3 py-2.5">RevPAR</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {occupancyData.categoryBreakdown.map((cat) => (
+                        <tr key={cat.categoryId} className="hover:bg-muted/20">
+                          <td className="px-3 py-2.5 font-semibold text-foreground">
+                            {cat.categoryName}
+                          </td>
+                          <td className="px-3 py-2.5">{cat.totalRooms}</td>
+                          <td className="px-3 py-2.5">{cat.availableRoomNights}</td>
+                          <td className="px-3 py-2.5 font-medium">{cat.occupiedRoomNights}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{cat.occupancyRate}%</span>
+                              <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full bg-primary rounded-full"
+                                  style={{ width: `${Math.min(100, cat.occupancyRate)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 font-medium">{formatMoney(parseFloat(cat.roomRevenue))}</td>
+                          <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.adr))}</td>
+                          <td className="px-3 py-2.5">{formatMoney(parseFloat(cat.revpar))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </div>
 
-            <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-              <h3 className="font-semibold text-foreground">Reservation Volume & Stay Metrics</h3>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-                  <div className="text-muted-foreground">Total Bookings</div>
-                  <div className="text-base font-bold text-foreground">{reservationsData.totalReservations}</div>
+              {/* Daily Occupancy Trend Table */}
+              <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+                <div className="border-b border-border pb-2">
+                  <h3 className="font-semibold text-foreground">Daily Occupancy & Revenue Trend</h3>
                 </div>
-                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-                  <div className="text-muted-foreground">Avg Stay (ALOS)</div>
-                  <div className="text-base font-bold text-foreground">{reservationsData.averageLengthOfStay} nights</div>
-                </div>
-                <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-                  <div className="text-muted-foreground">Cancellation %</div>
-                  <div className="text-base font-bold text-rose-600 dark:text-rose-400">{reservationsData.cancellationRate}%</div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
+                        <th className="px-3 py-2">Date</th>
+                        <th className="px-3 py-2">Day</th>
+                        <th className="px-3 py-2">Occupied / Total</th>
+                        <th className="px-3 py-2">Occupancy Rate</th>
+                        <th className="px-3 py-2">Room Revenue</th>
+                        <th className="px-3 py-2">ADR</th>
+                        <th className="px-3 py-2">RevPAR</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {occupancyData.dailyBreakdown.map((d) => (
+                        <tr key={d.date} className="hover:bg-muted/20">
+                          <td className="px-3 py-2 font-mono">{d.date}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{d.dayOfWeek}</td>
+                          <td className="px-3 py-2">
+                            {d.occupiedRooms} / {d.totalRooms}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold">{d.occupancyRate}%</span>
+                              <div className="h-1.5 w-12 rounded-full bg-muted overflow-hidden">
+                                <div
+                                  className="h-full bg-primary rounded-full"
+                                  style={{ width: `${Math.min(100, d.occupancyRate)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 font-medium">{formatMoney(parseFloat(d.roomRevenue))}</td>
+                          <td className="px-3 py-2">{formatMoney(parseFloat(d.adr))}</td>
+                          <td className="px-3 py-2">{formatMoney(parseFloat(d.revpar))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            </div>
-          </div>
+
+              {/* Period Financial & Reservation Totals */}
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <h3 className="font-semibold text-foreground">Invoiced vs Collected ({startDate} to {endDate})</h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="rounded-lg bg-muted/40 p-2.5">
+                      <div className="text-muted-foreground">Total Invoiced</div>
+                      <div className="text-base font-bold text-foreground">
+                        {formatMoney(parseFloat(revenueData.totalInvoiced))}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{revenueData.invoiceCount} invoices</div>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 p-2.5">
+                      <div className="text-muted-foreground">Total Collected</div>
+                      <div className="text-base font-bold text-emerald-600 dark:text-emerald-400">
+                        {formatMoney(parseFloat(revenueData.totalCollected))}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{revenueData.paymentCount} payments</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                  <h3 className="font-semibold text-foreground">Reservation Volume & Stay Metrics</h3>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                      <div className="text-muted-foreground">Total Bookings</div>
+                      <div className="text-base font-bold text-foreground">{reservationsData.totalReservations}</div>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                      <div className="text-muted-foreground">Avg Stay (ALOS)</div>
+                      <div className="text-base font-bold text-foreground">{reservationsData.averageLengthOfStay} nights</div>
+                    </div>
+                    <div className="rounded-lg bg-muted/40 p-2.5 text-center">
+                      <div className="text-muted-foreground">Cancellation %</div>
+                      <div className="text-base font-bold text-rose-600 dark:text-rose-400">{reservationsData.cancellationRate}%</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

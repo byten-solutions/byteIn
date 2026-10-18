@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation"
 import { getSession } from "@/lib/auth-guard"
-import { ReportsService } from "@/modules/reports/reports.service"
 import { AppShell } from "@/components/app-shell"
 import { ReportsView } from "./reports-view"
 
@@ -25,33 +24,8 @@ export default async function ReportsPage() {
   const weekLater = new Date(todayUtc.getTime() + 6 * 24 * 60 * 60 * 1000)
   const weekLaterStr = weekLater.toISOString().split("T")[0]!
 
-  const [
-    initialOccupancy,
-    initialRevenue,
-    initialReservations,
-    initialDailyOps,
-    initialAvailabilityGrid,
-    initialCollections,
-    initialReceivables,
-  ] = await Promise.all([
-    ReportsService.getOccupancyReport({
-      startDate: defaultStartDate,
-      endDate: defaultEndDate,
-    }),
-    ReportsService.getRevenueReport({
-      startDate: defaultStartDate,
-      endDate: defaultEndDate,
-    }),
-    ReportsService.getReservationStatusReport({
-      startDate: defaultStartDate,
-      endDate: defaultEndDate,
-    }),
-    ReportsService.getDailyOperations(defaultEndDate),
-    ReportsService.getAvailabilityGrid(defaultEndDate, weekLaterStr),
-    ReportsService.getShiftCollections(defaultEndDate),
-    ReportsService.getReceivablesReport(),
-  ])
-
+  // Only render the shell and active parameters during SSR.
+  // All report tabs lazy-load their respective data on demand via /api/reports/* endpoints.
   return (
     <AppShell session={session}>
       <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
@@ -60,13 +34,6 @@ export default async function ReportsPage() {
           initialEndDate={defaultEndDate}
           initialTodayDate={defaultEndDate}
           initialWeekLaterDate={weekLaterStr}
-          initialOccupancy={initialOccupancy}
-          initialRevenue={initialRevenue}
-          initialReservations={initialReservations}
-          initialDailyOps={initialDailyOps}
-          initialAvailabilityGrid={initialAvailabilityGrid}
-          initialCollections={initialCollections}
-          initialReceivables={initialReceivables}
         />
       </div>
     </AppShell>

@@ -294,6 +294,12 @@ export interface ReceivablesReportDTO {
     bucket60Plus: string
   }
   items: ReceivableItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }
 
 // ----------------------------------------------------------------------------

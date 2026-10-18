@@ -7,6 +7,7 @@ import {
   InvoiceItemType,
   RoomStatus,
 } from "@prisma/client"
+import { unstable_cache, revalidateTag } from "next/cache"
 import { prisma } from "@/lib/prisma"
 import type {
   ReportFilterDTO,
@@ -660,23 +661,45 @@ export class ReportsService {
    * 3. Current In-House Guests (checked-in allocations actively staying)
    * 4. Pending / Overdue Arrivals (scheduled check-ins in the past that never checked in)
    */
+  public static invalidateReportsCache(): void {
+    try {
+      revalidateTag("daily-operations", "max")
+      revalidateTag("billing-summary", "max")
+    } catch {
+      // Ignore outside Next.js request context
+    }
+  }
+
   static async getDailyOperations(
     targetDateStr?: string,
     propertyId?: string
   ): Promise<DailyOperationsReportDTO> {
     const dateStr = targetDateStr || getHotelTodayDate()
-    const targetDate = new Date(`${dateStr}T00:00:00.000Z`)
-    const nextDay = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
 
-    const baseWhere: Prisma.ReservationRoomWhereInput = {}
-    if (propertyId) {
-      baseWhere.room = { propertyId }
+    let effectivePropertyId = propertyId
+    if (!effectivePropertyId) {
+      const firstProp = await prisma.property.findFirst({
+        select: { id: true },
+        orderBy: { name: "asc" },
+      })
+      if (firstProp) {
+        effectivePropertyId = firstProp.id
+      }
     }
 
-    // 1. Fetch Arrivals scheduled for targetDate
-    const arrivalAllocations = await prisma.reservationRoom.findMany({
-      where: {
-        ...baseWhere,
+    const fetchOps = async (): Promise<DailyOperationsReportDTO> => {
+      const targetDate = new Date(`${dateStr}T00:00:00.000Z`)
+      const nextDay = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000)
+
+      const baseWhere: Prisma.ReservationRoomWhereInput = {}
+      if (effectivePropertyId) {
+        baseWhere.room = { propertyId: effectivePropertyId }
+      }
+
+      // 1. Fetch Arrivals scheduled for targetDate
+      const arrivalAllocations = await prisma.reservationRoom.findMany({
+        where: {
+          ...baseWhere,
         arrivalDate: { gte: targetDate, lt: nextDay },
         status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
         reservation: { status: { not: ReservationStatus.CANCELLED } },
@@ -888,6 +911,18 @@ export class ReportsService {
     }
   }
 
+  try {
+    const cached = unstable_cache(
+      fetchOps,
+      [`daily-ops-${effectivePropertyId || "all"}-${dateStr}`],
+      { tags: ["daily-operations"], revalidate: 60 }
+    )
+    return await cached()
+  } catch {
+    return await fetchOps()
+  }
+}
+
   /**
    * Generates Room Availability Grid / Tape Chart (Date-by-Room matrix)
    * Shows booked slots with guest names and links, vacant rooms, and maintenance blocks.
@@ -895,13 +930,16 @@ export class ReportsService {
   static async getAvailabilityGrid(
     startDateStr: string,
     endDateStr: string,
-    propertyId?: string
+    propertyId?: string,
+    buildingId?: string
   ): Promise<AvailabilityGridDTO> {
     const startObj = new Date(`${startDateStr}T00:00:00.000Z`)
     const endObj = new Date(`${endDateStr}T00:00:00.000Z`)
 
-    const numDays =
-      Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    const numDays = Math.min(
+      31,
+      Math.max(1, Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+    )
 
     const dates: string[] = []
     for (let i = 0; i < numDays; i++) {
@@ -909,11 +947,26 @@ export class ReportsService {
       dates.push(d.toISOString().split("T")[0]!)
     }
 
-    // 1. Fetch physical rooms
-    const roomWhere: Prisma.RoomWhereInput = {}
-    if (propertyId) {
-      roomWhere.propertyId = propertyId
+    // 1. Determine scoped property
+    let effectivePropertyId = propertyId
+    if (!effectivePropertyId) {
+      const firstProp = await prisma.property.findFirst({
+        select: { id: true },
+        orderBy: { name: "asc" },
+      })
+      if (firstProp) {
+        effectivePropertyId = firstProp.id
+      }
     }
+
+    const roomWhere: Prisma.RoomWhereInput = {}
+    if (effectivePropertyId) {
+      roomWhere.propertyId = effectivePropertyId
+    }
+    if (buildingId) {
+      roomWhere.buildingId = buildingId
+    }
+
     const physicalRooms = await prisma.room.findMany({
       where: roomWhere,
       include: {
@@ -926,24 +979,29 @@ export class ReportsService {
         { floor: { floorNo: "asc" } },
         { roomNo: "asc" },
       ],
+      take: 100, // Bound view to max 100 rooms for instant render and lightweight payload
     })
 
-    // 2. Fetch overlapping allocations in window
-    const nextDayAfterEnd = new Date(endObj.getTime() + 24 * 60 * 60 * 1000)
-    const allocations = await prisma.reservationRoom.findMany({
-      where: {
-        status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
-        arrivalDate: { lt: nextDayAfterEnd },
-        departureDate: { gt: startObj },
-        reservation: { status: { not: ReservationStatus.CANCELLED } },
-        ...(propertyId ? { room: { propertyId } } : {}),
-      },
-      include: {
-        reservation: {
-          include: { customer: true },
-        },
-      },
-    })
+    // 2. Fetch overlapping allocations in window ONLY for the scoped rooms
+    const nextDayAfterEnd = new Date(startObj.getTime() + numDays * 24 * 60 * 60 * 1000)
+    const roomIds = physicalRooms.map((r) => r.id)
+    const allocations =
+      roomIds.length > 0
+        ? await prisma.reservationRoom.findMany({
+            where: {
+              roomId: { in: roomIds },
+              status: { in: [AllocationStatus.CONFIRMED, AllocationStatus.CHECKED_IN] },
+              arrivalDate: { lt: nextDayAfterEnd },
+              departureDate: { gt: startObj },
+              reservation: { status: { not: ReservationStatus.CANCELLED } },
+            },
+            include: {
+              reservation: {
+                include: { customer: true },
+              },
+            },
+          })
+        : []
 
     // Map allocations by roomId
     const allocMap = new Map<string, typeof allocations>()
@@ -1280,161 +1338,296 @@ export class ReportsService {
    */
   static async getReceivablesReport(
     propertyId?: string,
-    filterOption: "all" | "in_house" | "future" | "departed" = "all"
+    filterOption: "all" | "in_house" | "future" | "departed" = "all",
+    options?: { page?: number; limit?: number }
   ): Promise<ReceivablesReportDTO> {
     const todayStr = getHotelTodayDate()
-    const now = new Date()
 
-    const invoiceWhere: Prisma.InvoiceWhereInput = {
-      status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
-    }
+    // 1. Compute summary aggregates using SQL (cached with tag billing-summary)
+    const propertyFilterSql = propertyId
+      ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1 FROM reservation_rooms rr_prop
+            JOIN rooms rm_prop ON rm_prop.id = rr_prop.room_id
+            WHERE rr_prop.reservation_id = i.reservation_id AND rm_prop.property_id = ${propertyId}
+          )
+        `
+      : Prisma.empty
 
-    if (propertyId) {
-      invoiceWhere.reservation = {
-        rooms: {
-          some: {
-            room: { propertyId },
-          },
-        },
+    const fetchSummary = async () => {
+      const summaryRows = await prisma.$queryRaw<
+        Array<{
+          total_invoices: number
+          total_receivables: string
+          in_house_count: number
+          in_house_receivables: string
+          future_count: number
+          future_receivables: string
+          departed_count: number
+          departed_receivables: string
+          bucket_0_to_7: string
+          bucket_8_to_30: string
+          bucket_31_to_60: string
+          bucket_60_plus: string
+        }>
+      >`
+        WITH unpaid_inv AS (
+          SELECT 
+            i.id,
+            i.created_at,
+            i.grand_total,
+            COALESCE(p.paid, 0) AS total_paid,
+            (i.grand_total - COALESCE(p.paid, 0)) AS balance_due,
+            i.reservation_id,
+            CASE
+              WHEN in_house.reservation_id IS NOT NULL THEN 'IN_HOUSE'
+              WHEN confirmed.reservation_id IS NOT NULL THEN 'FUTURE'
+              ELSE 'DEPARTED'
+            END AS stay_status,
+            (CURRENT_DATE - i.created_at::date) AS days_aging
+          FROM invoices i
+          LEFT JOIN (
+            SELECT invoice_id, SUM(amount) AS paid 
+            FROM payments 
+            WHERE status = 'RECORDED' 
+            GROUP BY invoice_id
+          ) p ON p.invoice_id = i.id
+          LEFT JOIN (
+            SELECT DISTINCT reservation_id FROM reservation_rooms WHERE status = 'CHECKED_IN'
+          ) in_house ON in_house.reservation_id = i.reservation_id
+          LEFT JOIN (
+            SELECT DISTINCT reservation_id FROM reservation_rooms WHERE status = 'CONFIRMED'
+          ) confirmed ON confirmed.reservation_id = i.reservation_id
+          WHERE i.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+            AND (i.grand_total - COALESCE(p.paid, 0)) > 0
+            ${propertyFilterSql}
+        )
+        SELECT 
+          COUNT(*)::int AS total_invoices,
+          COALESCE(SUM(balance_due), 0)::text AS total_receivables,
+          COUNT(*) FILTER (WHERE stay_status = 'IN_HOUSE')::int AS in_house_count,
+          COALESCE(SUM(balance_due) FILTER (WHERE stay_status = 'IN_HOUSE'), 0)::text AS in_house_receivables,
+          COUNT(*) FILTER (WHERE stay_status = 'FUTURE')::int AS future_count,
+          COALESCE(SUM(balance_due) FILTER (WHERE stay_status = 'FUTURE'), 0)::text AS future_receivables,
+          COUNT(*) FILTER (WHERE stay_status = 'DEPARTED')::int AS departed_count,
+          COALESCE(SUM(balance_due) FILTER (WHERE stay_status = 'DEPARTED'), 0)::text AS departed_receivables,
+          COALESCE(SUM(balance_due) FILTER (WHERE days_aging <= 7), 0)::text AS bucket_0_to_7,
+          COALESCE(SUM(balance_due) FILTER (WHERE days_aging BETWEEN 8 AND 30), 0)::text AS bucket_8_to_30,
+          COALESCE(SUM(balance_due) FILTER (WHERE days_aging BETWEEN 31 AND 60), 0)::text AS bucket_31_to_60,
+          COALESCE(SUM(balance_due) FILTER (WHERE days_aging > 60), 0)::text AS bucket_60_plus
+        FROM unpaid_inv;
+      `
+
+      return summaryRows[0] || {
+        total_invoices: 0,
+        total_receivables: "0.00",
+        in_house_count: 0,
+        in_house_receivables: "0.00",
+        future_count: 0,
+        future_receivables: "0.00",
+        departed_count: 0,
+        departed_receivables: "0.00",
+        bucket_0_to_7: "0.00",
+        bucket_8_to_30: "0.00",
+        bucket_31_to_60: "0.00",
+        bucket_60_plus: "0.00",
       }
     }
 
-    const invoices = await prisma.invoice.findMany({
-      where: invoiceWhere,
-      include: {
-        payments: {
-          where: { status: PaymentStatus.RECORDED },
-        },
-        reservation: {
-          include: {
-            customer: true,
-            rooms: {
-              include: { room: true },
-            },
-          },
-        },
-      },
-      orderBy: [{ createdAt: "asc" }],
-    })
-
-    let totalReceivablesDec = new Prisma.Decimal(0)
-    let inHouseReceivablesDec = new Prisma.Decimal(0)
-    let futureReceivablesDec = new Prisma.Decimal(0)
-    let departedReceivablesDec = new Prisma.Decimal(0)
-
-    let inHouseCount = 0
-    let futureCount = 0
-    let departedCount = 0
-
-    let b0to7 = new Prisma.Decimal(0)
-    let b8to30 = new Prisma.Decimal(0)
-    let b31to60 = new Prisma.Decimal(0)
-    let b60Plus = new Prisma.Decimal(0)
-
-    const items: ReceivableItemDTO[] = []
-
-    for (const inv of invoices) {
-      if (!inv.reservation) continue
-
-      const totalPaidDec = inv.payments.reduce(
-        (sum, p) => sum.add(p.amount),
-        new Prisma.Decimal(0)
+    let sum
+    try {
+      const cached = unstable_cache(
+        fetchSummary,
+        [`receivables-summary-${propertyId || "all"}`],
+        { tags: ["billing-summary"], revalidate: 60 }
       )
-      const balanceDec = inv.grandTotal.sub(totalPaidDec)
-
-      if (balanceDec.lte(0)) continue
-
-      totalReceivablesDec = totalReceivablesDec.add(balanceDec)
-
-      const rooms = inv.reservation.rooms
-      const isInHouse = rooms.some((r) => r.status === AllocationStatus.CHECKED_IN)
-      const isFuture = !isInHouse && rooms.some((r) => r.status === AllocationStatus.CONFIRMED)
-
-      const guestStayStatus: "IN_HOUSE" | "FUTURE" | "DEPARTED" = isInHouse
-        ? "IN_HOUSE"
-        : isFuture
-        ? "FUTURE"
-        : "DEPARTED"
-
-      if (guestStayStatus === "IN_HOUSE") {
-        inHouseCount++
-        inHouseReceivablesDec = inHouseReceivablesDec.add(balanceDec)
-      } else if (guestStayStatus === "FUTURE") {
-        futureCount++
-        futureReceivablesDec = futureReceivablesDec.add(balanceDec)
-      } else {
-        departedCount++
-        departedReceivablesDec = departedReceivablesDec.add(balanceDec)
-      }
-
-      // Calculate days aging since invoice creation
-      const daysAging = Math.max(
-        0,
-        Math.floor((now.getTime() - inv.createdAt.getTime()) / (1000 * 60 * 60 * 24))
-      )
-
-      let bucket: "0-7" | "8-30" | "31-60" | "60+" = "0-7"
-      if (daysAging <= 7) {
-        bucket = "0-7"
-        b0to7 = b0to7.add(balanceDec)
-      } else if (daysAging <= 30) {
-        bucket = "8-30"
-        b8to30 = b8to30.add(balanceDec)
-      } else if (daysAging <= 60) {
-        bucket = "31-60"
-        b31to60 = b31to60.add(balanceDec)
-      } else {
-        bucket = "60+"
-        b60Plus = b60Plus.add(balanceDec)
-      }
-
-      // Filter check
-      if (filterOption === "in_house" && guestStayStatus !== "IN_HOUSE") continue
-      if (filterOption === "future" && guestStayStatus !== "FUTURE") continue
-      if (filterOption === "departed" && guestStayStatus !== "DEPARTED") continue
-
-      const cust = inv.reservation.customer
-      const roomNos = inv.reservation.rooms.map((r) => r.room.roomNo)
-
-      items.push({
-        invoiceId: inv.id,
-        invoiceNumber: inv.invoiceNumber,
-        reservationId: inv.reservationId,
-        reservationNo: inv.reservation.reservationNo,
-        customerId: inv.reservation.customerId,
-        guestName: `${cust.firstName} ${cust.lastName || ""}`.trim(),
-        guestPhone: cust.phone || null,
-        guestEmail: cust.email || null,
-        roomNumbers: roomNos,
-        reservationStatus: inv.reservation.status,
-        isGuestInHouse: isInHouse,
-        guestStayStatus,
-        issueDate: inv.createdAt.toISOString().split("T")[0]!,
-        grandTotal: inv.grandTotal.toFixed(2),
-        totalPaid: totalPaidDec.toFixed(2),
-        balanceDue: balanceDec.toFixed(2),
-        daysAging,
-        agingBucket: bucket,
-      })
+      sum = await cached()
+    } catch {
+      sum = await fetchSummary()
     }
+
+    // 2. Determine pagination
+    const page = Math.max(1, options?.page || 1)
+    const limit = options?.limit
+      ? Math.max(1, Math.min(200, options.limit))
+      : options?.page
+      ? 50
+      : undefined
+    const skip = limit ? (page - 1) * limit : 0
+
+    let totalForFilter = sum.total_invoices
+    if (filterOption === "in_house") totalForFilter = sum.in_house_count
+    else if (filterOption === "future") totalForFilter = sum.future_count
+    else if (filterOption === "departed") totalForFilter = sum.departed_count
+
+    const stayStatusFilterSql =
+      filterOption === "in_house"
+        ? Prisma.sql`AND u.stay_status = 'IN_HOUSE'`
+        : filterOption === "future"
+        ? Prisma.sql`AND u.stay_status = 'FUTURE'`
+        : filterOption === "departed"
+        ? Prisma.sql`AND u.stay_status = 'DEPARTED'`
+        : Prisma.empty
+
+    const paginationSql = limit
+      ? Prisma.sql`LIMIT ${limit} OFFSET ${skip}`
+      : Prisma.sql`LIMIT 500`
+
+    const itemRows = await prisma.$queryRaw<
+      Array<{
+        invoice_id: string
+        invoice_number: string
+        reservation_id: string
+        reservation_no: string
+        customer_id: string
+        reservation_status: ReservationStatus
+        first_name: string
+        last_name: string | null
+        phone: string | null
+        email: string | null
+        stay_status: "IN_HOUSE" | "FUTURE" | "DEPARTED"
+        is_guest_in_house: boolean
+        issue_date: Date
+        grand_total: Prisma.Decimal
+        total_paid: Prisma.Decimal
+        balance_due: Prisma.Decimal
+        days_aging: number
+        aging_bucket: "0-7" | "8-30" | "31-60" | "60+"
+      }>
+    >`
+      WITH unpaid_inv AS (
+        SELECT 
+          i.id AS invoice_id,
+          i.invoice_number,
+          i.reservation_id,
+          i.created_at,
+          i.grand_total,
+          COALESCE(p.paid, 0) AS total_paid,
+          (i.grand_total - COALESCE(p.paid, 0)) AS balance_due,
+          CASE
+            WHEN in_house.reservation_id IS NOT NULL THEN 'IN_HOUSE'
+            WHEN confirmed.reservation_id IS NOT NULL THEN 'FUTURE'
+            ELSE 'DEPARTED'
+          END AS stay_status,
+          (CURRENT_DATE - i.created_at::date) AS days_aging
+        FROM invoices i
+        LEFT JOIN (
+          SELECT invoice_id, SUM(amount) AS paid 
+          FROM payments 
+          WHERE status = 'RECORDED' 
+          GROUP BY invoice_id
+        ) p ON p.invoice_id = i.id
+        LEFT JOIN (
+          SELECT DISTINCT reservation_id FROM reservation_rooms WHERE status = 'CHECKED_IN'
+        ) in_house ON in_house.reservation_id = i.reservation_id
+        LEFT JOIN (
+          SELECT DISTINCT reservation_id FROM reservation_rooms WHERE status = 'CONFIRMED'
+        ) confirmed ON confirmed.reservation_id = i.reservation_id
+        WHERE i.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+          AND (i.grand_total - COALESCE(p.paid, 0)) > 0
+          ${propertyFilterSql}
+      )
+      SELECT 
+        u.invoice_id,
+        u.invoice_number,
+        u.reservation_id,
+        r.reservation_no,
+        r.customer_id,
+        r.status AS reservation_status,
+        c.first_name,
+        c.last_name,
+        c.phone,
+        c.email,
+        u.stay_status,
+        (u.stay_status = 'IN_HOUSE') AS is_guest_in_house,
+        u.created_at AS issue_date,
+        u.grand_total,
+        u.total_paid,
+        u.balance_due,
+        u.days_aging,
+        CASE
+          WHEN u.days_aging <= 7 THEN '0-7'
+          WHEN u.days_aging <= 30 THEN '8-30'
+          WHEN u.days_aging <= 60 THEN '31-60'
+          ELSE '60+'
+        END AS aging_bucket
+      FROM unpaid_inv u
+      JOIN reservations r ON r.id = u.reservation_id
+      JOIN customers c ON c.id = r.customer_id
+      WHERE 1=1
+        ${stayStatusFilterSql}
+      ORDER BY u.created_at ASC
+      ${paginationSql};
+    `
+
+    // 3. Fetch room numbers for the returned items
+    const reservationIds = Array.from(new Set(itemRows.map((r) => r.reservation_id)))
+    const reservationRooms =
+      reservationIds.length > 0
+        ? await prisma.reservationRoom.findMany({
+            where: { reservationId: { in: reservationIds } },
+            select: { reservationId: true, room: { select: { roomNo: true } } },
+          })
+        : []
+
+    const roomMap = new Map<string, string[]>()
+    for (const rr of reservationRooms) {
+      const list = roomMap.get(rr.reservationId) || []
+      list.push(rr.room.roomNo)
+      roomMap.set(rr.reservationId, list)
+    }
+
+    const items: ReceivableItemDTO[] = itemRows.map((r) => ({
+      invoiceId: r.invoice_id,
+      invoiceNumber: r.invoice_number,
+      reservationId: r.reservation_id,
+      reservationNo: r.reservation_no,
+      customerId: r.customer_id,
+      guestName: `${r.first_name} ${r.last_name || ""}`.trim(),
+      guestPhone: r.phone || null,
+      guestEmail: r.email || null,
+      roomNumbers: roomMap.get(r.reservation_id) || [],
+      reservationStatus: r.reservation_status,
+      isGuestInHouse: r.is_guest_in_house,
+      guestStayStatus: r.stay_status,
+      issueDate:
+        r.issue_date instanceof Date
+          ? r.issue_date.toISOString().split("T")[0]!
+          : String(r.issue_date).split("T")[0]!,
+      grandTotal: Number(r.grand_total).toFixed(2),
+      totalPaid: Number(r.total_paid).toFixed(2),
+      balanceDue: Number(r.balance_due).toFixed(2),
+      daysAging: Number(r.days_aging),
+      agingBucket: r.aging_bucket,
+    }))
 
     return {
       asOfDate: todayStr,
-      totalReceivables: totalReceivablesDec.toFixed(2),
-      totalInvoices: items.length,
-      inHouseReceivables: inHouseReceivablesDec.toFixed(2),
-      inHouseCount,
-      futureReceivables: futureReceivablesDec.toFixed(2),
-      futureCount,
-      departedReceivables: departedReceivablesDec.toFixed(2),
-      departedCount,
+      totalReceivables: Number(sum.total_receivables).toFixed(2),
+      totalInvoices: sum.total_invoices,
+      inHouseReceivables: Number(sum.in_house_receivables).toFixed(2),
+      inHouseCount: sum.in_house_count,
+      futureReceivables: Number(sum.future_receivables).toFixed(2),
+      futureCount: sum.future_count,
+      departedReceivables: Number(sum.departed_receivables).toFixed(2),
+      departedCount: sum.departed_count,
       agingSummary: {
-        bucket0to7: b0to7.toFixed(2),
-        bucket8to30: b8to30.toFixed(2),
-        bucket31to60: b31to60.toFixed(2),
-        bucket60Plus: b60Plus.toFixed(2),
+        bucket0to7: Number(sum.bucket_0_to_7).toFixed(2),
+        bucket8to30: Number(sum.bucket_8_to_30).toFixed(2),
+        bucket31to60: Number(sum.bucket_31_to_60).toFixed(2),
+        bucket60Plus: Number(sum.bucket_60_plus).toFixed(2),
       },
       items,
+      ...(limit
+        ? {
+            pagination: {
+              page,
+              limit,
+              total: totalForFilter,
+              totalPages: Math.ceil(totalForFilter / limit) || 1,
+            },
+          }
+        : {}),
     }
   }
 

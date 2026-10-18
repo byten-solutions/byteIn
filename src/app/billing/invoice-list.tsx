@@ -46,54 +46,67 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
   const [data, setData] = React.useState<InvoiceListResponse>(initialData)
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string>("ALL")
+  const [currentPage, setCurrentPage] = React.useState(initialData.page || 1)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const prevFiltersRef = React.useRef({
     search,
     statusFilter,
+    currentPage,
   })
 
-  const fetchInvoices = React.useCallback(async (searchTerm = search, status = statusFilter) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const params = new URLSearchParams()
-      if (searchTerm.trim()) params.set("search", searchTerm.trim())
-      if (status !== "ALL") params.set("status", status)
+  const fetchInvoices = React.useCallback(
+    async (searchTerm = search, status = statusFilter, page = currentPage) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const params = new URLSearchParams()
+        if (searchTerm.trim()) params.set("search", searchTerm.trim())
+        if (status !== "ALL") params.set("status", status)
+        params.set("page", String(page))
+        params.set("limit", String(data.limit || 25))
 
-      const res = await fetch(`/api/invoices?${params.toString()}`)
-      const json = await res.json()
-      if (json.success) {
-        setData(json.data)
-      } else {
-        throw new Error(json.error || "Failed to fetch invoices")
+        const res = await fetch(`/api/invoices?${params.toString()}`)
+        const json = await res.json()
+        if (json.success) {
+          setData(json.data)
+        } else {
+          throw new Error(json.error || "Failed to fetch invoices")
+        }
+      } catch (err: unknown) {
+        console.error("Error fetching invoices:", err)
+        setError("Unable to load invoices. Please retry.")
+      } finally {
+        setLoading(false)
       }
-    } catch (err: unknown) {
-      console.error("Error fetching invoices:", err)
-      setError("Unable to load invoices. Please retry.")
-    } finally {
-      setLoading(false)
-    }
-  }, [search, statusFilter])
+    },
+    [search, statusFilter, currentPage, data.limit]
+  )
 
   React.useEffect(() => {
     const prev = prevFiltersRef.current
-    const hasChanged =
-      prev.search !== search ||
-      prev.statusFilter !== statusFilter
+    const filtersChanged =
+      prev.search !== search || prev.statusFilter !== statusFilter
+    const pageChanged = prev.currentPage !== currentPage
 
-    if (!hasChanged) {
+    if (!filtersChanged && !pageChanged) {
       return
     }
 
-    prevFiltersRef.current = { search, statusFilter }
+    if (filtersChanged && currentPage !== 1) {
+      prevFiltersRef.current = { search, statusFilter, currentPage: 1 }
+      setCurrentPage(1)
+      return
+    }
+
+    prevFiltersRef.current = { search, statusFilter, currentPage }
 
     const timer = setTimeout(() => {
-      fetchInvoices(search, statusFilter)
+      fetchInvoices(search, statusFilter, currentPage)
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [fetchInvoices, search, statusFilter])
+  }, [fetchInvoices, search, statusFilter, currentPage])
 
   const totalOutstandingNum = parseFloat(data.summary.totalOutstanding || "0")
 
@@ -181,6 +194,13 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
             description="Invoices appear once a reservation generates one."
           />
         }
+        pagination={{
+          page: data.page,
+          totalPages: data.totalPages,
+          totalCount: data.total,
+          limit: data.limit,
+          onPageChange: (p) => setCurrentPage(p),
+        }}
         mobileView={
           <MobileCardList
             items={data.invoices}

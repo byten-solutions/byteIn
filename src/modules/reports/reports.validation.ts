@@ -81,6 +81,7 @@ export const availabilityGridSchema = z
         message: "endDate must be a valid calendar date in YYYY-MM-DD format",
       }),
     propertyId: z.string().trim().min(1).optional(),
+    buildingId: z.string().trim().min(1).optional(),
   })
   .refine(
     (data) => {
@@ -135,4 +136,6 @@ export const collectionsReportSchema = z.object({
 export const receivablesReportSchema = z.object({
   propertyId: z.string().trim().min(1).optional(),
   filter: z.enum(["all", "in_house", "future", "departed"]).optional().default("all"),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
 })
