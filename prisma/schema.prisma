@@ -194,6 +194,7 @@ model RoomCategoryAmenity {
   amenity      Amenity      @relation(fields: [amenityId], references: [id], onDelete: Cascade)
 
   @@id([roomCategoryId, amenityId])
+  @@index([amenityId])
   @@map("room_category_amenities")
 }
 
@@ -222,6 +223,8 @@ model Room {
   @@index([propertyId])
   @@index([roomCategoryId])
   @@index([status])
+  @@index([floorId])
+  @@index([buildingId, status])
   @@map("rooms")
 }
 
@@ -247,6 +250,7 @@ model Customer {
 
   @@index([phone])
   @@index([email])
+  @@index([createdAt(sort: Desc)])
   @@map("customers")
 }
 
@@ -268,6 +272,8 @@ model Reservation {
   @@index([customerId])
   @@index([status])
   @@index([createdBy])
+  @@index([createdAt(sort: Desc)])
+  @@index([customerId, createdAt(sort: Desc)])
   @@map("reservations")
 }
 
@@ -299,6 +305,9 @@ model ReservationRoom {
   @@index([roomCategoryId])
   @@index([arrivalDate, departureDate])
   @@index([status])
+  @@index([departureDate])
+  @@index([status, departureDate])
+  @@index([status, arrivalDate])
   @@map("reservation_rooms")
 }
 
@@ -325,6 +334,8 @@ model Invoice {
 
   @@index([reservationId])
   @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
   @@map("invoices")
 }
 
@@ -370,6 +381,7 @@ model Payment {
   @@index([createdBy])
   @@index([voidedBy])
   @@index([voidedAt])
+  @@index([invoiceId, status])
   @@map("payments")
 }
 
