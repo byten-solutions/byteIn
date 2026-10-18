@@ -12,12 +12,15 @@ import { POST as changeRoomRoute } from "../src/app/api/room-allocations/[id]/ch
 import { POST as checkInRoute } from "../src/app/api/room-allocations/[id]/check-in/route";
 import { POST as checkOutRoute } from "../src/app/api/room-allocations/[id]/check-out/route";
 import { GET as receivablesReportRoute } from "../src/app/api/reports/receivables/route";
+import { POST as loginRoute } from "../src/app/api/auth/login/route";
+import { POST as recordPaymentRoute } from "../src/app/api/invoices/[id]/payments/route";
 import {
   ReservationStatus,
   AllocationStatus,
   RoomStatus,
   InvoiceStatus,
   PaymentStatus,
+  InvoiceItemType,
 } from "@prisma/client";
 
 describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", () => {
@@ -219,6 +222,26 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const alloc = reservation.rooms[0]!;
 
+    // Create another reservation that books the room before futureArrival so room is not free
+    await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-CONF-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: room.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: today,
+            departureDate: futureArrival,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CONFIRMED,
+          },
+        },
+      },
+    });
+
     const req = new NextRequest(
       `http://localhost/api/room-allocations/${alloc.id}/check-in`,
       {
@@ -234,10 +257,10 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     const res = await checkInRoute(req, { params: Promise.resolve({ id: alloc.id }) });
     const json = await res.json();
 
-    assert.equal(res.status, 400, "Early check-in before arrival date must be rejected with HTTP 400");
+    assert.equal(res.status, 400, "Early check-in before arrival date must be rejected with HTTP 400 when room is booked");
     assert.ok(
-      json.error.toLowerCase().includes("arrival"),
-      `Expected error to mention arrival date constraint, got: ${json.error}`
+      json.error.toLowerCase().includes("booked") || json.error.toLowerCase().includes("arrival"),
+      `Expected error to mention room is booked or arrival date constraint, got: ${json.error}`
     );
   });
 
@@ -894,4 +917,586 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     assert.ok(item, "No-show invoice with first night retained should be in receivables");
     assert.equal(item.balanceDue, "1000.00", "Receivables balance must reflect only retained first night ($1000.00)");
   });
+
+  // --------------------------------------------------------------------------
+  // 10. Room Change on CHECKED_IN Preserves Invoice Total (No Double-Billing)
+  // --------------------------------------------------------------------------
+  it("Room change on CHECKED_IN with same rate preserves invoice total (no double-charge of remaining nights)", async () => {
+    const roomA = await createCleanRoom("RMA");
+    const roomB = await createCleanRoom("RMB");
+    const today = getHotelTodayDateUtc();
+    const arr = today;
+    const dep = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000); // 3 nights @ $1000 = $3000
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-RMINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: roomA.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: arr,
+            departureDate: dep,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CONFIRMED,
+          },
+        },
+      },
+      include: { rooms: true },
+    });
+    const alloc = reservation.rooms[0];
+
+    // Auto-create invoice with 3 nights @ 1000 = $3000
+    const invoice = await prisma.invoice.create({
+      data: {
+        reservationId: reservation.id,
+        invoiceNumber: `INV-RMCHG-${Date.now()}`,
+        status: InvoiceStatus.ISSUED,
+        subtotal: 3000,
+        taxTotal: 0,
+        discountTotal: 0,
+        grandTotal: 3000,
+        items: {
+          create: {
+            reservationRoomId: alloc.id,
+            description: `Room ${roomA.roomNo} - 3 nights booked`,
+            quantity: 3,
+            unitPrice: 1000,
+            lineTotal: 3000,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        },
+      },
+      include: { items: true },
+    });
+
+    // Check in to Room A
+    const reqCheckIn = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-in`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    const resCheckIn = await checkInRoute(reqCheckIn, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resCheckIn.status, 200);
+
+    // Execute Room Change to Room B (same rate $1000)
+    const reqChange = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/change-room`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          newRoomId: roomB.id,
+          reason: "Guest requested quiet courtyard view",
+        }),
+      }
+    );
+    const resChange = await changeRoomRoute(reqChange, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resChange.status, 200);
+
+    // Verify invoice remains strictly $3000 (no duplicate room charges added for remaining nights)
+    const refreshedInvoice = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
+      include: { items: true },
+    });
+    assert.ok(refreshedInvoice);
+    assert.equal(
+      Number(refreshedInvoice.subtotal),
+      3000,
+      "Subtotal must remain $3000 without duplicate night charges"
+    );
+    assert.equal(
+      Number(refreshedInvoice.grandTotal),
+      3000,
+      "Grand total must remain $3000"
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // 11. Early-Checkout and No-Show Adjustments use ADJUSTMENT Item Type
+  // --------------------------------------------------------------------------
+  it("Early-checkout and no-show adjustments use InvoiceItemType.ADJUSTMENT (not DISCOUNT)", async () => {
+    const room = await createCleanRoom("ADJTYPE");
+    const today = getHotelTodayDateUtc();
+    const arr = today;
+    const dep = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000); // 3 nights @ $1000 = $3000
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-ADJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: room.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: arr,
+            departureDate: dep,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CONFIRMED,
+          },
+        },
+      },
+      include: { rooms: true },
+    });
+    const alloc = reservation.rooms[0];
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        reservationId: reservation.id,
+        invoiceNumber: `INV-ADJ-${Date.now()}`,
+        status: InvoiceStatus.ISSUED,
+        subtotal: 3000,
+        taxTotal: 0,
+        discountTotal: 0,
+        grandTotal: 3000,
+        items: {
+          create: {
+            reservationRoomId: alloc.id,
+            description: `Room ${room.roomNo} - 3 nights booked`,
+            quantity: 3,
+            unitPrice: 1000,
+            lineTotal: 3000,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        },
+      },
+    });
+
+    // Check in
+    const reqCheckIn = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-in`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    await checkInRoute(reqCheckIn, { params: Promise.resolve({ id: alloc.id }) });
+
+    // Early checkout today (credited 3 nights)
+    const reqCheckOut = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-out`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    const resCheckOut = await checkOutRoute(reqCheckOut, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resCheckOut.status, 200);
+
+    const refreshedInvoice = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
+      include: { items: true },
+    });
+    assert.ok(refreshedInvoice);
+
+    const adjItem = refreshedInvoice.items.find((i) => i.description.includes("Early Checkout"));
+    assert.ok(adjItem, "Early checkout adjustment line must exist");
+    assert.equal(
+      adjItem.itemType,
+      InvoiceItemType.ADJUSTMENT,
+      "Adjustment line item must have itemType = ADJUSTMENT (not DISCOUNT)"
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // 12. Cancel with Payments by ADMIN Retains Invoice & Payments as Credit
+  // --------------------------------------------------------------------------
+  it("Cancel with payments by ADMIN retains invoice and payments as credit balance under RETAIN_AS_CREDIT_BALANCE", async () => {
+    const room = await createCleanRoom("ADMCAN");
+    const today = getHotelTodayDateUtc();
+    const arr = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const dep = new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-ADMCAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: room.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: arr,
+            departureDate: dep,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CONFIRMED,
+          },
+        },
+      },
+      include: { rooms: true },
+    });
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        reservationId: reservation.id,
+        invoiceNumber: `INV-ADMCAN-${Date.now()}`,
+        status: InvoiceStatus.PARTIALLY_PAID,
+        subtotal: 3000,
+        taxTotal: 0,
+        discountTotal: 0,
+        grandTotal: 3000,
+        items: {
+          create: {
+            description: `Room charge 3 nights`,
+            quantity: 3,
+            unitPrice: 1000,
+            lineTotal: 3000,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        },
+        payments: {
+          create: {
+            amount: 1500,
+            paymentMethod: "CASH",
+            referenceNumber: "CASH-ADMCAN-01",
+            status: PaymentStatus.RECORDED,
+            createdBy: receptionistUserId,
+            paidAt: new Date(),
+          },
+        },
+      },
+      include: { payments: true },
+    });
+
+    // Admin cancels reservation
+    const reqCancel = new NextRequest(
+      `http://localhost/api/reservations/${reservation.id}/cancel`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${adminToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason: "Admin special cancellation" }),
+      }
+    );
+    const resCancel = await cancelReservationRoute(reqCancel, {
+      params: Promise.resolve({ id: reservation.id }),
+    });
+    assert.equal(resCancel.status, 200);
+
+    const refreshedRes = await prisma.reservation.findUnique({ where: { id: reservation.id } });
+    assert.equal(refreshedRes?.status, ReservationStatus.CANCELLED);
+
+    // Invoice remains PARTIALLY_PAID (not voided) and payment remains RECORDED as credit balance
+    const refreshedInv = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
+      include: { payments: true },
+    });
+    assert.ok(refreshedInv);
+    assert.equal(
+      refreshedInv.status,
+      InvoiceStatus.PARTIALLY_PAID,
+      "Invoice with recorded payments must retain its status when cancelled by admin"
+    );
+    assert.equal(
+      refreshedInv.payments[0]?.status,
+      PaymentStatus.RECORDED,
+      "Payment must remain RECORDED as guest credit balance"
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // 13. EARLY_CHECKIN_POLICY = 'ALLOW_WITH_ARRIVAL_UPDATE' Updates Date & Bills Extra Night
+  // --------------------------------------------------------------------------
+  it("EARLY_CHECKIN_POLICY = 'ALLOW_WITH_ARRIVAL_UPDATE': updates arrival date to today and bills extra night(s) on invoice", async () => {
+    const room = await createCleanRoom("EARLYALLOW");
+    const today = getHotelTodayDateUtc();
+    // Scheduled arrival is tomorrow (1 day in the future)
+    const scheduledArr = new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const scheduledDep = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000); // 3 nights @ $1000 = $3000
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-EARLYALLOW-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: room.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: scheduledArr,
+            departureDate: scheduledDep,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CONFIRMED,
+          },
+        },
+      },
+      include: { rooms: true },
+    });
+    const alloc = reservation.rooms[0];
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        reservationId: reservation.id,
+        invoiceNumber: `INV-EARLYALLOW-${Date.now()}`,
+        status: InvoiceStatus.ISSUED,
+        subtotal: 3000,
+        taxTotal: 0,
+        discountTotal: 0,
+        grandTotal: 3000,
+        items: {
+          create: {
+            reservationRoomId: alloc.id,
+            description: `Room ${room.roomNo} - 3 nights booked`,
+            quantity: 3,
+            unitPrice: 1000,
+            lineTotal: 3000,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        },
+      },
+    });
+
+    // Check in today (1 night early)
+    const reqCheckIn = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-in`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    const resCheckIn = await checkInRoute(reqCheckIn, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resCheckIn.status, 200, "Early check-in must succeed under ALLOW_WITH_ARRIVAL_UPDATE");
+
+    // Verify allocation arrivalDate updated to today
+    const refreshedAlloc = await prisma.reservationRoom.findUnique({ where: { id: alloc.id } });
+    assert.ok(refreshedAlloc);
+    assert.equal(refreshedAlloc.status, AllocationStatus.CHECKED_IN);
+    assert.equal(
+      refreshedAlloc.arrivalDate.toISOString().split("T")[0],
+      today.toISOString().split("T")[0],
+      "Arrival date must be updated to hotel today"
+    );
+
+    // Verify invoice has extra night billed ($1000 added, grandTotal = $4000)
+    const refreshedInv = await prisma.invoice.findUnique({
+      where: { id: invoice.id },
+      include: { items: true },
+    });
+    assert.ok(refreshedInv);
+    assert.equal(Number(refreshedInv.grandTotal), 4000, "Invoice grand total must reflect the extra night billed ($4000)");
+  });
+
+  // --------------------------------------------------------------------------
+  // 14. BACKDATED_CHECKOUT_POLICY = 'ADMIN_ONLY'
+  // --------------------------------------------------------------------------
+  it("BACKDATED_CHECKOUT_POLICY = 'ADMIN_ONLY': receptionist is rejected with 400, admin is permitted", async () => {
+    const room = await createCleanRoom("BKDATE");
+    const today = getHotelTodayDateUtc();
+    // Arrival is tomorrow
+    const futureArr = new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000);
+    const futureDep = new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000);
+
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-BKDATE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+        rooms: {
+          create: {
+            roomId: room.id,
+            roomCategoryId: testCategoryId,
+            arrivalDate: futureArr,
+            departureDate: futureDep,
+            bookedNightlyRate: 1000,
+            status: AllocationStatus.CHECKED_IN,
+            checkedInAt: today,
+          },
+        },
+      },
+      include: { rooms: true },
+    });
+    const alloc = reservation.rooms[0];
+    await prisma.room.update({ where: { id: room.id }, data: { status: RoomStatus.OCCUPIED } });
+
+    // Receptionist attempts backdated checkout (today < futureArr)
+    const reqRecep = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-out`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    const resRecep = await checkOutRoute(reqRecep, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resRecep.status, 400, "Receptionist must be rejected for backdated checkout");
+    const jsonRecep = await resRecep.json();
+    assert.ok(jsonRecep.error?.includes("Administrator"), "Must explain Administrator privileges required");
+
+    // Admin attempts backdated checkout (permitted under ADMIN_ONLY)
+    const reqAdmin = new NextRequest(
+      `http://localhost/api/room-allocations/${alloc.id}/check-out`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${adminToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ allocationId: alloc.id }),
+      }
+    );
+    const resAdmin = await checkOutRoute(reqAdmin, {
+      params: Promise.resolve({ id: alloc.id }),
+    });
+    assert.equal(resAdmin.status, 200, "Admin must be permitted to record backdated checkout");
+  });
+
+  // --------------------------------------------------------------------------
+  // 15. Login Rate Limiter Loopback / Untrusted Proxy Partitioning
+  // --------------------------------------------------------------------------
+  it("Login rate limiter partitions loopback/untrusted IP by account so one user cannot lock out all staff", async () => {
+    // Attempt 10 bad logins for userA@byteinn.test
+    for (let i = 0; i < 10; i++) {
+      const req = new NextRequest("http://localhost/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "usera@byteinn.test", password: "wrong-password" }),
+      });
+      await loginRoute(req);
+    }
+
+    // 11th attempt for userA@byteinn.test returns 429
+    const req11 = new NextRequest("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "usera@byteinn.test", password: "wrong-password" }),
+    });
+    const res11 = await loginRoute(req11);
+    assert.equal(res11.status, 429, "Target user must be throttled after 10 attempts");
+
+    // Request for userB@byteinn.test from the same IP is NOT blocked by rate limiter (returns 401, not 429)
+    const reqUserB = new NextRequest("http://localhost/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "userb@byteinn.test", password: "wrong-password" }),
+    });
+    const resUserB = await loginRoute(reqUserB);
+    assert.equal(
+      resUserB.status,
+      401,
+      "Different user from the same IP must NOT be locked out on loopback/shared network"
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // 16. REQUIRE_PAYMENT_IDEMPOTENCY_KEY = true Enforcement
+  // --------------------------------------------------------------------------
+  it("REQUIRE_PAYMENT_IDEMPOTENCY_KEY = true: payment submission without Idempotency-Key is rejected with 400", async () => {
+    const reservation = await prisma.reservation.create({
+      data: {
+        reservationNo: `RES-IDEMP-${Date.now()}`,
+        customerId: testCustomerId,
+        createdBy: receptionistUserId,
+        status: ReservationStatus.CONFIRMED,
+      },
+    });
+
+    const invoice = await prisma.invoice.create({
+      data: {
+        reservationId: reservation.id,
+        invoiceNumber: `INV-IDEMP-${Date.now()}`,
+        status: InvoiceStatus.ISSUED,
+        subtotal: 1000,
+        taxTotal: 0,
+        discountTotal: 0,
+        grandTotal: 1000,
+        items: {
+          create: {
+            description: "Room charge",
+            quantity: 1,
+            unitPrice: 1000,
+            lineTotal: 1000,
+            itemType: InvoiceItemType.ROOM_CHARGE,
+          },
+        },
+      },
+    });
+
+    // Payment without idempotency key
+    const reqWithoutKey = new NextRequest(
+      `http://localhost/api/invoices/${invoice.id}/payments`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: 500,
+          paymentMethod: "CASH",
+        }),
+      }
+    );
+    const resWithoutKey = await recordPaymentRoute(reqWithoutKey, {
+      params: Promise.resolve({ id: invoice.id }),
+    });
+    assert.equal(resWithoutKey.status, 400, "Missing Idempotency-Key must be rejected with 400");
+    const jsonWithoutKey = await resWithoutKey.json();
+    assert.ok(jsonWithoutKey.error?.includes("Idempotency-Key"), "Error must mention missing Idempotency-Key");
+
+    // Payment with idempotency key succeeds
+    const reqWithKey = new NextRequest(
+      `http://localhost/api/invoices/${invoice.id}/payments`,
+      {
+        method: "POST",
+        headers: {
+          cookie: `byteinn_session=${receptionistToken}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": `IDEMP-TEST-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          amount: 500,
+          paymentMethod: "CASH",
+        }),
+      }
+    );
+    const resWithKey = await recordPaymentRoute(reqWithKey, {
+      params: Promise.resolve({ id: invoice.id }),
+    });
+    assert.equal(resWithKey.status, 201, "Payment with Idempotency-Key must succeed with 201");
+  });
 });
+

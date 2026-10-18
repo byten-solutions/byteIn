@@ -9,6 +9,9 @@ export default async function CategoriesPage() {
   if (!session) {
     redirect("/login");
   }
+  if (session.mustChangePassword) {
+    redirect("/change-password");
+  }
 
   const [categories, amenities] = await Promise.all([
     RoomCategoryService.getCategories(),

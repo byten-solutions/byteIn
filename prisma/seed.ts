@@ -83,14 +83,20 @@ async function main() {
     "RES-20261011-D228",
     "RES-20261011-253D",
   ];
+  const CANONICAL_INVOICE_NUMBERS = [
+    "INV-20261011-B139",
+    "INV-20261011-6472",
+    "INV-20261011-5FDC",
+    "INV-20261011-D228",
+  ];
   await prisma.payment.deleteMany({
-    where: { invoice: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } } },
+    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
   });
   await prisma.invoiceItem.deleteMany({
-    where: { invoice: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } } },
+    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
   });
   await prisma.invoice.deleteMany({
-    where: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } },
+    where: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } },
   });
   await prisma.reservationRoom.deleteMany({
     where: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } },
@@ -145,27 +151,27 @@ async function main() {
 
   const adminUser = await prisma.user.upsert({
     where: { email: "admin@byteinn.local" },
-    update: {}, // preserve existing passwords and mustChangePassword flag
+    update: { mustChangePassword: false }, // keep dev admin unlocked
     create: {
       name: "System Administrator",
       email: "admin@byteinn.local",
       passwordHash: adminPasswordHash,
       roleId: adminRole.id,
       status: "ACTIVE",
-      mustChangePassword: true,
+      mustChangePassword: false,
     },
   });
 
   const receptionistUser = await prisma.user.upsert({
     where: { email: "reception@byteinn.local" },
-    update: {}, // preserve existing passwords and mustChangePassword flag
+    update: { mustChangePassword: false },
     create: {
       name: "Front Desk Staff",
       email: "reception@byteinn.local",
       passwordHash: receptionistPasswordHash,
       roleId: receptionistRole.id,
       status: "ACTIVE",
-      mustChangePassword: true,
+      mustChangePassword: false,
     },
   });
 
@@ -403,7 +409,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor1Main.id,
       roomNo: "101",
-      displayName: "Room 101 (Standard)",
+      displayName: "Room 101 — Ground Floor Courtyard Heritage Standard Single with Garden Fountain View",
       categoryName: "Standard Single",
       capacity: 1,
       status: RoomStatus.VACANT_CLEAN,
@@ -414,7 +420,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor1Main.id,
       roomNo: "102",
-      displayName: "Room 102 (Standard)",
+      displayName: "Room 102 — Ground Floor Courtyard Heritage Standard Single with Teak Writing Desk",
       categoryName: "Standard Single",
       capacity: 1,
       status: RoomStatus.VACANT_DIRTY,
@@ -425,7 +431,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor1Main.id,
       roomNo: "103",
-      displayName: "Room 103 (Deluxe)",
+      displayName: "Room 103 — Ground Floor Lakeview Deluxe Double Suite with Private Balcony and Workspace",
       categoryName: "Deluxe Double",
       capacity: 2,
       status: RoomStatus.VACANT_DIRTY,
@@ -436,7 +442,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor2Main.id,
       roomNo: "201",
-      displayName: "Room 201 (Deluxe)",
+      displayName: "Room 201 — Second Floor High-Ceiling Deluxe Double Suite with Private Veranda",
       categoryName: "Deluxe Double",
       capacity: 2,
       status: RoomStatus.MAINTENANCE,
@@ -447,7 +453,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor2Main.id,
       roomNo: "202",
-      displayName: "Room 202 (Suite)",
+      displayName: "Room 202 — Executive Panoramic Suite with Private Lounge and Dedicated Meeting Alcove",
       categoryName: "Executive Suite",
       capacity: 4,
       status: RoomStatus.VACANT_DIRTY,
@@ -458,7 +464,7 @@ async function main() {
       buildingId: mainWing.id,
       floorId: floor2Main.id,
       roomNo: "203",
-      displayName: "Room 203 (Suite)",
+      displayName: "Room 203 — The Grand Maharaja Diplomatic Presidential Enclave with Panoramic Terrace",
       categoryName: "Executive Suite",
       capacity: 4,
       status: RoomStatus.OUT_OF_SERVICE,
@@ -470,7 +476,7 @@ async function main() {
       buildingId: westWing.id,
       floorId: floor1West.id,
       roomNo: "101",
-      displayName: "Room 101 (Deluxe Suite)",
+      displayName: "Room 101 — West Wing Ground Floor Deluxe Suite with Garden View & Teak Veranda",
       categoryName: "Deluxe Suite",
       capacity: 2,
       status: RoomStatus.VACANT_DIRTY,
@@ -481,7 +487,7 @@ async function main() {
       buildingId: westWing.id,
       floorId: floor1West.id,
       roomNo: "102",
-      displayName: "Room 102 (Deluxe Suite)",
+      displayName: "Room 102 — West Wing Ground Floor Deluxe Suite with Workstation & Minibar",
       categoryName: "Deluxe Suite",
       capacity: 2,
       status: RoomStatus.VACANT_CLEAN,
@@ -492,7 +498,7 @@ async function main() {
       buildingId: westWing.id,
       floorId: floor1West.id,
       roomNo: "103",
-      displayName: "Room 103 (Deluxe Suite)",
+      displayName: "Room 103 — West Wing Ground Floor Deluxe Suite with Quiet Garden Orientation",
       categoryName: "Deluxe Suite",
       capacity: 2,
       status: RoomStatus.MAINTENANCE,
@@ -503,7 +509,7 @@ async function main() {
       buildingId: westWing.id,
       floorId: floor1West.id,
       roomNo: "104",
-      displayName: "Room 104 (Deluxe Suite)",
+      displayName: "Room 104 — West Wing Premier Presidential Suite with High Ceilings and Private Terrace",
       categoryName: "Deluxe Suite",
       capacity: 2,
       status: RoomStatus.VACANT_DIRTY,

@@ -8,4 +8,4 @@
  * ADV-BIL-04 policy constant.
  * Default: false (optional, backward-compatible).
  */
-export const REQUIRE_PAYMENT_IDEMPOTENCY_KEY = false;
+export const REQUIRE_PAYMENT_IDEMPOTENCY_KEY = true;

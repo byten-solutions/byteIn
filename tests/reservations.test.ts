@@ -769,7 +769,7 @@ describe("Phase 4: Reservations & Availability Tests", () => {
     });
 
     it("should fetch single reservation by ID with full allocations", async () => {
-      const list = await ReservationService.getReservations({ limit: 1 });
+      const list = await ReservationService.getReservations({ search: "Jane", limit: 1 });
       const targetId = list.reservations[0].id;
 
       const detail = await ReservationService.getReservationById(targetId);

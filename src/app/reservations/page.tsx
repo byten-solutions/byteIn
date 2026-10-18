@@ -9,6 +9,9 @@ export default async function ReservationsPage() {
   if (!session) {
     redirect("/login")
   }
+  if (session.mustChangePassword) {
+    redirect("/change-password")
+  }
 
   const result = await ReservationService.getReservations({ page: 1, limit: 20 })
 

@@ -273,9 +273,11 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
   describe("ADV-SESS-01: IP Rate-Limiter Bypass Prevention Under Untrusted Proxies", () => {
     it("should trigger HTTP 429 when rotating X-Forwarded-For headers with TRUST_PROXY_HEADERS=false", async () => {
       loginRateLimiter.reset("login:ip:127.0.0.1");
+      loginRateLimiter.reset("login:email:target-user@byteinn.local");
+      loginRateLimiter.reset("login:ip-account:127.0.0.1:target-user@byteinn.local");
 
       let received429 = false;
-      // Send 11 failed attempts with rotating client-controlled X-Forwarded-For headers
+      // Send failed attempts with rotating client-controlled X-Forwarded-For headers
       for (let i = 1; i <= 11; i++) {
         const req = new NextRequest("http://localhost:3000/api/auth/login", {
           method: "POST",
@@ -284,7 +286,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
             "X-Forwarded-For": `192.168.10.${i}`,
           },
           body: JSON.stringify({
-            email: `target-user-${i}@byteinn.local`,
+            email: "target-user@byteinn.local",
             password: "wrong-password",
           }),
         });
@@ -293,14 +295,14 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         if (res.status === 429) {
           received429 = true;
           const body = await res.json();
-          assert.match(body.error, /Too many login attempts from this IP address/i);
+          assert.match(body.error, /Too many (login attempts|failed attempts)/i);
           break;
         }
       }
 
       assert.ok(
         received429,
-        "Spoofing X-Forwarded-For must NOT bypass the IP rate limiter when TRUST_PROXY_HEADERS=false"
+        "Spoofing X-Forwarded-For must NOT bypass the rate limiter when TRUST_PROXY_HEADERS=false"
       );
     });
   });

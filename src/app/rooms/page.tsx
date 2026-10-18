@@ -20,6 +20,9 @@ export default async function RoomsPage(props: {
   if (!session) {
     redirect("/login");
   }
+  if (session.mustChangePassword) {
+    redirect("/change-password");
+  }
 
   const searchParams = props.searchParams ? await props.searchParams : undefined;
   const rawStatus = searchParams?.status;

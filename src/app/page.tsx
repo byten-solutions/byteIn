@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import Link from "next/link"
 import {
   BedDouble,
@@ -23,6 +24,9 @@ import {
 
 export default async function Page() {
   const session = await getSession()
+  if (session?.mustChangePassword) {
+    redirect("/change-password")
+  }
 
   let counts = {
     total: 0,
@@ -212,11 +216,11 @@ export default async function Page() {
                         className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                       >
                         <div className="space-y-1 min-w-0 pr-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono tabular-nums font-bold text-foreground text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]" title={`Room ${alloc.room.roomNo}`}>
                               Room {alloc.room.roomNo}
                             </span>
-                            <span className="text-muted-foreground truncate text-[11px]">
+                            <span className="text-muted-foreground truncate text-[11px] min-w-0" title={alloc.roomCategory.name}>
                               • {alloc.roomCategory.name}
                             </span>
                           </div>
@@ -272,11 +276,11 @@ export default async function Page() {
                         className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                       >
                         <div className="space-y-1 min-w-0 pr-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono tabular-nums font-bold text-foreground text-sm">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]" title={`Room ${alloc.room.roomNo}`}>
                               Room {alloc.room.roomNo}
                             </span>
-                            <span className="text-muted-foreground truncate text-[11px]">
+                            <span className="text-muted-foreground truncate text-[11px] min-w-0" title={alloc.roomCategory.name}>
                               • {alloc.roomCategory.name}
                             </span>
                           </div>

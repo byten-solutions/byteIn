@@ -38,10 +38,10 @@ export const NO_SHOW_BILLING_POLICY: "RETAIN_FIRST_NIGHT" | "CHARGE_FULL" | "WAI
 
 /**
  * Policy governing check-in attempts occurring before the scheduled arrival date:
+ * - "ALLOW_WITH_ARRIVAL_UPDATE": Updates arrivalDate to today if room is free and bills extra night(s).
  * - "BLOCK": Strictly rejects check-in if hotel today is before arrivalDate.
- * - "ALLOW_WITH_ARRIVAL_UPDATE": Updates arrivalDate to today if room is available.
  */
-export const EARLY_CHECKIN_POLICY: "BLOCK" | "ALLOW_WITH_ARRIVAL_UPDATE" = "BLOCK";
+export const EARLY_CHECKIN_POLICY: "ALLOW_WITH_ARRIVAL_UPDATE" | "BLOCK" = "ALLOW_WITH_ARRIVAL_UPDATE";
 
 /**
  * Policy governing when an allocation can be marked NO_SHOW:
@@ -59,9 +59,16 @@ export const NO_SHOW_MIN_DATE_POLICY: "ON_OR_AFTER_ARRIVAL" | "ANYTIME" = "ON_OR
 export const CANCEL_WITH_PAYMENTS_POLICY: "REQUIRE_VOID_OR_ADMIN" | "ADMIN_ONLY" | "BLOCK" = "REQUIRE_VOID_OR_ADMIN";
 
 /**
- * Policy governing backdated checkout requests:
- * - "DISALLOW": Rejects checkout if effective checkout date is before arrivalDate.
- * - "ADMIN_ONLY": Requires ADMIN role to record backdated checkout.
+ * Policy governing invoice and payment state when an ADMIN cancels a reservation with recorded payments:
+ * - "RETAIN_AS_CREDIT_BALANCE": Keeps invoice in PARTIALLY_PAID/PAID status and retains recorded payments as guest credit/unrefunded balance.
+ * - "VOID_INVOICE_AND_PAYMENTS": Atomically marks the invoice as VOID and transitions all recorded payments to VOIDED.
  */
-export const BACKDATED_CHECKOUT_POLICY: "DISALLOW" | "ADMIN_ONLY" = "DISALLOW";
+export const ADMIN_CANCEL_WITH_PAYMENTS_INVOICE_STATE: "RETAIN_AS_CREDIT_BALANCE" | "VOID_INVOICE_AND_PAYMENTS" = "RETAIN_AS_CREDIT_BALANCE";
+
+/**
+ * Policy governing backdated checkout requests (checkout date preceding arrivalDate):
+ * - "ADMIN_ONLY": Requires ADMIN role to record backdated checkout.
+ * - "DISALLOW": Rejects checkout if effective checkout date is before arrivalDate.
+ */
+export const BACKDATED_CHECKOUT_POLICY: "ADMIN_ONLY" | "DISALLOW" = "ADMIN_ONLY";
 

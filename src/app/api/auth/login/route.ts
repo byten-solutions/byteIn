@@ -31,7 +31,10 @@ export async function POST(req: NextRequest) {
   }
 
   const email = typeof body.email === "string" ? body.email.toLowerCase().trim() : "";
-  const ipRateKey = `login:ip:${ip}`;
+  const isLoopbackOrUntrusted = !TRUST_PROXY_HEADERS || ip === "127.0.0.1";
+  const ipRateKey = isLoopbackOrUntrusted && email
+    ? `login:ip-account:${ip}:${email}`
+    : `login:ip:${ip}`;
   const accountRateKey = email ? `login:email:${email}` : null;
 
   // 1. Check IP rate limit (max 10 attempts per minute)

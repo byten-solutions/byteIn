@@ -194,11 +194,11 @@ export function AllocationActionRow({
       {/* Main row */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="space-y-1 min-w-0">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-mono font-bold text-base text-foreground">
+          <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+            <span className="font-mono font-bold text-base text-foreground break-all" title={`Room ${allocation.roomNo}`}>
               Room {allocation.roomNo}
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground break-words" title={allocation.categoryName}>
               • {allocation.categoryName}
             </span>
             <StatusBadge status={allocation.status} size="sm" />

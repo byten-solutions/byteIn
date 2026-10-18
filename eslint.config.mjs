@@ -39,7 +39,7 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    files: ["prisma/seed.ts", "scripts/**/*.ts"],
+    files: ["prisma/seed*.ts", "scripts/**/*.{ts,js,mjs}"],
     rules: {
       "no-console": "off",
     },

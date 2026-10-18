@@ -9,6 +9,9 @@ export default async function BillingPage() {
   if (!session) {
     redirect("/login")
   }
+  if (session.mustChangePassword) {
+    redirect("/change-password")
+  }
 
   const initialData = await BillingService.getInvoices({ page: 1, limit: 25 })
 

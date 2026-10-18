@@ -54,6 +54,7 @@ enum InvoiceItemType {
   EXTRA_CHARGE
   DISCOUNT
   TAX
+  ADJUSTMENT
 }
 
 enum PaymentStatus {
