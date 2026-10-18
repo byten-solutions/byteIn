@@ -23,6 +23,7 @@ export interface CheckInResult {
   checkedInAt: Date;
   reservationId: string;
   reservationStatus: ReservationStatus;
+  propertyId?: string;
 }
 
 export interface CheckOutResult {
@@ -34,4 +35,5 @@ export interface CheckOutResult {
   checkedOutAt: Date;
   reservationId: string;
   reservationStatus: ReservationStatus;
+  propertyId?: string;
 }

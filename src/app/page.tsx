@@ -14,9 +14,9 @@ import {
   Sparkles,
   ArrowUpRight,
 } from "lucide-react"
-import { RoomStatus, ReservationStatus, RoleName, PaymentStatus } from "@prisma/client"
+import { RoleName } from "@prisma/client"
 import { getSession } from "@/lib/auth-guard"
-import { prisma } from "@/lib/prisma"
+import { DashboardService } from "@/modules/dashboard/dashboard.service"
 import { CheckInOutService } from "@/modules/check-in-out/check-in-out.service"
 import { getHotelTodayDateUtc } from "@/lib/date"
 import { AppShell } from "@/components/app-shell"
@@ -36,39 +36,14 @@ export default async function Page() {
 
   // If Super Admin: Render Platform Overview Dashboard
   if (session?.role === RoleName.SUPER_ADMIN) {
-    const [properties, totalUsers, totalConfirmedRes, totalPayments] = await Promise.all([
-      prisma.property.findMany({
-        include: {
-          _count: {
-            select: {
-              rooms: true,
-              users: true,
-              buildings: true,
-            },
-          },
-          rooms: {
-            select: {
-              status: true,
-            },
-          },
-        },
-        orderBy: { name: "asc" },
-      }),
-      prisma.user.count({
-        where: { status: "ACTIVE" },
-      }),
-      prisma.reservation.count({
-        where: { status: ReservationStatus.CONFIRMED },
-      }),
-      prisma.payment.aggregate({
-        _sum: { amount: true },
-        where: { status: PaymentStatus.RECORDED },
-      }),
-    ])
-
-    const totalRooms = properties.reduce((acc, p) => acc + p._count.rooms, 0)
-    const activeHotels = properties.filter((p) => p.status === "ACTIVE").length
-    const totalRevenue = totalPayments._sum.amount ? Number(totalPayments._sum.amount) : 0
+    const {
+      properties,
+      totalRooms,
+      activeHotels,
+      totalUsers,
+      totalConfirmedRes,
+      totalRevenue,
+    } = await DashboardService.getPlatformStats()
 
     return (
       <AppShell session={session}>
@@ -178,8 +153,8 @@ export default async function Page() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {properties.map((prop) => {
-                    const cleanRooms = prop.rooms.filter((r) => r.status === RoomStatus.VACANT_CLEAN).length
-                    const occupiedRooms = prop.rooms.filter((r) => r.status === RoomStatus.OCCUPIED).length
+                    const cleanRooms = prop.cleanRooms
+                    const occupiedRooms = prop.occupiedRooms
 
                     return (
                       <div
@@ -270,69 +245,17 @@ export default async function Page() {
     )
   }
 
-  // If Admin or Receptionist (Scoped to Hotel Property)
-  let counts = {
-    total: 0,
-    clean: 0,
-    dirty: 0,
-    occupied: 0,
-    maintenance: 0,
-    outOfService: 0,
-    confirmedReservations: 0,
-  }
-
-  if (session) {
-    const propertyId = session.propertyId || undefined
-
-    const [roomGroups, confirmedRes] = await Promise.all([
-      prisma.room.groupBy({
-        by: ["status"],
-        where: propertyId ? { propertyId } : undefined,
-        _count: { _all: true },
-      }),
-      prisma.reservation.count({
-        where: {
-          status: ReservationStatus.CONFIRMED,
-          ...(propertyId
-            ? {
-                roomAllocations: {
-                  some: {
-                    room: { propertyId },
-                  },
-                },
-              }
-            : {}),
-        },
-      }),
-    ])
-
-    let clean = 0
-    let dirty = 0
-    let occupied = 0
-    let maintenance = 0
-    let outOfService = 0
-    let total = 0
-
-    for (const group of roomGroups) {
-      const c = group._count._all
-      total += c
-      if (group.status === RoomStatus.VACANT_CLEAN) clean = c
-      else if (group.status === RoomStatus.VACANT_DIRTY) dirty = c
-      else if (group.status === RoomStatus.OCCUPIED) occupied = c
-      else if (group.status === RoomStatus.MAINTENANCE) maintenance = c
-      else if (group.status === RoomStatus.OUT_OF_SERVICE) outOfService = c
-    }
-
-    counts = {
-      total,
-      clean,
-      dirty,
-      occupied,
-      maintenance,
-      outOfService,
-      confirmedReservations: confirmedRes,
-    }
-  }
+  const counts = session
+    ? await DashboardService.getHotelStats(session.propertyId || undefined)
+    : {
+        total: 0,
+        clean: 0,
+        dirty: 0,
+        occupied: 0,
+        maintenance: 0,
+        outOfService: 0,
+        confirmedReservations: 0,
+      }
 
   const hotelName = session?.property?.name || "Hotel"
 

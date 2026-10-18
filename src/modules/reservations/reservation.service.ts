@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { unstable_cache, revalidateTag } from "next/cache";
 import {
   Prisma,
   RoomStatus,
@@ -11,6 +10,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BillingService } from "../billing/billing.service";
+import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import {
   BadRequestError,
   ConflictError,
@@ -53,28 +53,15 @@ export class ReservationService {
   /**
    * Invalidation helper for reservation counts.
    */
-  public static invalidateReservationCache(): void {
-    try {
-      revalidateTag("reservation-count", "max");
-    } catch {
-      // Ignore outside Next.js request context (e.g. tests or worker tasks)
-    }
+  public static invalidateReservationCache(propertyId?: string | null): void {
+    invalidateScoped("reservation-count", propertyId);
   }
 
   /**
-   * Cached count for unfiltered reservation list queries.
+   * Cached count for unfiltered reservation list queries (platform-wide, SUPER_ADMIN only).
    */
   public static async getUnfilteredReservationCount(): Promise<number> {
-    const fetchCount = () => prisma.reservation.count();
-    try {
-      const cached = unstable_cache(fetchCount, ["reservation-unfiltered-count"], {
-        tags: ["reservation-count"],
-        revalidate: 60,
-      });
-      return await cached();
-    } catch {
-      return fetchCount();
-    }
+    return scopedCached("reservation-count", null, 60, () => prisma.reservation.count());
   }
 
   /**
@@ -545,8 +532,8 @@ export class ReservationService {
           timeout: 15000,
         }
       );
-      this.invalidateReservationCache();
-      BillingService.invalidateBillingCache();
+      this.invalidateReservationCache(result.propertyId);
+      BillingService.invalidateBillingCache(result.propertyId);
       return result;
     } catch (error: unknown) {
       // Catch PostgreSQL Exclusion Constraint violation (code 23P01)
@@ -573,7 +560,7 @@ export class ReservationService {
     const where: Prisma.ReservationWhereInput = {};
 
     if (propertyId) {
-      where.rooms = { some: { room: { propertyId } } };
+      where.propertyId = propertyId;
     }
 
     if (status) {
@@ -595,13 +582,13 @@ export class ReservationService {
             ...(propertyId
               ? {
                   reservations: {
-                    some: { rooms: { some: { room: { propertyId } } } },
+                    some: { propertyId },
                   },
                 }
               : {}),
           },
           select: { id: true },
-          take: 500,
+          take: 2000,
         });
 
         const customerIds = matchingCustomers.map((c) => c.id);
@@ -613,7 +600,11 @@ export class ReservationService {
       }
     }
 
-    const hasFilter = Boolean(status || (search && search.trim() !== "") || propertyId);
+    const isUnfiltered = !status && !(search && search.trim());
+    const totalPromise =
+      isUnfiltered && !propertyId
+        ? ReservationService.getUnfilteredReservationCount()
+        : prisma.reservation.count({ where });
 
     const [reservations, total] = await Promise.all([
       prisma.reservation.findMany({
@@ -644,7 +635,7 @@ export class ReservationService {
           },
         },
       }),
-      hasFilter ? prisma.reservation.count({ where }) : this.getUnfilteredReservationCount(),
+      totalPromise,
     ]);
 
     return {
@@ -696,13 +687,8 @@ export class ReservationService {
       throw new NotFoundError("Reservation not found");
     }
 
-    if (propertyId) {
-      const belongsToProperty = reservation.rooms.some(
-        (r) => r.room.propertyId === propertyId
-      );
-      if (!belongsToProperty) {
-        throw new NotFoundError("Reservation not found");
-      }
+    if (propertyId && reservation.propertyId !== propertyId) {
+      throw new NotFoundError("Reservation not found");
     }
 
     return {
@@ -870,8 +856,8 @@ export class ReservationService {
 
       return updatedRes;
     });
-    this.invalidateReservationCache();
-    BillingService.invalidateBillingCache();
+    this.invalidateReservationCache(result.propertyId);
+    BillingService.invalidateBillingCache(result.propertyId);
     return result;
   }
 
@@ -952,8 +938,8 @@ export class ReservationService {
 
       return updatedAlloc;
     });
-    this.invalidateReservationCache();
-    BillingService.invalidateBillingCache();
+    this.invalidateReservationCache(allocation.reservation.propertyId);
+    BillingService.invalidateBillingCache(allocation.reservation.propertyId);
     return result;
   }
 
@@ -1131,7 +1117,8 @@ export class ReservationService {
 
       return updatedAlloc;
     });
-    BillingService.invalidateBillingCache();
+    this.invalidateReservationCache(allocation.reservation.propertyId);
+    BillingService.invalidateBillingCache(allocation.reservation.propertyId);
     return result;
   }
 
@@ -1147,7 +1134,7 @@ export class ReservationService {
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
-      include: { room: true },
+      include: { room: true, reservation: true },
     });
 
     if (!allocation) {
@@ -1285,7 +1272,8 @@ export class ReservationService {
 
       return updatedAlloc;
     });
-    BillingService.invalidateBillingCache();
+    this.invalidateReservationCache(allocation.reservation.propertyId);
+    BillingService.invalidateBillingCache(allocation.reservation.propertyId);
     return result;
   }
 
@@ -1301,12 +1289,14 @@ export class ReservationService {
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
-      include: { room: true },
+      include: { room: true, reservation: true },
     });
 
     if (!allocation) {
       throw new NotFoundError("Room allocation not found");
     }
+
+    const reservationPropertyId = allocation.reservation.propertyId;
 
     if (propertyId && allocation.room.propertyId !== propertyId) {
       throw new NotFoundError("Room allocation not found");
@@ -1338,7 +1328,7 @@ export class ReservationService {
       );
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Determine the date window that must be checked for target room availability
       const checkStart =
         allocation.status === AllocationStatus.CHECKED_IN
@@ -1476,6 +1466,9 @@ export class ReservationService {
 
       return resultAllocation;
     });
+    this.invalidateReservationCache(reservationPropertyId);
+    BillingService.invalidateBillingCache(reservationPropertyId);
+    return result;
   }
 }
 

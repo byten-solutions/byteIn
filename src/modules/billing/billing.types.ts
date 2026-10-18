@@ -67,6 +67,7 @@ export interface PaymentDTO {
 
 export interface InvoiceDetailDTO {
   id: string;
+  propertyId: string;
   invoiceNumber: string;
   reservationId: string;
   reservationNo: string;

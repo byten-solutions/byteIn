@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { unstable_cache, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import {
   InvoiceStatus,
   InvoiceItemType,
@@ -56,14 +56,11 @@ export class BillingService {
   /**
    * Invalidation helper for billing summary and invoice counts.
    */
-  public static invalidateBillingCache(): void {
-    try {
-      revalidateTag("billing-summary", "max");
-      revalidateTag("invoice-count", "max");
-      revalidateTag("daily-operations", "max");
-    } catch {
-      // Ignore outside Next.js request context (e.g. tests or worker tasks)
-    }
+  public static invalidateBillingCache(propertyId?: string | null): void {
+    invalidateScoped("billing-summary", propertyId);
+    invalidateScoped("invoice-count", propertyId);
+    invalidateScoped("daily-operations", propertyId);
+    invalidateScoped("receivables-summary", propertyId);
   }
 
   /**
@@ -75,40 +72,17 @@ export class BillingService {
     totalCollected: string;
     totalOutstanding: string;
   }> {
-    const fetchSummary = async () => {
-      let rows: Array<{ totalInvoiced: string | null; totalCollected: string | null }>;
-      if (propertyId) {
-        rows = await prisma.$queryRaw<
-          Array<{ totalInvoiced: string | null; totalCollected: string | null }>
-        >`
-          SELECT
-            COALESCE((
-              SELECT SUM(inv.grand_total)
-              FROM invoices inv
-              JOIN reservations r ON inv.reservation_id = r.id
-              JOIN reservation_rooms rr ON rr.reservation_id = r.id
-              JOIN rooms rm ON rr.room_id = rm.id
-              WHERE inv.status != 'VOID' AND rm.property_id = ${propertyId}
-            ), 0)::text AS "totalInvoiced",
-            COALESCE((
-              SELECT SUM(p.amount)
-              FROM payments p
-              JOIN invoices inv ON p.invoice_id = inv.id
-              JOIN reservations r ON inv.reservation_id = r.id
-              JOIN reservation_rooms rr ON rr.reservation_id = r.id
-              JOIN rooms rm ON rr.room_id = rm.id
-              WHERE p.status = 'RECORDED' AND inv.status != 'VOID' AND rm.property_id = ${propertyId}
-            ), 0)::text AS "totalCollected"
-        `;
-      } else {
-        rows = await prisma.$queryRaw<
-          Array<{ totalInvoiced: string | null; totalCollected: string | null }>
-        >`
-          SELECT
-            COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID'), 0)::text AS "totalInvoiced",
-            COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.status = 'RECORDED' AND inv.status != 'VOID'), 0)::text AS "totalCollected"
-        `;
-      }
+    return scopedCached("billing-summary", propertyId, 3600, async () => {
+      const inv = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty;
+      const pay = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty;
+
+      const rows = await prisma.$queryRaw<
+        Array<{ totalInvoiced: string | null; totalCollected: string | null }>
+      >`
+        SELECT
+          COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID' ${inv}), 0)::text AS "totalInvoiced",
+          COALESCE((SELECT SUM(amount) FROM payments WHERE status = 'RECORDED' ${pay}), 0)::text AS "totalCollected"
+      `;
 
       const totalInvoicedDec = new Prisma.Decimal(rows[0]?.totalInvoiced || "0");
       const totalCollectedDec = new Prisma.Decimal(rows[0]?.totalCollected || "0");
@@ -122,37 +96,14 @@ export class BillingService {
         totalCollected: totalCollectedDec.toFixed(2),
         totalOutstanding: totalOutstandingDec.toFixed(2),
       };
-    };
-
-    if (propertyId) {
-      return fetchSummary();
-    }
-
-    try {
-      const cached = unstable_cache(fetchSummary, ["billing-summary"], {
-        tags: ["billing-summary"],
-        revalidate: 3600,
-      });
-      return await cached();
-    } catch {
-      return fetchSummary();
-    }
+    });
   }
 
   /**
    * Cached count for unfiltered invoice list queries.
    */
   public static async getUnfilteredInvoiceCount(): Promise<number> {
-    const fetchCount = () => prisma.invoice.count();
-    try {
-      const cached = unstable_cache(fetchCount, ["invoice-unfiltered-count"], {
-        tags: ["invoice-count"],
-        revalidate: 60,
-      });
-      return await cached();
-    } catch {
-      return fetchCount();
-    }
+    return scopedCached("invoice-count", null, 60, () => prisma.invoice.count());
   }
 
   /**
@@ -191,6 +142,7 @@ export class BillingService {
 
     return {
       id: invoice.id,
+      propertyId: invoice.propertyId,
       invoiceNumber: invoice.invoiceNumber,
       reservationId: invoice.reservationId,
       reservationNo: invoice.reservation?.reservationNo || "",
@@ -269,13 +221,8 @@ export class BillingService {
         throw new Error("Reservation not found");
       }
 
-      if (propertyId) {
-        const belongsToProperty = reservation.rooms.every(
-          (r) => r.room.propertyId === propertyId
-        );
-        if (!belongsToProperty) {
-          throw new ForbiddenError("Cannot create invoice for another hotel's reservation");
-        }
+      if (propertyId && reservation.propertyId !== propertyId) {
+        throw new ForbiddenError("Cannot create invoice for another hotel's reservation");
       }
 
       // 2. In V1, one active invoice per reservation is permitted
@@ -415,7 +362,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(invoice);
     });
-    this.invalidateBillingCache();
+    this.invalidateBillingCache(invoice.propertyId);
     return invoice;
   }
 
@@ -432,11 +379,6 @@ export class BillingService {
         reservation: {
           include: {
             customer: true,
-            rooms: {
-              include: {
-                room: true,
-              },
-            },
           },
         },
         items: {
@@ -457,17 +399,8 @@ export class BillingService {
       throw new NotFoundError("Invoice not found");
     }
 
-    if (propertyId) {
-      const hasRooms =
-        invoice.reservation?.rooms && invoice.reservation.rooms.length > 0;
-      if (hasRooms) {
-        const belongsToProperty = invoice.reservation!.rooms.some(
-          (r) => r.room.propertyId === propertyId
-        );
-        if (!belongsToProperty) {
-          throw new NotFoundError("Invoice not found");
-        }
-      }
+    if (propertyId && invoice.propertyId !== propertyId) {
+      throw new NotFoundError("Invoice not found");
     }
 
     return this.formatInvoiceDetail(invoice);
@@ -530,18 +463,12 @@ export class BillingService {
     if (query.reservationId) {
       where.reservationId = query.reservationId;
     }
+    if (query.propertyId) {
+      where.propertyId = query.propertyId;
+    }
     const reservationWhere: Prisma.ReservationWhereInput = {};
     if (query.customerId) {
       reservationWhere.customerId = query.customerId;
-    }
-    if (query.propertyId) {
-      reservationWhere.rooms = {
-        some: {
-          room: {
-            propertyId: query.propertyId,
-          },
-        },
-      };
     }
     if (Object.keys(reservationWhere).length > 0) {
       where.reservation = reservationWhere;
@@ -571,16 +498,19 @@ export class BillingService {
       ];
     }
 
-    const hasFilter = Boolean(
-      query.status ||
-      (query.search && query.search.trim() !== "") ||
-      query.reservationId ||
-      query.customerId ||
-      query.propertyId
-    );
+    const isUnfiltered =
+      !query.status &&
+      !query.reservationId &&
+      !query.customerId &&
+      !(query.search && query.search.trim());
+
+    const totalPromise =
+      isUnfiltered && !query.propertyId
+        ? BillingService.getUnfilteredInvoiceCount()
+        : prisma.invoice.count({ where });
 
     const [total, records, summary] = await Promise.all([
-      hasFilter ? prisma.invoice.count({ where }) : this.getUnfilteredInvoiceCount(),
+      totalPromise,
       prisma.invoice.findMany({
         where,
         include: {
@@ -745,7 +675,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updatedInvoice);
     });
-    this.invalidateBillingCache();
+    this.invalidateBillingCache(updatedInvoice.propertyId);
     return updatedInvoice;
   }
 
@@ -886,7 +816,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updatedInvoice);
     });
-    this.invalidateBillingCache();
+    this.invalidateBillingCache(updatedInvoice.propertyId);
     return updatedInvoice;
   }
 
@@ -996,7 +926,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updated);
     });
-    this.invalidateBillingCache();
+    this.invalidateBillingCache(updated.propertyId);
     return updated;
   }
 
@@ -1050,7 +980,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updated);
     });
-    this.invalidateBillingCache();
+    this.invalidateBillingCache(updated.propertyId);
     return updated;
   }
 
@@ -1078,7 +1008,6 @@ export class BillingService {
           reservation: {
             include: {
               customer: true,
-              rooms: { include: { room: true } },
             },
           },
           items: true,
@@ -1092,17 +1021,8 @@ export class BillingService {
         throw new NotFoundError("Invoice not found");
       }
 
-      if (propertyId) {
-        const hasRooms =
-          invoice.reservation?.rooms && invoice.reservation.rooms.length > 0;
-        if (hasRooms) {
-          const belongsToProperty = invoice.reservation!.rooms.some(
-            (r) => r.room.propertyId === propertyId
-          );
-          if (!belongsToProperty) {
-            throw new NotFoundError("Invoice not found");
-          }
-        }
+      if (propertyId && invoice.propertyId !== propertyId) {
+        throw new NotFoundError("Invoice not found");
       }
 
       if (invoice.status === InvoiceStatus.VOID) {
@@ -1286,10 +1206,14 @@ export class BillingService {
       return {
         invoice: formattedInvoice,
         receipt,
+        propertyId: invoice.propertyId,
       };
     });
-    this.invalidateBillingCache();
-    return result;
+    this.invalidateBillingCache(result.propertyId);
+    return {
+      invoice: result.invoice,
+      receipt: result.receipt,
+    };
   }
 
   /**
@@ -1321,7 +1245,7 @@ export class BillingService {
             include: {
               reservation: {
                 include: {
-                  rooms: { include: { room: true } },
+                  customer: true,
                 },
               },
             },
@@ -1333,18 +1257,8 @@ export class BillingService {
         throw new NotFoundError("Payment not found");
       }
 
-      if (propertyId) {
-        const hasRooms =
-          payment.invoice?.reservation?.rooms &&
-          payment.invoice.reservation.rooms.length > 0;
-        if (hasRooms) {
-          const belongsToProperty = payment.invoice!.reservation!.rooms.some(
-            (r) => r.room.propertyId === propertyId
-          );
-          if (!belongsToProperty) {
-            throw new NotFoundError("Payment not found");
-          }
-        }
+      if (propertyId && payment.propertyId !== propertyId) {
+        throw new NotFoundError("Payment not found");
       }
 
       if (invoiceId && payment.invoiceId !== invoiceId) {
@@ -1442,9 +1356,12 @@ export class BillingService {
         },
       });
 
-      return this.formatInvoiceDetail(updated);
+      return {
+        invoice: this.formatInvoiceDetail(updated),
+        propertyId: payment.propertyId,
+      };
     });
-    this.invalidateBillingCache();
-    return result;
+    this.invalidateBillingCache(result.propertyId);
+    return result.invoice;
   }
 }

@@ -7,7 +7,7 @@ import {
   InvoiceItemType,
   RoomStatus,
 } from "@prisma/client"
-import { unstable_cache, revalidateTag } from "next/cache"
+import { scopedCached, invalidateScoped } from "@/lib/scoped-cache"
 import { prisma } from "@/lib/prisma"
 import type {
   ReportFilterDTO,
@@ -340,13 +340,7 @@ export class ReportsService {
       status: { not: InvoiceStatus.VOID },
     }
     if (propertyId) {
-      invoiceWhere.reservation = {
-        rooms: {
-          some: {
-            room: { propertyId },
-          },
-        },
-      }
+      invoiceWhere.propertyId = propertyId
     }
 
     const invoices = await prisma.invoice.findMany({
@@ -365,15 +359,7 @@ export class ReportsService {
       status: PaymentStatus.RECORDED,
     }
     if (propertyId) {
-      paymentWhere.invoice = {
-        reservation: {
-          rooms: {
-            some: {
-              room: { propertyId },
-            },
-          },
-        },
-      }
+      paymentWhere.propertyId = propertyId
     }
 
     const payments = await prisma.payment.findMany({
@@ -550,11 +536,7 @@ export class ReportsService {
       createdAt: { gte: startObj, lte: endObj },
     }
     if (propertyId) {
-      resWhere.rooms = {
-        some: {
-          room: { propertyId },
-        },
-      }
+      resWhere.propertyId = propertyId
     }
 
     const reservations = await prisma.reservation.findMany({
@@ -661,13 +643,10 @@ export class ReportsService {
    * 3. Current In-House Guests (checked-in allocations actively staying)
    * 4. Pending / Overdue Arrivals (scheduled check-ins in the past that never checked in)
    */
-  public static invalidateReportsCache(): void {
-    try {
-      revalidateTag("daily-operations", "max")
-      revalidateTag("billing-summary", "max")
-    } catch {
-      // Ignore outside Next.js request context
-    }
+  public static invalidateReportsCache(propertyId?: string | null): void {
+    invalidateScoped("daily-operations", propertyId)
+    invalidateScoped("billing-summary", propertyId)
+    invalidateScoped("receivables-summary", propertyId)
   }
 
   static async getDailyOperations(
@@ -911,17 +890,8 @@ export class ReportsService {
     }
   }
 
-  try {
-    const cached = unstable_cache(
-      fetchOps,
-      [`daily-ops-${effectivePropertyId || "all"}-${dateStr}`],
-      { tags: ["daily-operations"], revalidate: 60 }
-    )
-    return await cached()
-  } catch {
-    return await fetchOps()
+    return scopedCached("daily-operations", effectivePropertyId, 60, fetchOps, [dateStr])
   }
-}
 
   /**
    * Generates Room Availability Grid / Tape Chart (Date-by-Room matrix)
@@ -1119,15 +1089,7 @@ export class ReportsService {
     }
 
     if (propertyId) {
-      paymentWhere.invoice = {
-        reservation: {
-          rooms: {
-            some: {
-              room: { propertyId },
-            },
-          },
-        },
-      }
+      paymentWhere.propertyId = propertyId
     }
 
     const payments = await prisma.payment.findMany({
@@ -1345,13 +1307,7 @@ export class ReportsService {
 
     // 1. Compute summary aggregates using SQL (cached with tag billing-summary)
     const propertyFilterSql = propertyId
-      ? Prisma.sql`
-          AND EXISTS (
-            SELECT 1 FROM reservation_rooms rr_prop
-            JOIN rooms rm_prop ON rm_prop.id = rr_prop.room_id
-            WHERE rr_prop.reservation_id = i.reservation_id AND rm_prop.property_id = ${propertyId}
-          )
-        `
+      ? Prisma.sql`AND i.property_id = ${propertyId}`
       : Prisma.empty
 
     const fetchSummary = async () => {
@@ -1434,17 +1390,7 @@ export class ReportsService {
       }
     }
 
-    let sum
-    try {
-      const cached = unstable_cache(
-        fetchSummary,
-        [`receivables-summary-${propertyId || "all"}`],
-        { tags: ["billing-summary"], revalidate: 60 }
-      )
-      sum = await cached()
-    } catch {
-      sum = await fetchSummary()
-    }
+    const sum = await scopedCached("receivables-summary", propertyId, 60, fetchSummary)
 
     // 2. Determine pagination
     const page = Math.max(1, options?.page || 1)
@@ -1647,13 +1593,7 @@ export class ReportsService {
     }
 
     if (propertyId) {
-      invoiceWhere.reservation = {
-        rooms: {
-          some: {
-            room: { propertyId },
-          },
-        },
-      }
+      invoiceWhere.propertyId = propertyId
     }
 
     if (startDate || endDate) {

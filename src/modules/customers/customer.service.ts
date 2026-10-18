@@ -70,24 +70,8 @@ export class CustomerService {
     if (propertyId) {
       andClauses.push({
         OR: [
-          {
-            reservations: {
-              some: {
-                rooms: {
-                  some: {
-                    room: {
-                      propertyId,
-                    },
-                  },
-                },
-              },
-            },
-          },
-          {
-            reservations: {
-              none: {},
-            },
-          },
+          { registeredPropertyId: propertyId },
+          { reservations: { some: { propertyId } } },
         ],
       });
     }
@@ -146,9 +130,7 @@ export class CustomerService {
           by: ["customerId"],
           where: {
             customerId: { in: customerIds },
-            ...(propertyId
-              ? { rooms: { some: { room: { propertyId } } } }
-              : {}),
+            ...(propertyId ? { propertyId } : {}),
           },
           _count: { _all: true },
         }),
@@ -178,11 +160,7 @@ export class CustomerService {
                    ROW_NUMBER() OVER (PARTITION BY r_inner.customer_id ORDER BY r_inner.created_at DESC) as rn
             FROM reservations r_inner
             WHERE r_inner.customer_id = ANY(${customerIds}::text[])
-            ${propertyId ? Prisma.sql`AND EXISTS (
-              SELECT 1 FROM reservation_rooms rr_sub
-              JOIN rooms rm_sub ON rr_sub.room_id = rm_sub.id
-              WHERE rr_sub.reservation_id = r_inner.id AND rm_sub.property_id = ${propertyId}
-            )` : Prisma.empty}
+            ${propertyId ? Prisma.sql`AND r_inner.property_id = ${propertyId}` : Prisma.empty}
           ) r
           LEFT JOIN reservation_rooms rr ON rr.reservation_id = r.id
           WHERE r.rn <= 5
@@ -243,9 +221,7 @@ export class CustomerService {
       where: { id },
       include: {
         reservations: {
-          where: propertyId
-            ? { rooms: { some: { room: { propertyId } } } }
-            : undefined,
+          where: propertyId ? { propertyId } : undefined,
           orderBy: { createdAt: "desc" },
           take: 10,
           include: {
@@ -265,15 +241,13 @@ export class CustomerService {
     }
 
     if (propertyId) {
-      const hasReservations = await prisma.reservation.findFirst({
-        where: { customerId: id },
-      });
-      if (hasReservations) {
+      if (customer.registeredPropertyId !== propertyId) {
         const hasReservationInHotel = await prisma.reservation.findFirst({
           where: {
             customerId: id,
-            rooms: { some: { room: { propertyId } } },
+            propertyId,
           },
+          select: { id: true },
         });
         if (!hasReservationInHotel) {
           throw new NotFoundError("Customer not found");
@@ -295,15 +269,13 @@ export class CustomerService {
     }
 
     if (propertyId) {
-      const hasReservations = await prisma.reservation.findFirst({
-        where: { customerId: id },
-      });
-      if (hasReservations) {
+      if (existing.registeredPropertyId !== propertyId) {
         const hasReservationInHotel = await prisma.reservation.findFirst({
           where: {
             customerId: id,
-            rooms: { some: { room: { propertyId } } },
+            propertyId,
           },
+          select: { id: true },
         });
         if (!hasReservationInHotel) {
           throw new NotFoundError("Customer not found");

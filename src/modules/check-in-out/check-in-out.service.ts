@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BillingService } from "../billing/billing.service";
+import { ReservationService } from "../reservations/reservation.service";
 import {
   BadRequestError,
   ConflictError,
@@ -254,9 +255,11 @@ export class CheckInOutService {
         checkedInAt: now,
         reservationId: allocation.reservationId,
         reservationStatus: allocation.reservation.status,
+        propertyId: allocation.room.propertyId,
       };
     });
-    BillingService.invalidateBillingCache();
+    BillingService.invalidateBillingCache(result.propertyId);
+    ReservationService.invalidateReservationCache(result.propertyId);
     return result;
   }
 
@@ -497,9 +500,11 @@ export class CheckInOutService {
         checkedOutAt: now,
         reservationId: allocation.reservationId,
         reservationStatus,
+        propertyId: allocation.room.propertyId,
       };
     });
-    BillingService.invalidateBillingCache();
+    BillingService.invalidateBillingCache(result.propertyId);
+    ReservationService.invalidateReservationCache(result.propertyId);
     return result;
   }
 

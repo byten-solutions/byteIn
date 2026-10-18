@@ -1,5 +1,5 @@
 import { Prisma, RoomStatus } from "@prisma/client";
-import { unstable_cache, revalidateTag } from "next/cache";
+import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import { prisma } from "@/lib/prisma";
 import type {
   CreateCategoryInput,
@@ -188,12 +188,8 @@ export class RoomService {
   /**
    * Invalidation helper for room status summary.
    */
-  public static invalidateRoomsCache(): void {
-    try {
-      revalidateTag("rooms-summary", "max");
-    } catch {
-      // Ignore outside Next.js request context (e.g. tests or worker tasks)
-    }
+  public static invalidateRoomsCache(propertyId?: string | null): void {
+    invalidateScoped("rooms-summary", propertyId);
   }
 
   /**
@@ -259,19 +255,7 @@ export class RoomService {
       return { counts, facets };
     };
 
-    if (propertyId) {
-      return fetchSummary();
-    }
-
-    try {
-      const cached = unstable_cache(fetchSummary, ["rooms-summary"], {
-        tags: ["rooms-summary"],
-        revalidate: 60,
-      });
-      return await cached();
-    } catch {
-      return fetchSummary();
-    }
+    return scopedCached("rooms-summary", propertyId, 60, fetchSummary);
   }
 
   static async createRoom(input: CreateRoomInput) {
@@ -356,7 +340,7 @@ export class RoomService {
         property: true,
       },
     });
-    this.invalidateRoomsCache();
+    this.invalidateRoomsCache(input.propertyId);
     return created;
   }
 
@@ -548,7 +532,7 @@ export class RoomService {
         property: true,
       },
     });
-    this.invalidateRoomsCache();
+    this.invalidateRoomsCache(updated.propertyId);
     return updated;
   }
 
@@ -615,7 +599,7 @@ export class RoomService {
       console.error("Failed to record room status audit log:", auditErr);
     }
 
-    this.invalidateRoomsCache();
+    this.invalidateRoomsCache(room.propertyId);
     return updated;
   }
 
@@ -638,7 +622,7 @@ export class RoomService {
     }
 
     const deleted = await prisma.room.delete({ where: { id } });
-    this.invalidateRoomsCache();
+    this.invalidateRoomsCache(room.propertyId);
     return deleted;
   }
 }
