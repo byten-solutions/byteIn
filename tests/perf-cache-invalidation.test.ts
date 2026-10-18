@@ -103,5 +103,34 @@ describe("Phase 3: Performance Cache & Scoped Queries Tests", () => {
     assert.equal(report.pagination.page, 1);
     assert.equal(report.pagination.limit, 10);
   });
+
+  it("ReservationService.getReservations() searches using trigram branch on partial number", async () => {
+    const list = await ReservationService.getReservations({
+      search: "RES-",
+      page: 1,
+      limit: 5,
+    });
+    assert.ok(Array.isArray(list.reservations));
+    assert.ok(list.pagination);
+  });
+
+  it("ReservationService.getReservations() ignores queries shorter than 3 chars", async () => {
+    const list = await ReservationService.getReservations({
+      search: "ab",
+      page: 1,
+      limit: 5,
+    });
+    assert.ok(Array.isArray(list.reservations));
+  });
+
+  it("CustomerService.getCustomers() ignores queries shorter than 3 chars", async () => {
+    const list = await CustomerService.getCustomers({
+      search: "12",
+      page: 1,
+      limit: 5,
+    });
+    assert.ok(Array.isArray(list.customers));
+  });
 });
+
 

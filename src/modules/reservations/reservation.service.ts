@@ -557,13 +557,28 @@ export class ReservationService {
 
     if (search && search.trim() !== "") {
       const q = search.trim();
-      where.OR = [
-        { reservationNo: { contains: q, mode: "insensitive" } },
-        { customer: { firstName: { contains: q, mode: "insensitive" } } },
-        { customer: { lastName: { contains: q, mode: "insensitive" } } },
-        { customer: { phone: { contains: q, mode: "insensitive" } } },
-        { customer: { email: { contains: q, mode: "insensitive" } } },
-      ];
+      if (q.length >= 3) {
+        // Use trigram index on customers first to avoid cross-table join filter
+        const matchingCustomers = await prisma.customer.findMany({
+          where: {
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+          take: 500,
+        });
+
+        const customerIds = matchingCustomers.map((c) => c.id);
+
+        where.OR = [
+          { reservationNo: { contains: q, mode: "insensitive" } },
+          ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
+        ];
+      }
     }
 
     const hasFilter = Boolean(status || (search && search.trim() !== ""));

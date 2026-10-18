@@ -67,15 +67,17 @@ export class CustomerService {
     if (search && search.trim() !== "") {
       const q = search.trim();
       const last4 = q.replace(/^[•\s*]+/, "").trim().slice(-4);
-      where.OR = [
-        { firstName: { contains: q, mode: "insensitive" } },
-        { lastName: { contains: q, mode: "insensitive" } },
-        { phone: { contains: q, mode: "insensitive" } },
-        { email: { contains: q, mode: "insensitive" } },
-        ...(last4.length > 0
-          ? [{ idProofNumber: { contains: last4, mode: "insensitive" as const } }]
-          : []),
-      ];
+      if (q.length >= 3 || last4.length >= 3) {
+        where.OR = [
+          { firstName: { contains: q, mode: "insensitive" } },
+          { lastName: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q, mode: "insensitive" } },
+          { email: { contains: q, mode: "insensitive" } },
+          ...(last4.length > 0
+            ? [{ idProofNumber: { contains: last4, mode: "insensitive" as const } }]
+            : []),
+        ];
+      }
     }
 
     const [customers, total] = await Promise.all([
