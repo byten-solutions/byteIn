@@ -5,13 +5,13 @@
 byteInn is a reception-operated room management system. Reception staff create bookings, manage guests and room allocations, perform check-in/check-out, and record payments. There is no customer-facing booking portal in V1.
 
 Confirmed rules:
-- Roles: Admin and Receptionist.
+- Roles: `SUPER_ADMIN` (Platform-level global administrator; propertyId = null), `ADMIN` (Hotel Administrator scoped to assigned property; manages hotel operations and receptionist accounts), and `RECEPTIONIST` (Front desk operator scoped to assigned property).
 - One reservation can contain multiple rooms.
 - Each room is assigned at booking time.
 - Room allocations can have different arrival/departure dates.
 - Partial and full payments are supported.
 - Booked rates are preserved.
-- Multi-tenancy is deferred until a second customer/business is onboarded.
+- Physical room and financial operations are strictly isolated per hotel property.
 
 ## 2. Technology Stack
 

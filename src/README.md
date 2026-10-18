@@ -19,22 +19,26 @@ src/
 │   │   ├── reservations/  # Reservation endpoints (/api/reservations, /api/reservations/[id])
 │   │   ├── room-allocations/# Allocation check-in and check-out endpoints
 │   │   ├── invoices/      # Billing & payment endpoints (/api/invoices, items, payments, void)
-│   │   ├── reports/       # Phase 7 operational & financial reports (/api/reports/occupancy, revenue, reservations)
+│   │   ├── reports/       # Operational & financial reports (/api/reports/occupancy, revenue, reservations, etc.)
+│   │   ├── users/         # Staff & user management endpoints (/api/users, /api/users/[id])
+│   │   ├── roles/         # Role listing endpoint filtered by actor hierarchy (/api/roles)
 │   │   └── health/        # Public container & database healthcheck probe (/api/health)
 │   ├── categories/        # Room Categories & Setup view (/categories)
 │   ├── rooms/             # Room Inventory & Status Board (/rooms)
 │   ├── reservations/      # Reservation list, detail, and booking view (/reservations)
 │   ├── billing/           # Invoices, payments, receipts, and print views (/billing)
-│   ├── reports/           # Dedicated Phase 7 Operational & Financial Reports view (/reports)
+│   ├── reports/           # Dedicated Operational & Financial Reports view (/reports)
+│   ├── users/             # Staff & User Management view (/users)
 │   ├── login/             # Login view (/login)
 │   ├── globals.css        # Tailwind CSS v4 styling & shadcn design tokens
 │   ├── layout.tsx         # Root HTML layout and font definitions
-│   └── page.tsx           # Application reception dashboard view
+│   └── page.tsx           # Role-based dashboard (Platform overview for Super Admin, Reception Dispatch for Hotel Staff)
 ├── components/            # UI Components
 │   ├── app-shell.tsx      # Application layout shell (desktop sidebar + mobile drawer)
-│   ├── app-sidebar.tsx    # Collapsible sidebar with navigation groups
-│   ├── app-header.tsx     # Top header bar with quick stats and theme toggle
+│   ├── app-sidebar.tsx    # Collapsible sidebar with role-aware navigation groups
+│   ├── app-header.tsx     # Top header bar with hotel context badge and quick stats
 │   ├── logo.tsx           # Brand Logo component
+│   ├── nav-user.tsx       # User profile dropdown with role badge & hotel assignment
 │   ├── sign-out-button.tsx# Client sign-out button component
 │   ├── ui-kit/            # Reusable UI kit (PageHeader, StatusBadge, DataTableShell, EmptyState, etc.)
 │   └── ui/                # Installed shadcn/ui primitives (button, card, input, label, badge, dialog, etc.)
@@ -45,6 +49,7 @@ src/
 │   └── utils.ts           # Class merge helper (cn)
 ├── modules/               # Domain services and business logic
 │   ├── auth/              # AuthService, validation schemas, and types
+│   ├── users/             # UserService, user management, and validation schemas
 │   ├── properties/        # PropertyService, validations, and types
 │   ├── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
 │   ├── reservations/      # ReservationService, validations, and types
