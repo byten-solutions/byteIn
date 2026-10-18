@@ -180,6 +180,7 @@ export function CustomerList({
   )
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const abortControllerRef = React.useRef<AbortController | null>(null)
 
   // Track previous filters to prevent initial mount and Strict Mode double refetches
   const prevFiltersRef = React.useRef({
@@ -206,6 +207,10 @@ export function CustomerList({
   })
 
   const fetchCustomers = React.useCallback(async (query = searchTerm, page = currentPage) => {
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setLoading(true)
     setError(null)
     try {
@@ -214,7 +219,9 @@ export function CustomerList({
       params.set("page", String(page))
       params.set("limit", "20")
 
-      const res = await fetch(`/api/customers?${params.toString()}`)
+      const res = await fetch(`/api/customers?${params.toString()}`, {
+        signal: controller.signal,
+      })
       if (!res.ok) throw new Error("Failed to fetch customers")
       const data = await res.json()
 
@@ -274,10 +281,15 @@ export function CustomerList({
         }
       }
     } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return
+      }
       console.error("Error fetching customers:", err)
       setError("Unable to load guest directory. Please retry.")
     } finally {
-      setLoading(false)
+      if (abortControllerRef.current === controller) {
+        setLoading(false)
+      }
     }
   }, [searchTerm, currentPage])
 
@@ -293,10 +305,16 @@ export function CustomerList({
 
     const timer = setTimeout(() => {
       fetchCustomers(searchTerm, currentPage)
-    }, 250)
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [fetchCustomers, searchTerm, currentPage])
+
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   // Attach stay meta to each customer and sort by last stay date descending
   const customersWithMeta = React.useMemo(() => {
@@ -551,6 +569,7 @@ export function CustomerList({
               return (
                 <div
                   onClick={() => router.push(`/customers/${c.id}`)}
+                  onMouseEnter={() => router.prefetch(`/customers/${c.id}`)}
                   className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -634,6 +653,7 @@ export function CustomerList({
                 <TableRow
                   key={c.id}
                   onClick={() => router.push(`/customers/${c.id}`)}
+                  onMouseEnter={() => router.prefetch(`/customers/${c.id}`)}
                   className="h-16 text-xs hover:bg-muted/40 cursor-pointer transition-colors group"
                 >
                   {/* Guest: Initials avatar + name + muted subline */}

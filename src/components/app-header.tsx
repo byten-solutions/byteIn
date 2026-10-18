@@ -87,6 +87,7 @@ export function AppHeader({ session, stats }: AppHeaderProps) {
         {stats && (stats.cleanRooms !== undefined || stats.dirtyRooms !== undefined) && (
           <Link
             href="/rooms"
+            prefetch={true}
             className="hidden sm:inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-muted-foreground hover:text-foreground hover:border-primary/40 border border-border/80 shadow-2xs transition-all"
             title="View rooms status"
           >

@@ -63,7 +63,7 @@ export function DataTableShell({
     )
   }
 
-  if (isLoading) {
+  if (isLoading && isEmpty) {
     return (
       <div className={cn("space-y-4", className)}>
         <div className="overflow-hidden rounded-xl border border-border/80 bg-card">
@@ -100,12 +100,32 @@ export function DataTableShell({
   return (
     <div className={cn("space-y-4", className)}>
       {/* Desktop view (md and up) */}
-      <div className={cn("overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs", mobileView && "hidden md:block")}>
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xs relative transition-opacity duration-200",
+          isLoading && "opacity-60 pointer-events-none",
+          mobileView && "hidden md:block"
+        )}
+      >
+        {isLoading && (
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-primary/20 overflow-hidden z-10">
+            <div className="h-full w-1/3 bg-primary animate-pulse" />
+          </div>
+        )}
         {children}
       </div>
 
       {/* Mobile card view (below md) */}
-      {mobileView && <div className="block md:hidden">{mobileView}</div>}
+      {mobileView && (
+        <div
+          className={cn(
+            "block md:hidden transition-opacity duration-200",
+            isLoading && "opacity-60 pointer-events-none"
+          )}
+        >
+          {mobileView}
+        </div>
+      )}
 
       {/* Pagination Footer */}
       {pagination && pagination.totalPages > 1 && (
@@ -121,7 +141,7 @@ export function DataTableShell({
               variant="outline"
               size="sm"
               className="h-8 text-xs gap-1"
-              disabled={pagination.page <= 1}
+              disabled={pagination.page <= 1 || isLoading}
               onClick={() => pagination.onPageChange(pagination.page - 1)}
             >
               <ChevronLeftIcon className="size-3.5" />
@@ -135,7 +155,7 @@ export function DataTableShell({
               variant="outline"
               size="sm"
               className="h-8 text-xs gap-1"
-              disabled={pagination.page >= pagination.totalPages}
+              disabled={pagination.page >= pagination.totalPages || isLoading}
               onClick={() => pagination.onPageChange(pagination.page + 1)}
             >
               Next

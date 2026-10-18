@@ -49,6 +49,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
   const [currentPage, setCurrentPage] = React.useState(initialData.page || 1)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const abortControllerRef = React.useRef<AbortController | null>(null)
   const prevFiltersRef = React.useRef({
     search,
     statusFilter,
@@ -57,6 +58,10 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
 
   const fetchInvoices = React.useCallback(
     async (searchTerm = search, status = statusFilter, page = currentPage) => {
+      abortControllerRef.current?.abort()
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+
       setLoading(true)
       setError(null)
       try {
@@ -66,7 +71,9 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
         params.set("page", String(page))
         params.set("limit", String(data.limit || 25))
 
-        const res = await fetch(`/api/invoices?${params.toString()}`)
+        const res = await fetch(`/api/invoices?${params.toString()}`, {
+          signal: controller.signal,
+        })
         const json = await res.json()
         if (json.success) {
           setData(json.data)
@@ -74,10 +81,15 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
           throw new Error(json.error || "Failed to fetch invoices")
         }
       } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return
+        }
         console.error("Error fetching invoices:", err)
         setError("Unable to load invoices. Please retry.")
       } finally {
-        setLoading(false)
+        if (abortControllerRef.current === controller) {
+          setLoading(false)
+        }
       }
     },
     [search, statusFilter, currentPage, data.limit]
@@ -103,10 +115,16 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
 
     const timer = setTimeout(() => {
       fetchInvoices(search, statusFilter, currentPage)
-    }, 250)
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [fetchInvoices, search, statusFilter, currentPage])
+
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   const totalOutstandingNum = parseFloat(data.summary.totalOutstanding || "0")
 
@@ -210,6 +228,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
               return (
                 <div
                   onClick={() => router.push(`/billing/${inv.id}`)}
+                  onMouseEnter={() => router.prefetch(`/billing/${inv.id}`)}
                   className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -266,6 +285,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
                 <TableRow
                   key={inv.id}
                   onClick={() => router.push(`/billing/${inv.id}`)}
+                  onMouseEnter={() => router.prefetch(`/billing/${inv.id}`)}
                   className="h-16 text-xs hover:bg-muted/40 cursor-pointer transition-colors group"
                 >
                   <TableCell className="font-medium">

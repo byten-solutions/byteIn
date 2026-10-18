@@ -195,6 +195,7 @@ export function RoomManager({
   const [counts, setCounts] = useState(summaryCounts);
   const [isFetchingRooms, setIsFetchingRooms] = useState(false);
   const isFirstRender = useRef(true);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,6 +268,10 @@ export function RoomManager({
         search?: string;
       }
     ) => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       setIsFetchingRooms(true);
       setError(null);
       try {
@@ -287,7 +292,9 @@ export function RoomManager({
         params.set("page", targetPage.toString());
         params.set("limit", "50");
 
-        const res = await fetch(`/api/rooms?${params.toString()}`);
+        const res = await fetch(`/api/rooms?${params.toString()}`, {
+          signal: controller.signal,
+        });
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.error || "Failed to fetch rooms");
@@ -299,12 +306,17 @@ export function RoomManager({
           setTotalPages(data.pagination.totalPages);
           setTotalRooms(data.pagination.total);
         }
-      } catch (err) {
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
         const msg = err instanceof Error ? err.message : "Error loading rooms";
         setError(msg);
         toast.error(msg);
       } finally {
-        setIsFetchingRooms(false);
+        if (abortControllerRef.current === controller) {
+          setIsFetchingRooms(false);
+        }
       }
     },
     [propertyFilter, buildingFilter, floorFilter, categoryFilter, statusFilter, search]
@@ -332,6 +344,12 @@ export function RoomManager({
     }, 300);
     return () => clearTimeout(timer);
   }, [search, fetchRooms]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Open Create Room Modal
   const openCreateRoom = () => {
@@ -777,7 +795,7 @@ export function RoomManager({
           }
         />
       ) : (
-        <div className={cn("space-y-6 transition-opacity", isFetchingRooms && "opacity-50 pointer-events-none")}>
+        <div className={cn("space-y-6 transition-opacity duration-200", isFetchingRooms && "opacity-60 pointer-events-none")}>
           {groupedBuildings.map((bldg) => (
             <div key={bldg.buildingId} className="space-y-4">
               {bldg.floors.map((flr) => (

@@ -108,6 +108,7 @@ export function AppSidebar({
       >
         <Link
           href="/"
+          prefetch={true}
           className={cn(
             "flex items-center hover:opacity-90 transition-opacity",
             isCollapsed ? "justify-center" : "gap-2.5"
@@ -155,6 +156,7 @@ export function AppSidebar({
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={true}
                       onClick={onNavigate}
                       title={item.title}
                       className={cn(
@@ -181,6 +183,7 @@ export function AppSidebar({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={true}
                     onClick={onNavigate}
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all group relative",

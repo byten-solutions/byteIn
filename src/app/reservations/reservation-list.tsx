@@ -106,6 +106,7 @@ export function ReservationList({
   )
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const abortControllerRef = React.useRef<AbortController | null>(null)
   const prevFiltersRef = React.useRef({
     searchTerm,
     statusFilter,
@@ -113,6 +114,10 @@ export function ReservationList({
   })
 
   const fetchReservations = React.useCallback(async () => {
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     setLoading(true)
     setError(null)
     try {
@@ -122,7 +127,9 @@ export function ReservationList({
       params.set("page", String(currentPage))
       params.set("limit", "20")
 
-      const res = await fetch(`/api/reservations?${params.toString()}`)
+      const res = await fetch(`/api/reservations?${params.toString()}`, {
+        signal: controller.signal,
+      })
       if (res.status === 403) {
         const errJson = await res.json().catch(() => null)
         if (errJson?.mustChangePassword) {
@@ -198,12 +205,17 @@ export function ReservationList({
           setPagination(data.pagination)
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return
+      }
       console.error("Error searching reservations:", err)
       const msg = err instanceof Error ? err.message : "Unable to load reservations. Please check your connection and retry."
       setError(msg)
     } finally {
-      setLoading(false)
+      if (abortControllerRef.current === controller) {
+        setLoading(false)
+      }
     }
   }, [searchTerm, statusFilter, currentPage, router])
 
@@ -222,10 +234,16 @@ export function ReservationList({
 
     const timer = setTimeout(() => {
       fetchReservations()
-    }, 250)
+    }, 300)
 
     return () => clearTimeout(timer)
   }, [searchTerm, statusFilter, currentPage, fetchReservations])
+
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort()
+    }
+  }, [])
 
   const calculateStayDates = (rooms: SerializedReservation["rooms"]) => {
     if (rooms.length === 0) return { dates: "—", nights: 0 }
@@ -354,6 +372,7 @@ export function ReservationList({
               return (
                 <div
                   onClick={() => router.push(`/reservations/${res.id}`)}
+                  onMouseEnter={() => router.prefetch(`/reservations/${res.id}`)}
                   className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -412,6 +431,7 @@ export function ReservationList({
                 <TableRow
                   key={res.id}
                   onClick={() => router.push(`/reservations/${res.id}`)}
+                  onMouseEnter={() => router.prefetch(`/reservations/${res.id}`)}
                   className="h-16 text-xs hover:bg-muted/40 cursor-pointer transition-colors group"
                 >
                   <TableCell className="font-medium">

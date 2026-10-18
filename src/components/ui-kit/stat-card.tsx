@@ -132,6 +132,7 @@ export function StatCard({
     return (
       <Link
         href={href}
+        prefetch={true}
         className="block outline-hidden focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl"
       >
         {content}
