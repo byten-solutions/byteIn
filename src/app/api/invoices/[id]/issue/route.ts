@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
+import { handleApiError } from "@/lib/errors";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id } = await params;
+
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
+    // Verify invoice belongs to the caller's hotel before issuing
+    await BillingService.getInvoiceById(id, propertyId);
 
     const updated = await BillingService.issueInvoice(id, session.sub);
     return NextResponse.json({
@@ -18,11 +28,6 @@ export async function POST(
       message: `Invoice ${updated.invoiceNumber} has been issued.`,
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    const message = error instanceof Error ? error.message : "Failed to issue invoice";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "Failed to issue invoice");
   }
 }

@@ -200,7 +200,7 @@ export class RoomService {
    * Computes table-wide room status counts and property/building/floor facets,
    * cached with tag 'rooms-summary'.
    */
-  public static async getRoomsSummary(): Promise<{
+  public static async getRoomsSummary(propertyId?: string): Promise<{
     counts: {
       total: number;
       clean: number;
@@ -217,12 +217,15 @@ export class RoomService {
     }>;
   }> {
     const fetchSummary = async () => {
+      const where: Prisma.RoomWhereInput = propertyId ? { propertyId } : {};
       const [statusGroups, buildingFloorGroups] = await Promise.all([
         prisma.room.groupBy({
+          where,
           by: ["status"],
           _count: { _all: true },
         }),
         prisma.room.groupBy({
+          where,
           by: ["propertyId", "buildingId", "floorId"],
           _count: { _all: true },
         }),
@@ -255,6 +258,10 @@ export class RoomService {
 
       return { counts, facets };
     };
+
+    if (propertyId) {
+      return fetchSummary();
+    }
 
     try {
       const cached = unstable_cache(fetchSummary, ["rooms-summary"], {
@@ -358,7 +365,7 @@ export class RoomService {
    */
   static async getRoomsPage(filters?: RoomFilterOptions) {
     const page = Math.max(1, filters?.page || 1);
-    const limit = Math.max(1, Math.min(200, filters?.limit || 50));
+    const limit = Math.max(1, Math.min(100, filters?.limit || 50));
     const skip = (page - 1) * limit;
 
     const where: Prisma.RoomWhereInput = {};
@@ -427,7 +434,7 @@ export class RoomService {
     }
 
     const page = filters?.page ? Math.max(1, filters.page) : undefined;
-    const limit = filters?.limit ? Math.max(1, Math.min(200, filters.limit)) : undefined;
+    const limit = filters?.limit ? Math.max(1, Math.min(100, filters.limit)) : 50;
     const skip = page && limit ? (page - 1) * limit : undefined;
 
     return prisma.room.findMany({

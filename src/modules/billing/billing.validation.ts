@@ -130,4 +130,5 @@ export const invoiceListQuerySchema = z.object({
   status: z.nativeEnum(InvoiceStatus).optional(),
   reservationId: z.string().optional(),
   customerId: z.string().optional(),
+  propertyId: z.string().optional(),
 });

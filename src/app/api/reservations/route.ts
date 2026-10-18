@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ReservationStatus } from "@prisma/client";
+import { ReservationStatus, RoleName } from "@prisma/client";
 import { requireAuth } from "@/lib/auth-guard";
-import { handleApiError } from "@/lib/errors";
+import { handleApiError, ForbiddenError } from "@/lib/errors";
 import { paginationQuerySchema } from "@/lib/pagination";
+import { prisma } from "@/lib/prisma";
 import { ReservationService } from "@/modules/reservations/reservation.service";
 import { createReservationSchema } from "@/modules/reservations/reservation.validation";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth(undefined, req);
+    const session = await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
 
     const search = searchParams.get("search") || undefined;
@@ -17,6 +18,12 @@ export async function GET(req: NextRequest) {
       statusParam && Object.values(ReservationStatus).includes(statusParam as ReservationStatus)
         ? (statusParam as ReservationStatus)
         : undefined;
+
+    const propertyIdParam = searchParams.get("propertyId") || undefined;
+    const effectivePropertyId =
+      session.role === RoleName.SUPER_ADMIN
+        ? propertyIdParam
+        : (session.propertyId || undefined);
 
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");
@@ -28,6 +35,7 @@ export async function GET(req: NextRequest) {
     const result = await ReservationService.getReservations({
       search,
       status,
+      propertyId: effectivePropertyId,
       page,
       limit,
     });
@@ -43,6 +51,20 @@ export async function POST(req: NextRequest) {
     const session = await requireAuth(undefined, req);
     const body = await req.json();
     const validated = createReservationSchema.parse(body);
+
+    if (session.role !== RoleName.SUPER_ADMIN && session.propertyId) {
+      const roomIds = validated.allocations.map((a) => a.roomId);
+      const invalidRooms = await prisma.room.findMany({
+        where: {
+          id: { in: roomIds },
+          propertyId: { not: session.propertyId },
+        },
+        select: { id: true, roomNo: true },
+      });
+      if (invalidRooms.length > 0) {
+        throw new ForbiddenError("Cannot allocate rooms belonging to another property");
+      }
+    }
 
     const reservation = await ReservationService.createReservation(
       validated,

@@ -10,16 +10,23 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
     const validated = cancelReservationSchema.parse(body);
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
     const result = await ReservationService.cancelReservation(
       id,
       session.sub,
       validated.reason,
-      session.role
+      session.role,
+      propertyId
     );
 
     return NextResponse.json({

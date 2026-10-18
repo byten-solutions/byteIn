@@ -23,6 +23,7 @@ export interface UpdateCustomerInput {
 }
 
 export interface CustomerFilterOptions {
+  propertyId?: string;
   search?: string;
   page?: number;
   limit?: number;

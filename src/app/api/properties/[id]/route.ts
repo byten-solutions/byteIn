@@ -1,28 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { PropertyService } from "@/modules/properties/property.service";
 import { updatePropertySchema } from "@/modules/properties/property.validation";
+import { handleApiError, ForbiddenError, NotFoundError } from "@/lib/errors";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    const session = await requireAuth(undefined, req);
     const { id } = await params;
+
+    if (session.role !== RoleName.SUPER_ADMIN && session.propertyId !== id) {
+      throw new NotFoundError("Property not found");
+    }
+
     const property = await PropertyService.getPropertyById(id);
     if (!property) {
-      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      throw new NotFoundError("Property not found");
     }
+
     return NextResponse.json({ success: true, property });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("GET /api/properties/[id] error:", error);
-    return NextResponse.json({ error: "Failed to fetch property" }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
@@ -31,24 +33,18 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth([RoleName.ADMIN]);
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN], req);
     const { id } = await params;
+
+    if (session.role === RoleName.ADMIN && session.propertyId !== id) {
+      throw new ForbiddenError("Cannot modify settings for another hotel");
+    }
+
     const body = await req.json();
     const validated = updatePropertySchema.parse(body);
     const property = await PropertyService.updateProperty(id, validated);
     return NextResponse.json({ success: true, property });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to update property";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

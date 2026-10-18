@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth, requireHotelContext } from "@/lib/auth-guard";
 import { ReservationService } from "@/modules/reservations/reservation.service";
 import { checkAvailabilitySchema } from "@/modules/reservations/reservation.validation";
+import { handleApiError } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
+    const session = await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
 
     const arrivalDate = searchParams.get("arrivalDate");
     const departureDate = searchParams.get("departureDate");
-    const propertyId = searchParams.get("propertyId") || undefined;
+    const requestedPropertyId = searchParams.get("propertyId") || undefined;
+    const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
+      allowSuperAdminGlobal: true,
+    });
     const roomCategoryId = searchParams.get("roomCategoryId") || undefined;
     const minCapacity = searchParams.get("minCapacity") || undefined;
 
@@ -25,7 +28,7 @@ export async function GET(req: NextRequest) {
     const validated = checkAvailabilitySchema.parse({
       arrivalDate,
       departureDate,
-      propertyId,
+      propertyId: effectivePropertyId || undefined,
       roomCategoryId,
       minCapacity,
     });
@@ -38,16 +41,6 @@ export async function GET(req: NextRequest) {
       rooms,
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to check availability";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return handleApiError(error);
   }
 }

@@ -7,7 +7,7 @@ import { reportDateRangeSchema } from "@/modules/reports/reports.validation"
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST])
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST], req)
     const searchParams = req.nextUrl.searchParams
 
     const query = reportDateRangeSchema.parse({
@@ -16,7 +16,15 @@ export async function GET(req: NextRequest) {
       propertyId: searchParams.get("propertyId") || undefined,
     })
 
-    const report = await ReportsService.getRevenueReport(query)
+    const effectivePropertyId =
+      session.role === RoleName.SUPER_ADMIN
+        ? query.propertyId
+        : (session.propertyId || undefined)
+
+    const report = await ReportsService.getRevenueReport({
+      ...query,
+      propertyId: effectivePropertyId,
+    })
 
     return NextResponse.json({ success: true, data: report })
   } catch (error) {

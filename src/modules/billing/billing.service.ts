@@ -5,6 +5,7 @@ import {
   InvoiceStatus,
   InvoiceItemType,
   PaymentStatus,
+  RoleName,
   Prisma,
 } from "@prisma/client";
 import { BadRequestError, ForbiddenError, NotFoundError } from "@/lib/errors";
@@ -69,19 +70,45 @@ export class BillingService {
    * Computes table-wide billing summary (totalInvoiced, totalCollected, totalOutstanding)
    * in a single SQL query, cached with tag 'billing-summary'.
    */
-  public static async getBillingSummary(): Promise<{
+  public static async getBillingSummary(propertyId?: string): Promise<{
     totalInvoiced: string;
     totalCollected: string;
     totalOutstanding: string;
   }> {
     const fetchSummary = async () => {
-      const rows = await prisma.$queryRaw<
-        Array<{ totalInvoiced: string | null; totalCollected: string | null }>
-      >`
-        SELECT
-          COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID'), 0)::text AS "totalInvoiced",
-          COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.status = 'RECORDED' AND inv.status != 'VOID'), 0)::text AS "totalCollected"
-      `;
+      let rows: Array<{ totalInvoiced: string | null; totalCollected: string | null }>;
+      if (propertyId) {
+        rows = await prisma.$queryRaw<
+          Array<{ totalInvoiced: string | null; totalCollected: string | null }>
+        >`
+          SELECT
+            COALESCE((
+              SELECT SUM(inv.grand_total)
+              FROM invoices inv
+              JOIN reservations r ON inv.reservation_id = r.id
+              JOIN reservation_rooms rr ON rr.reservation_id = r.id
+              JOIN rooms rm ON rr.room_id = rm.id
+              WHERE inv.status != 'VOID' AND rm.property_id = ${propertyId}
+            ), 0)::text AS "totalInvoiced",
+            COALESCE((
+              SELECT SUM(p.amount)
+              FROM payments p
+              JOIN invoices inv ON p.invoice_id = inv.id
+              JOIN reservations r ON inv.reservation_id = r.id
+              JOIN reservation_rooms rr ON rr.reservation_id = r.id
+              JOIN rooms rm ON rr.room_id = rm.id
+              WHERE p.status = 'RECORDED' AND inv.status != 'VOID' AND rm.property_id = ${propertyId}
+            ), 0)::text AS "totalCollected"
+        `;
+      } else {
+        rows = await prisma.$queryRaw<
+          Array<{ totalInvoiced: string | null; totalCollected: string | null }>
+        >`
+          SELECT
+            COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID'), 0)::text AS "totalInvoiced",
+            COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.status = 'RECORDED' AND inv.status != 'VOID'), 0)::text AS "totalCollected"
+        `;
+      }
 
       const totalInvoicedDec = new Prisma.Decimal(rows[0]?.totalInvoiced || "0");
       const totalCollectedDec = new Prisma.Decimal(rows[0]?.totalCollected || "0");
@@ -96,6 +123,10 @@ export class BillingService {
         totalOutstanding: totalOutstandingDec.toFixed(2),
       };
     };
+
+    if (propertyId) {
+      return fetchSummary();
+    }
 
     try {
       const cached = unstable_cache(fetchSummary, ["billing-summary"], {
@@ -211,7 +242,8 @@ export class BillingService {
    */
   static async createInvoiceForReservation(
     input: CreateInvoiceInput,
-    staffUserId: string
+    staffUserId: string,
+    propertyId?: string
   ): Promise<InvoiceDetailDTO> {
     const invoice = await prisma.$transaction(async (tx) => {
       // 1. Fetch reservation and verify existence
@@ -235,6 +267,15 @@ export class BillingService {
 
       if (!reservation) {
         throw new Error("Reservation not found");
+      }
+
+      if (propertyId) {
+        const belongsToProperty = reservation.rooms.every(
+          (r) => r.room.propertyId === propertyId
+        );
+        if (!belongsToProperty) {
+          throw new ForbiddenError("Cannot create invoice for another hotel's reservation");
+        }
       }
 
       // 2. In V1, one active invoice per reservation is permitted
@@ -380,13 +421,21 @@ export class BillingService {
   /**
    * Retrieves single invoice by ID with computed payment balances.
    */
-  static async getInvoiceById(invoiceId: string): Promise<InvoiceDetailDTO> {
+  static async getInvoiceById(
+    invoiceId: string,
+    propertyId?: string
+  ): Promise<InvoiceDetailDTO> {
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: {
         reservation: {
           include: {
             customer: true,
+            rooms: {
+              include: {
+                room: true,
+              },
+            },
           },
         },
         items: {
@@ -404,7 +453,20 @@ export class BillingService {
     });
 
     if (!invoice) {
-      throw new Error("Invoice not found");
+      throw new NotFoundError("Invoice not found");
+    }
+
+    if (propertyId) {
+      const hasRooms =
+        invoice.reservation?.rooms && invoice.reservation.rooms.length > 0;
+      if (hasRooms) {
+        const belongsToProperty = invoice.reservation!.rooms.some(
+          (r) => r.room.propertyId === propertyId
+        );
+        if (!belongsToProperty) {
+          throw new NotFoundError("Invoice not found");
+        }
+      }
     }
 
     return this.formatInvoiceDetail(invoice);
@@ -467,8 +529,21 @@ export class BillingService {
     if (query.reservationId) {
       where.reservationId = query.reservationId;
     }
+    const reservationWhere: Prisma.ReservationWhereInput = {};
     if (query.customerId) {
-      where.reservation = { customerId: query.customerId };
+      reservationWhere.customerId = query.customerId;
+    }
+    if (query.propertyId) {
+      reservationWhere.rooms = {
+        some: {
+          room: {
+            propertyId: query.propertyId,
+          },
+        },
+      };
+    }
+    if (Object.keys(reservationWhere).length > 0) {
+      where.reservation = reservationWhere;
     }
 
     if (query.search && query.search.trim()) {
@@ -499,7 +574,8 @@ export class BillingService {
       query.status ||
       (query.search && query.search.trim() !== "") ||
       query.reservationId ||
-      query.customerId
+      query.customerId ||
+      query.propertyId
     );
 
     const [total, records, summary] = await Promise.all([
@@ -521,7 +597,7 @@ export class BillingService {
         skip,
         take: limit,
       }),
-      this.getBillingSummary(),
+      this.getBillingSummary(query.propertyId),
     ]);
 
     return {
@@ -985,7 +1061,8 @@ export class BillingService {
   static async recordPayment(
     invoiceId: string,
     input: RecordPaymentInput,
-    staffUserId: string
+    staffUserId: string,
+    propertyId?: string
   ): Promise<{
     invoice: InvoiceDetailDTO;
     receipt: PaymentReceiptDTO;
@@ -998,7 +1075,10 @@ export class BillingService {
         where: { id: invoiceId },
         include: {
           reservation: {
-            include: { customer: true },
+            include: {
+              customer: true,
+              rooms: { include: { room: true } },
+            },
           },
           items: true,
           payments: {
@@ -1008,7 +1088,20 @@ export class BillingService {
       });
 
       if (!invoice) {
-        throw new Error("Invoice not found");
+        throw new NotFoundError("Invoice not found");
+      }
+
+      if (propertyId) {
+        const hasRooms =
+          invoice.reservation?.rooms && invoice.reservation.rooms.length > 0;
+        if (hasRooms) {
+          const belongsToProperty = invoice.reservation!.rooms.some(
+            (r) => r.room.propertyId === propertyId
+          );
+          if (!belongsToProperty) {
+            throw new NotFoundError("Invoice not found");
+          }
+        }
       }
 
       if (invoice.status === InvoiceStatus.VOID) {
@@ -1204,13 +1297,15 @@ export class BillingService {
     invoiceIdOrPaymentId: string,
     paymentIdOrStaffUserId: string,
     staffUserIdParam?: string,
-    reasonParam?: string
+    reasonParam?: string,
+    propertyIdParam?: string
   ): Promise<InvoiceDetailDTO> {
     const isMultiArgs = typeof staffUserIdParam === "string";
     const invoiceId = isMultiArgs ? invoiceIdOrPaymentId : null;
     const paymentId = isMultiArgs ? paymentIdOrStaffUserId : invoiceIdOrPaymentId;
     const staffUserId = isMultiArgs ? staffUserIdParam : paymentIdOrStaffUserId;
     const voidReason = (reasonParam || "Payment voided by operator").trim();
+    const propertyId = propertyIdParam;
 
     if (voidReason.length < 3) {
       throw new BadRequestError("Void reason must be at least 3 characters");
@@ -1219,11 +1314,35 @@ export class BillingService {
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
-        include: { invoice: true },
+        include: {
+          invoice: {
+            include: {
+              reservation: {
+                include: {
+                  rooms: { include: { room: true } },
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!payment) {
         throw new NotFoundError("Payment not found");
+      }
+
+      if (propertyId) {
+        const hasRooms =
+          payment.invoice?.reservation?.rooms &&
+          payment.invoice.reservation.rooms.length > 0;
+        if (hasRooms) {
+          const belongsToProperty = payment.invoice!.reservation!.rooms.some(
+            (r) => r.room.propertyId === propertyId
+          );
+          if (!belongsToProperty) {
+            throw new NotFoundError("Payment not found");
+          }
+        }
       }
 
       if (invoiceId && payment.invoiceId !== invoiceId) {
@@ -1234,7 +1353,7 @@ export class BillingService {
         throw new BadRequestError("Payment is already voided");
       }
 
-      // Invariant: Receptionists can only void same-business-day payments. Older payments require ADMIN.
+      // Invariant: Receptionists can only void same-business-day payments. Older payments require ADMIN or SUPER_ADMIN.
       const hotelToday = getHotelTodayDate();
       const paymentDate = getHotelTodayDate(payment.paidAt);
       if (hotelToday !== paymentDate) {
@@ -1242,7 +1361,10 @@ export class BillingService {
           where: { id: staffUserId },
           include: { role: true },
         });
-        if (caller?.role.name !== "ADMIN") {
+        if (
+          caller?.role.name !== RoleName.ADMIN &&
+          caller?.role.name !== RoleName.SUPER_ADMIN
+        ) {
           throw new ForbiddenError(
             "Receptionists can only void same-business-day payments. Voiding older payments requires Administrator privileges."
           );

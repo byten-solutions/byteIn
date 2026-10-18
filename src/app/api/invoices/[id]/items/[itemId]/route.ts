@@ -10,8 +10,17 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id, itemId } = await params;
+
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
+    // Verify invoice belongs to the caller's hotel
+    await BillingService.getInvoiceById(id, propertyId);
 
     const body = await req.json();
     const validated = updateInvoiceItemSchema.parse(body);
@@ -38,8 +47,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id, itemId } = await params;
+
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
+    // Verify invoice belongs to the caller's hotel
+    await BillingService.getInvoiceById(id, propertyId);
 
     const updated = await BillingService.removeInvoiceItem(
       id,

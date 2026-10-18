@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName, RoomStatus } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth, requireHotelContext } from "@/lib/auth-guard";
 import { RoomService } from "@/modules/rooms/room.service";
 import { createRoomSchema } from "@/modules/rooms/room.validation";
-
-import { handleApiError } from "@/lib/errors";
+import { handleApiError, BadRequestError } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth(undefined, req);
+    const session = await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
 
-    const propertyId = searchParams.get("propertyId") || undefined;
+    const requestedPropertyId = searchParams.get("propertyId") || undefined;
+    const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
+      allowSuperAdminGlobal: true,
+    });
+
     const buildingId = searchParams.get("buildingId") || undefined;
     const floorId = searchParams.get("floorId") || undefined;
     const roomCategoryId = searchParams.get("roomCategoryId") || undefined;
@@ -28,13 +30,13 @@ export async function GET(req: NextRequest) {
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
     if (searchParams.get("summary") === "true") {
-      const summary = await RoomService.getRoomsSummary();
+      const summary = await RoomService.getRoomsSummary(effectivePropertyId || undefined);
       return NextResponse.json({ success: true, ...summary });
     }
 
     if (page !== undefined || limit !== undefined) {
       const result = await RoomService.getRoomsPage({
-        propertyId,
+        propertyId: effectivePropertyId || undefined,
         buildingId,
         floorId,
         roomCategoryId,
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
     }
 
     const rooms = await RoomService.getRooms({
-      propertyId,
+      propertyId: effectivePropertyId || undefined,
       buildingId,
       floorId,
       roomCategoryId,
@@ -73,28 +75,21 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN], req);
     const body = await req.json();
     const validated = createRoomSchema.parse(body);
-    const room = await RoomService.createRoom(validated);
+
+    const effectivePropertyId = requireHotelContext(session, validated.propertyId);
+    if (!effectivePropertyId) {
+      throw new BadRequestError("propertyId is required to create a room");
+    }
+
+    const room = await RoomService.createRoom({
+      ...validated,
+      propertyId: effectivePropertyId,
+    });
     return NextResponse.json({ success: true, room }, { status: 201 });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to create room";
-    let status = 400;
-    if (message.includes("already exists")) {
-      status = 409;
-    } else if (message.includes("not found")) {
-      status = 404;
-    }
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

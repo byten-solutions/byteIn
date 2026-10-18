@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
 import { recordPaymentSchema } from "@/modules/billing/billing.validation";
-
+import { handleApiError } from "@/lib/errors";
 import { REQUIRE_PAYMENT_IDEMPOTENCY_KEY } from "@/config/billing";
 
 export async function POST(
@@ -12,7 +11,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
@@ -31,10 +33,14 @@ export async function POST(
       idempotencyKey: idempotencyKey || null,
     });
 
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
     const result = await BillingService.recordPayment(
       id,
       validated,
-      session.sub
+      session.sub,
+      propertyId
     );
 
     return NextResponse.json(
@@ -46,22 +52,6 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to record payment";
-    let status = 400;
-    if (message.includes("not found")) {
-      status = 404;
-    } else if (message.includes("exceeds remaining balance")) {
-      status = 422;
-    }
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "Failed to record payment");
   }
 }

@@ -59,25 +59,58 @@ export class CustomerService {
   }
 
   static async getCustomers(options: CustomerFilterOptions = {}) {
-    const { search } = options;
+    const { search, propertyId } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
 
     const where: Prisma.CustomerWhereInput = {};
+
+    const andClauses: Prisma.CustomerWhereInput[] = [];
+
+    if (propertyId) {
+      andClauses.push({
+        OR: [
+          {
+            reservations: {
+              some: {
+                rooms: {
+                  some: {
+                    room: {
+                      propertyId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          {
+            reservations: {
+              none: {},
+            },
+          },
+        ],
+      });
+    }
 
     if (search && search.trim() !== "") {
       const q = search.trim();
       const last4 = q.replace(/^[•\s*]+/, "").trim().slice(-4);
       if (q.length >= 3 || last4.length >= 3) {
-        where.OR = [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { phone: { contains: q, mode: "insensitive" } },
-          { email: { contains: q, mode: "insensitive" } },
-          ...(last4.length > 0
-            ? [{ idProofNumber: { contains: last4, mode: "insensitive" as const } }]
-            : []),
-        ];
+        andClauses.push({
+          OR: [
+            { firstName: { contains: q, mode: "insensitive" } },
+            { lastName: { contains: q, mode: "insensitive" } },
+            { phone: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            ...(last4.length > 0
+              ? [{ idProofNumber: { contains: last4, mode: "insensitive" as const } }]
+              : []),
+          ],
+        });
       }
+    }
+
+    if (andClauses.length > 0) {
+      where.AND = andClauses;
     }
 
     const [customers, total] = await Promise.all([
@@ -110,7 +143,12 @@ export class CustomerService {
       const [countGroups, resRows] = await Promise.all([
         prisma.reservation.groupBy({
           by: ["customerId"],
-          where: { customerId: { in: customerIds } },
+          where: {
+            customerId: { in: customerIds },
+            ...(propertyId
+              ? { rooms: { some: { room: { propertyId } } } }
+              : {}),
+          },
           _count: { _all: true },
         }),
         prisma.$queryRaw<
@@ -135,10 +173,15 @@ export class CustomerService {
             rr.departure_date AS "departureDate",
             rr.status::text AS "roomStatus"
           FROM (
-            SELECT id, customer_id, status, created_at,
-                   ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC) as rn
-            FROM reservations
-            WHERE customer_id = ANY(${customerIds}::text[])
+            SELECT r_inner.id, r_inner.customer_id, r_inner.status, r_inner.created_at,
+                   ROW_NUMBER() OVER (PARTITION BY r_inner.customer_id ORDER BY r_inner.created_at DESC) as rn
+            FROM reservations r_inner
+            WHERE r_inner.customer_id = ANY(${customerIds}::text[])
+            ${propertyId ? Prisma.sql`AND EXISTS (
+              SELECT 1 FROM reservation_rooms rr_sub
+              JOIN rooms rm_sub ON rr_sub.room_id = rm_sub.id
+              WHERE rr_sub.reservation_id = r_inner.id AND rm_sub.property_id = ${propertyId}
+            )` : Prisma.empty}
           ) r
           LEFT JOIN reservation_rooms rr ON rr.reservation_id = r.id
           WHERE r.rn <= 5
@@ -194,11 +237,14 @@ export class CustomerService {
     };
   }
 
-  static async getCustomerById(id: string) {
+  static async getCustomerById(id: string, propertyId?: string) {
     const customer = await prisma.customer.findUnique({
       where: { id },
       include: {
         reservations: {
+          where: propertyId
+            ? { rooms: { some: { room: { propertyId } } } }
+            : undefined,
           orderBy: { createdAt: "desc" },
           take: 10,
           include: {
@@ -217,13 +263,51 @@ export class CustomerService {
       throw new NotFoundError("Customer not found");
     }
 
+    if (propertyId) {
+      const hasReservations = await prisma.reservation.findFirst({
+        where: { customerId: id },
+      });
+      if (hasReservations) {
+        const hasReservationInHotel = await prisma.reservation.findFirst({
+          where: {
+            customerId: id,
+            rooms: { some: { room: { propertyId } } },
+          },
+        });
+        if (!hasReservationInHotel) {
+          throw new NotFoundError("Customer not found");
+        }
+      }
+    }
+
     return maskCustomer(customer);
   }
 
-  static async updateCustomer(id: string, input: UpdateCustomerInput) {
+  static async updateCustomer(
+    id: string,
+    input: UpdateCustomerInput,
+    propertyId?: string
+  ) {
     const existing = await prisma.customer.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundError("Customer not found");
+    }
+
+    if (propertyId) {
+      const hasReservations = await prisma.reservation.findFirst({
+        where: { customerId: id },
+      });
+      if (hasReservations) {
+        const hasReservationInHotel = await prisma.reservation.findFirst({
+          where: {
+            customerId: id,
+            rooms: { some: { room: { propertyId } } },
+          },
+        });
+        if (!hasReservationInHotel) {
+          throw new NotFoundError("Customer not found");
+        }
+      }
     }
 
     const updated = await prisma.customer.update({

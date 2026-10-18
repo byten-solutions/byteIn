@@ -1,24 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
 import { BillingService } from "@/modules/billing/billing.service";
+import { handleApiError } from "@/lib/errors";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id } = await params;
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
 
-    const invoice = await BillingService.getInvoiceById(id);
+    const invoice = await BillingService.getInvoiceById(id, propertyId);
     return NextResponse.json({ success: true, data: invoice });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    const message = error instanceof Error ? error.message : "Failed to fetch invoice";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error, "Failed to fetch invoice");
   }
 }

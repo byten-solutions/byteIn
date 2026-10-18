@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST])
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST], req)
     const searchParams = req.nextUrl.searchParams
 
     const query = availabilityGridSchema.parse({
@@ -19,10 +19,15 @@ export async function GET(req: NextRequest) {
       buildingId: searchParams.get("buildingId") || undefined,
     })
 
+    const effectivePropertyId =
+      session.role === RoleName.SUPER_ADMIN
+        ? query.propertyId
+        : (session.propertyId || undefined)
+
     const report = await ReportsService.getAvailabilityGrid(
       query.startDate,
       query.endDate,
-      query.propertyId,
+      effectivePropertyId,
       query.buildingId
     )
 

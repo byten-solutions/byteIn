@@ -6,17 +6,22 @@ import { handleApiError } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN], req);
 
     const { searchParams } = new URL(req.url);
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
     const propertyId = searchParams.get("propertyId") || undefined;
 
+    const effectivePropertyId =
+      session.role === RoleName.SUPER_ADMIN
+        ? propertyId
+        : (session.propertyId || undefined);
+
     const report = await ReportsService.getDiscountsReport({
       startDate,
       endDate,
-      propertyId,
+      propertyId: effectivePropertyId,
     });
 
     return NextResponse.json({

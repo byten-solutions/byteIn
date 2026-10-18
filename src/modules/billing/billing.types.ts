@@ -95,6 +95,7 @@ export interface InvoiceListQuery {
   status?: InvoiceStatus;
   reservationId?: string;
   customerId?: string;
+  propertyId?: string;
 }
 
 export interface InvoiceListResponse {

@@ -1,44 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth, requireHotelContext } from "@/lib/auth-guard";
 import { RoomCategoryService } from "@/modules/rooms/room.service";
 import { createCategorySchema } from "@/modules/rooms/room.validation";
+import { handleApiError, BadRequestError } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth();
-    const propertyId = req.nextUrl.searchParams.get("propertyId") || undefined;
-    const categories = await RoomCategoryService.getCategories(propertyId);
+    const session = await requireAuth(undefined, req);
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId") || undefined;
+    const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
+      allowSuperAdminGlobal: true,
+    });
+    const categories = await RoomCategoryService.getCategories(effectivePropertyId || undefined);
     return NextResponse.json({ success: true, categories });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("GET /api/room-categories error:", error);
-    return NextResponse.json({ error: "Failed to fetch room categories" }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN]);
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN], req);
     const body = await req.json();
     const validated = createCategorySchema.parse(body);
-    const category = await RoomCategoryService.createCategory(validated);
+
+    const effectivePropertyId = requireHotelContext(session, validated.propertyId);
+    if (!effectivePropertyId) {
+      throw new BadRequestError("propertyId is required to create a room category");
+    }
+
+    const category = await RoomCategoryService.createCategory({
+      ...validated,
+      propertyId: effectivePropertyId,
+    });
     return NextResponse.json({ success: true, category }, { status: 201 });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to create category";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

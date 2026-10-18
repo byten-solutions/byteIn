@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req)
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST], req)
     const searchParams = req.nextUrl.searchParams
 
     const query = receivablesReportSchema.parse({
@@ -19,7 +19,12 @@ export async function GET(req: NextRequest) {
       limit: searchParams.get("limit") || undefined,
     })
 
-    const report = await ReportsService.getReceivablesReport(query.propertyId, query.filter, {
+    const effectivePropertyId =
+      session.role === RoleName.SUPER_ADMIN
+        ? query.propertyId
+        : (session.propertyId || undefined)
+
+    const report = await ReportsService.getReceivablesReport(effectivePropertyId, query.filter, {
       page: query.page,
       limit: query.limit,
     })

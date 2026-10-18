@@ -1,25 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth } from "@/lib/auth-guard";
+import { prisma } from "@/lib/prisma";
 import { PropertyService } from "@/modules/properties/property.service";
 import { createFloorSchema } from "@/modules/properties/property.validation";
+import { handleApiError, ForbiddenError, NotFoundError } from "@/lib/errors";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    const session = await requireAuth(undefined, req);
     const { id } = await params;
+
+    const building = await prisma.building.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+
+    if (!building) {
+      throw new NotFoundError("Building not found");
+    }
+
+    if (session.role !== RoleName.SUPER_ADMIN && session.propertyId !== building.propertyId) {
+      throw new NotFoundError("Building not found");
+    }
+
     const floors = await PropertyService.getFloors(id);
     return NextResponse.json({ success: true, floors });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    console.error("GET /api/buildings/[id]/floors error:", error);
-    return NextResponse.json({ error: "Failed to fetch floors" }, { status: 500 });
+    return handleApiError(error);
   }
 }
 
@@ -28,8 +39,22 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth([RoleName.ADMIN]);
+    const session = await requireAuth([RoleName.SUPER_ADMIN, RoleName.ADMIN], req);
     const { id: buildingId } = await params;
+
+    const building = await prisma.building.findUnique({
+      where: { id: buildingId },
+      select: { propertyId: true },
+    });
+
+    if (!building) {
+      throw new NotFoundError("Building not found");
+    }
+
+    if (session.role === RoleName.ADMIN && session.propertyId !== building.propertyId) {
+      throw new ForbiddenError("Cannot add floors to another hotel's building");
+    }
+
     const body = await req.json();
     const validated = createFloorSchema.parse(body);
     const floor = await PropertyService.createFloor({
@@ -38,17 +63,6 @@ export async function POST(
     });
     return NextResponse.json({ success: true, floor }, { status: 201 });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to create floor";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }

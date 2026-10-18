@@ -34,6 +34,7 @@ export interface CreateReservationInput {
 export interface ReservationFilterOptions {
   search?: string;
   status?: ReservationStatus;
+  propertyId?: string;
   page?: number;
   limit?: number;
 }

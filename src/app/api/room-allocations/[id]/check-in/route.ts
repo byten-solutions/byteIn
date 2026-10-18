@@ -10,7 +10,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
@@ -19,7 +22,10 @@ export async function POST(
       allocationId: id,
     });
 
-    const result = await CheckInOutService.checkIn(validated, session.sub);
+    const propertyId =
+      session.role === RoleName.SUPER_ADMIN ? undefined : session.propertyId || undefined;
+
+    const result = await CheckInOutService.checkIn(validated, session.sub, propertyId);
 
     return NextResponse.json({
       success: true,

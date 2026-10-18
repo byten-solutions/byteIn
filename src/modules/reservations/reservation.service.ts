@@ -14,6 +14,7 @@ import { BillingService } from "../billing/billing.service";
 import {
   BadRequestError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
 } from "@/lib/errors";
 import { sanitizePagination } from "@/lib/pagination";
@@ -186,7 +187,7 @@ export class ReservationService {
   static async createReservation(
     input: CreateReservationInput,
     creatorUserId: string,
-    options?: { autoCreateInvoice?: boolean }
+    options?: { autoCreateInvoice?: boolean; propertyId?: string }
   ) {
     if (!input.allocations || input.allocations.length === 0) {
       throw new Error("At least one room allocation is required");
@@ -276,6 +277,21 @@ export class ReservationService {
 
           if (rooms.length !== sortedRoomIds.length) {
             throw new NotFoundError("One or more selected rooms do not exist");
+          }
+
+          if (options?.propertyId) {
+            for (const room of rooms) {
+              if (room.propertyId !== options.propertyId) {
+                throw new ForbiddenError("Cannot allocate rooms from another hotel");
+              }
+            }
+          }
+
+          const distinctPropertyIds = new Set(rooms.map((r) => r.propertyId));
+          if (distinctPropertyIds.size > 1) {
+            throw new BadRequestError(
+              "All rooms in a reservation must belong to the same property"
+            );
           }
 
           const roomMap = new Map(rooms.map((r) => [r.id, r]));
@@ -546,10 +562,14 @@ export class ReservationService {
    * Retrieves paginated list of reservations with primary customer, room allocations, and creator.
    */
   static async getReservations(options: ReservationFilterOptions = {}) {
-    const { search, status } = options;
+    const { search, status, propertyId } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
 
     const where: Prisma.ReservationWhereInput = {};
+
+    if (propertyId) {
+      where.rooms = { some: { room: { propertyId } } };
+    }
 
     if (status) {
       where.status = status;
@@ -567,6 +587,13 @@ export class ReservationService {
               { phone: { contains: q, mode: "insensitive" } },
               { email: { contains: q, mode: "insensitive" } },
             ],
+            ...(propertyId
+              ? {
+                  reservations: {
+                    some: { rooms: { some: { room: { propertyId } } } },
+                  },
+                }
+              : {}),
           },
           select: { id: true },
           take: 500,
@@ -581,7 +608,7 @@ export class ReservationService {
       }
     }
 
-    const hasFilter = Boolean(status || (search && search.trim() !== ""));
+    const hasFilter = Boolean(status || (search && search.trim() !== "") || propertyId);
 
     const [reservations, total] = await Promise.all([
       prisma.reservation.findMany({
@@ -637,7 +664,7 @@ export class ReservationService {
   /**
    * Retrieves single reservation by ID with full allocations, customer, and creator.
    */
-  static async getReservationById(id: string) {
+  static async getReservationById(id: string, propertyId?: string) {
     const reservation = await prisma.reservation.findUnique({
       where: { id },
       include: {
@@ -664,6 +691,15 @@ export class ReservationService {
       throw new NotFoundError("Reservation not found");
     }
 
+    if (propertyId) {
+      const belongsToProperty = reservation.rooms.some(
+        (r) => r.room.propertyId === propertyId
+      );
+      if (!belongsToProperty) {
+        throw new NotFoundError("Reservation not found");
+      }
+    }
+
     return {
       ...reservation,
       customer: reservation.customer
@@ -683,12 +719,15 @@ export class ReservationService {
     id: string,
     userId: string,
     reason?: string,
-    userRole?: string
+    userRole?: string,
+    propertyId?: string
   ) {
     const reservation = await prisma.reservation.findUnique({
       where: { id },
       include: {
-        rooms: true,
+        rooms: {
+          include: { room: true },
+        },
         invoices: {
           include: {
             payments: { where: { status: PaymentStatus.RECORDED } },
@@ -699,6 +738,15 @@ export class ReservationService {
 
     if (!reservation) {
       throw new NotFoundError("Reservation not found");
+    }
+
+    if (propertyId) {
+      const belongsToProperty = reservation.rooms.some(
+        (r) => r.room.propertyId === propertyId
+      );
+      if (!belongsToProperty) {
+        throw new NotFoundError("Reservation not found");
+      }
     }
 
     if (reservation.status === ReservationStatus.CANCELLED) {
@@ -829,14 +877,22 @@ export class ReservationService {
   static async cancelAllocation(
     allocationId: string,
     userId: string,
-    reason?: string
+    reason?: string,
+    propertyId?: string
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
-      include: { reservation: { include: { rooms: true } } },
+      include: {
+        reservation: { include: { rooms: true } },
+        room: true,
+      },
     });
 
     if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (propertyId && allocation.room.propertyId !== propertyId) {
       throw new NotFoundError("Room allocation not found");
     }
 
@@ -903,14 +959,19 @@ export class ReservationService {
   static async markNoShow(
     allocationId: string,
     userId: string,
-    notes?: string
+    notes?: string,
+    propertyId?: string
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
-      include: { reservation: true },
+      include: { reservation: true, room: true },
     });
 
     if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (propertyId && allocation.room.propertyId !== propertyId) {
       throw new NotFoundError("Room allocation not found");
     }
 
@@ -1076,13 +1137,19 @@ export class ReservationService {
   static async extendStay(
     allocationId: string,
     input: ExtendStayInput,
-    userId: string
+    userId: string,
+    propertyId?: string
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
+      include: { room: true },
     });
 
     if (!allocation) {
+      throw new NotFoundError("Room allocation not found");
+    }
+
+    if (propertyId && allocation.room.propertyId !== propertyId) {
       throw new NotFoundError("Room allocation not found");
     }
 
@@ -1224,7 +1291,8 @@ export class ReservationService {
   static async changeRoom(
     allocationId: string,
     input: ChangeRoomInput,
-    userId: string
+    userId: string,
+    propertyId?: string
   ) {
     const allocation = await prisma.reservationRoom.findUnique({
       where: { id: allocationId },
@@ -1235,13 +1303,8 @@ export class ReservationService {
       throw new NotFoundError("Room allocation not found");
     }
 
-    if (
-      allocation.status !== AllocationStatus.CHECKED_IN &&
-      allocation.status !== AllocationStatus.CONFIRMED
-    ) {
-      throw new BadRequestError(
-        `Only active allocations can change rooms. Current status: ${allocation.status}`
-      );
+    if (propertyId && allocation.room.propertyId !== propertyId) {
+      throw new NotFoundError("Room allocation not found");
     }
 
     if (allocation.roomId === input.newRoomId) {
@@ -1255,6 +1318,10 @@ export class ReservationService {
 
     if (!targetRoom) {
       throw new NotFoundError("Target room not found");
+    }
+
+    if (targetRoom.propertyId !== allocation.room.propertyId) {
+      throw new BadRequestError("Cannot change room to a different hotel");
     }
 
     if (

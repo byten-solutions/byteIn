@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, requireHotelContext } from "@/lib/auth-guard";
 import { handleApiError } from "@/lib/errors";
 import { paginationQuerySchema } from "@/lib/pagination";
 import { CustomerService } from "@/modules/customers/customer.service";
@@ -7,8 +7,12 @@ import { createCustomerSchema } from "@/modules/customers/customer.validation";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth(undefined, req);
+    const session = await requireAuth(undefined, req);
     const searchParams = req.nextUrl.searchParams;
+    const requestedPropertyId = searchParams.get("propertyId") || undefined;
+    const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
+      allowSuperAdminGlobal: true,
+    });
     const search = searchParams.get("search") || undefined;
 
     const pageParam = searchParams.get("page");
@@ -18,7 +22,12 @@ export async function GET(req: NextRequest) {
       limit: limitParam ?? undefined,
     });
 
-    const result = await CustomerService.getCustomers({ search, page, limit });
+    const result = await CustomerService.getCustomers({
+      search,
+      page,
+      limit,
+      propertyId: effectivePropertyId || undefined,
+    });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     return handleApiError(error, "Failed to fetch customers");

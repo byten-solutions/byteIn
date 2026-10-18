@@ -41,7 +41,8 @@ export class CheckInOutService {
    */
   static async checkIn(
     input: CheckInInput,
-    staffUserId: string
+    staffUserId: string,
+    propertyId?: string
   ): Promise<CheckInResult> {
     const result = await prisma.$transaction(async (tx) => {
       // 0. Acquire row-level lock on the allocation to serialize concurrent check-in/out requests
@@ -59,6 +60,10 @@ export class CheckInOutService {
       });
 
       if (!allocation) {
+        throw new NotFoundError("Room allocation not found");
+      }
+
+      if (propertyId && allocation.room.propertyId !== propertyId) {
         throw new NotFoundError("Room allocation not found");
       }
 
@@ -267,7 +272,8 @@ export class CheckInOutService {
    */
   static async checkOut(
     input: CheckOutInput,
-    staffUserId: string
+    staffUserId: string,
+    propertyId?: string
   ): Promise<CheckOutResult> {
     const result = await prisma.$transaction(async (tx) => {
       // 0. Acquire row-level lock on the allocation to serialize concurrent check-out requests
@@ -287,6 +293,10 @@ export class CheckInOutService {
       });
 
       if (!allocation) {
+        throw new NotFoundError("Room allocation not found");
+      }
+
+      if (propertyId && allocation.room.propertyId !== propertyId) {
         throw new NotFoundError("Room allocation not found");
       }
 
@@ -326,7 +336,10 @@ export class CheckInOutService {
             where: { id: staffUserId },
             include: { role: true },
           });
-          if (caller?.role.name !== RoleName.ADMIN) {
+          if (
+            caller?.role.name !== RoleName.ADMIN &&
+            caller?.role.name !== RoleName.SUPER_ADMIN
+          ) {
             throw new BadRequestError(
               `Cannot check out prior to scheduled arrival date (${allocation.arrivalDate.toISOString().split("T")[0]}). Backdated checkout requires Administrator privileges.`
             );
@@ -493,13 +506,14 @@ export class CheckInOutService {
   /**
    * Retrieves today's arrivals (CONFIRMED allocations scheduled for today) in hotel operating timezone
    */
-  static async getDailyArrivals(targetDate?: Date) {
+  static async getDailyArrivals(targetDate?: Date, propertyId?: string) {
     const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
       where: {
         arrivalDate: startOfDay,
         status: AllocationStatus.CONFIRMED,
+        ...(propertyId ? { room: { propertyId } } : {}),
       },
       include: {
         reservation: {
@@ -517,13 +531,14 @@ export class CheckInOutService {
   /**
    * Retrieves today's departures (CHECKED_IN allocations scheduled for checkout today) in hotel operating timezone
    */
-  static async getDailyDepartures(targetDate?: Date) {
+  static async getDailyDepartures(targetDate?: Date, propertyId?: string) {
     const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
       where: {
         departureDate: startOfDay,
         status: AllocationStatus.CHECKED_IN,
+        ...(propertyId ? { room: { propertyId } } : {}),
       },
       include: {
         reservation: {
@@ -538,3 +553,4 @@ export class CheckInOutService {
     });
   }
 }
+
