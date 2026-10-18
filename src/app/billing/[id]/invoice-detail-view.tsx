@@ -73,6 +73,18 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
   const discountTotalNum = parseFloat(invoice.discountTotal || "0")
   const taxTotalNum = parseFloat(invoice.taxTotal || "0")
 
+  const splitRoomDescription = (desc: string, isRoom: boolean): { title: string; dates: string | null } => {
+    if (!isRoom) return { title: desc, dates: null }
+    // Match date range in parentheses at the end: (YYYY-MM-DD to YYYY-MM-DD) or (Month DD, YYYY to Month DD, YYYY)
+    const match = desc.match(/\s*\(([^)]*(?:to|—|-)[^)]*)\)$/i)
+    if (match) {
+      const title = desc.slice(0, desc.length - match[0].length).trim()
+      const dates = match[1].trim()
+      return { title, dates }
+    }
+    return { title: desc, dates: null }
+  }
+
   const handleIssueInvoice = async () => {
     setActionLoading(true)
     try {
@@ -230,8 +242,8 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
             <MoneyText
               value={invoice.balanceDue}
               className={cn(
-                "text-2xl font-extrabold tracking-tight block",
-                balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400" : "text-foreground"
+                "text-2xl font-bold tracking-tight block font-mono",
+                balanceDueNum > 0 ? "text-foreground" : "text-muted-foreground"
               )}
             />
           </div>
@@ -306,10 +318,16 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
           <TableBody>
             {invoice.items.map((item) => {
               const isRoom = item.itemType === InvoiceItemType.ROOM_CHARGE
+              const { title, dates } = splitRoomDescription(item.description, isRoom)
               return (
                 <TableRow key={item.id} className="text-xs h-14 hover:bg-muted/30">
                   <TableCell className="font-medium">
-                    <span className="text-foreground font-semibold block">{item.description}</span>
+                    <span className="text-foreground font-semibold block">{title}</span>
+                    {dates && (
+                      <span className="text-[11px] text-muted-foreground block font-mono mt-0.5">
+                        {dates}
+                      </span>
+                    )}
                   </TableCell>
 
                   <TableCell>
@@ -360,10 +378,12 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
         {/* Totals Block Aligned Right */}
         <div className="p-5 border-t border-border/60 bg-muted/10 flex justify-end">
           <div className="w-72 space-y-2 text-xs">
-            <div className="flex justify-between text-muted-foreground">
-              <span>Subtotal:</span>
-              <MoneyText value={invoice.subtotal} className="font-mono text-foreground font-medium" />
-            </div>
+            {(discountTotalNum > 0 || taxTotalNum > 0) && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal:</span>
+                <MoneyText value={invoice.subtotal} className="font-mono text-foreground font-medium" />
+              </div>
+            )}
 
             {discountTotalNum > 0 && (
               <div className="flex justify-between text-muted-foreground">
@@ -394,8 +414,8 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
               <MoneyText
                 value={invoice.balanceDue}
                 className={cn(
-                  "font-bold text-base",
-                  balanceDueNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                  "font-bold text-base font-mono",
+                  balanceDueNum > 0 ? "text-foreground font-bold" : "text-muted-foreground"
                 )}
               />
             </div>
@@ -405,25 +425,14 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
 
       {/* Recorded Payments List */}
       <div className="rounded-xl border border-border/80 bg-card shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-border/60 bg-muted/10 flex items-center justify-between">
+        <div className="p-4 border-b border-border/60 bg-muted/10">
           <h2 className="text-sm font-semibold text-foreground">
             Recorded Payments ({invoice.payments.length})
           </h2>
-          {balanceDueNum > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs text-primary"
-              onClick={() => setIsPaymentOpen(true)}
-            >
-              <CreditCard className="size-3.5 mr-1" />
-              Record Payment
-            </Button>
-          )}
         </div>
 
         {invoice.payments.length === 0 ? (
-          <div className="p-8 text-center text-xs text-muted-foreground">
+          <div className="p-6 text-center text-xs text-muted-foreground">
             No payments recorded yet for this invoice.
           </div>
         ) : (

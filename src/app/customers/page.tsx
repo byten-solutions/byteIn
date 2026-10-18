@@ -9,6 +9,9 @@ export default async function CustomersPage() {
   if (!session) {
     redirect("/login")
   }
+  if (session.mustChangePassword) {
+    redirect("/change-password")
+  }
 
   const result = await CustomerService.getCustomers({ page: 1, limit: 20 })
 
@@ -25,6 +28,16 @@ export default async function CustomersPage() {
     remarks: c.remarks,
     reservationsCount: c._count.reservations,
     createdAt: c.createdAt.toISOString(),
+    reservations: c.reservations?.map((r) => ({
+      id: r.id,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(),
+      rooms: r.rooms.map((rm) => ({
+        arrivalDate: rm.arrivalDate.toISOString().split("T")[0],
+        departureDate: rm.departureDate.toISOString().split("T")[0],
+        status: rm.status,
+      })),
+    })) || [],
   }))
 
   return (

@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -42,6 +41,12 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to sign in");
       }
 
+      if (data.user?.mustChangePassword) {
+        router.push("/change-password");
+        router.refresh();
+        return;
+      }
+
       router.push("/");
       router.refresh();
     } catch (err) {
@@ -52,21 +57,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-4 bg-background">
-      <Card className="w-full max-w-sm rounded-2xl border border-border/80 bg-card shadow-sm">
-        <CardHeader className="text-center space-y-2 pt-6">
+    <div className="flex min-h-svh items-center justify-center p-4 sm:p-6 bg-background">
+      <Card className="w-full max-w-sm rounded-2xl border border-border/80 bg-card shadow-sm my-auto">
+        <CardHeader className="text-center space-y-2 pt-6 pb-2">
           <div className="flex justify-center mb-1">
             <Logo size={44} showWordmark={false} />
           </div>
           <CardTitle className="text-xl font-bold tracking-tight text-foreground">
             Sign in to byteInn
           </CardTitle>
-          <CardDescription className="text-xs text-muted-foreground">
-            Reception-operated Property Management System
-          </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4 px-6">
+        <form onSubmit={handleSubmit} className="flex flex-col">
+          <CardContent className="space-y-4 px-6 pt-2 pb-6">
             {error && (
               <div
                 role="alert"
@@ -76,7 +78,7 @@ export default function LoginPage() {
               </div>
             )}
             <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-xs font-semibold text-foreground">Email address</Label>
+              <Label htmlFor="email" className="text-xs font-semibold text-foreground">Email</Label>
               <Input
                 id="email"
                 type="email"
@@ -116,10 +118,10 @@ export default function LoginPage() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="px-6 pb-6 pt-2">
+          <CardFooter className="px-6 py-4 border-t border-border/60 bg-muted/20">
             <Button
               type="submit"
-              className="w-full h-9 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs font-semibold text-xs"
+              className="w-full h-10 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs font-semibold text-xs cursor-pointer transition-colors"
               disabled={loading}
             >
               {loading ? "Signing in..." : "Sign in to Shift"}

@@ -143,7 +143,7 @@ export function ReceiptModal({ receipt, invoiceId, isOpen, onClose }: ReceiptMod
               <span>Remaining Balance:</span>
               <MoneyText
                 value={receipt.remainingBalance}
-                className={parseFloat(receipt.remainingBalance) > 0 ? "text-amber-600 dark:text-amber-400" : ""}
+                className={parseFloat(receipt.remainingBalance) > 0 ? "text-foreground font-bold" : "text-muted-foreground"}
               />
             </div>
           </div>

@@ -106,7 +106,11 @@ export function ReservationList({
   )
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const isInitialMount = React.useRef(true)
+  const prevFiltersRef = React.useRef({
+    searchTerm,
+    statusFilter,
+    currentPage,
+  })
 
   const fetchReservations = React.useCallback(async () => {
     setLoading(true)
@@ -119,7 +123,17 @@ export function ReservationList({
       params.set("limit", "20")
 
       const res = await fetch(`/api/reservations?${params.toString()}`)
-      if (!res.ok) throw new Error("Failed to load reservations")
+      if (res.status === 403) {
+        const errJson = await res.json().catch(() => null)
+        if (errJson?.mustChangePassword) {
+          router.push("/change-password")
+          return
+        }
+      }
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null)
+        throw new Error(errJson?.error || "Failed to load reservations")
+      }
       const data = await res.json()
 
       if (data.success) {
@@ -186,24 +200,32 @@ export function ReservationList({
       }
     } catch (err) {
       console.error("Error searching reservations:", err)
-      setError("Unable to load reservations. Please check your connection and retry.")
+      const msg = err instanceof Error ? err.message : "Unable to load reservations. Please check your connection and retry."
+      setError(msg)
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, statusFilter, currentPage])
+  }, [searchTerm, statusFilter, currentPage, router])
 
   React.useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false
+    const prev = prevFiltersRef.current
+    const hasChanged =
+      prev.searchTerm !== searchTerm ||
+      prev.statusFilter !== statusFilter ||
+      prev.currentPage !== currentPage
+
+    if (!hasChanged) {
       return
     }
+
+    prevFiltersRef.current = { searchTerm, statusFilter, currentPage }
 
     const timer = setTimeout(() => {
       fetchReservations()
     }, 250)
 
     return () => clearTimeout(timer)
-  }, [fetchReservations])
+  }, [searchTerm, statusFilter, currentPage, fetchReservations])
 
   const calculateStayDates = (rooms: SerializedReservation["rooms"]) => {
     if (rooms.length === 0) return { dates: "—", nights: 0 }
@@ -334,17 +356,17 @@ export function ReservationList({
                   onClick={() => router.push(`/reservations/${res.id}`)}
                   className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="font-mono font-bold text-sm text-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-mono font-bold text-sm text-foreground truncate min-w-0">
                       #{res.reservationNo}
                     </div>
                     <StatusBadge status={res.status} size="sm" />
                   </div>
 
-                  <div className="space-y-1 text-xs">
-                    <div className="font-medium text-foreground text-sm">{guestName}</div>
+                  <div className="space-y-1 text-xs min-w-0">
+                    <div className="font-medium text-foreground text-sm truncate" title={guestName}>{guestName}</div>
                     {(res.customer.phone || res.customer.email) && (
-                      <div className="text-muted-foreground">
+                      <div className="text-muted-foreground truncate">
                         {res.customer.phone || res.customer.email}
                       </div>
                     )}
@@ -402,7 +424,7 @@ export function ReservationList({
                   </TableCell>
 
                   <TableCell>
-                    <span className="font-medium text-foreground block">{guestName}</span>
+                    <span className="font-medium text-foreground block truncate max-w-[200px]" title={guestName}>{guestName}</span>
                     <span className="text-[11px] text-muted-foreground truncate block max-w-[180px]">
                       {res.customer.phone || res.customer.email || "No contact"}
                     </span>
@@ -420,10 +442,11 @@ export function ReservationList({
                       {firstRooms.map((rm) => (
                         <span
                           key={rm.id}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/80 text-[11px] font-mono text-foreground border border-border/60"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/80 text-[11px] font-mono text-foreground border border-border/60 max-w-[140px]"
+                          title={`Room ${rm.roomNo}`}
                         >
-                          <BedDouble className="size-3 text-muted-foreground" />
-                          <span>{rm.roomNo}</span>
+                          <BedDouble className="size-3 text-muted-foreground shrink-0" />
+                          <span className="truncate">{rm.roomNo}</span>
                         </span>
                       ))}
                       {remainingCount > 0 && (

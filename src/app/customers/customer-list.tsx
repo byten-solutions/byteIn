@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { cn } from "@/lib/utils"
 import {
   Users,
   Search,
@@ -11,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  CalendarPlus,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,6 +41,18 @@ import {
   EmptyState,
 } from "@/components/ui-kit"
 import { getIdProofOptions } from "@/lib/constants"
+import { formatDate } from "@/lib/date-format"
+
+export interface SerializedCustomerReservation {
+  id: string
+  status: string
+  createdAt: string
+  rooms: {
+    arrivalDate: string
+    departureDate: string
+    status: string
+  }[]
+}
 
 export interface SerializedCustomer {
   id: string
@@ -52,6 +67,7 @@ export interface SerializedCustomer {
   remarks: string | null
   reservationsCount: number
   createdAt: string
+  reservations?: SerializedCustomerReservation[]
 }
 
 export interface CustomerPagination {
@@ -66,6 +82,85 @@ interface CustomerListProps {
   initialPagination?: CustomerPagination
 }
 
+export type FilterTab = "ALL" | "IN_HOUSE" | "UPCOMING" | "REPEAT"
+export type StayStatus = "IN_HOUSE" | "UPCOMING" | "PAST" | "NONE"
+
+export interface CustomerStayMeta {
+  status: StayStatus
+  statusLabel: string
+  lastStayDateStr: string
+  sortDate: number
+}
+
+function getCustomerStayMeta(c: SerializedCustomer): CustomerStayMeta {
+  const reservations = c.reservations || []
+  if (reservations.length === 0) {
+    return {
+      status: "NONE",
+      statusLabel: "No stays",
+      lastStayDateStr: "—",
+      sortDate: 0,
+    }
+  }
+
+  const todayStr = new Date().toISOString().split("T")[0]
+  let hasInHouse = false
+  let hasUpcoming = false
+  let latestArrival = ""
+  let latestSortTimestamp = 0
+
+  for (const res of reservations) {
+    if (res.status === "CANCELLED" || res.status === "NO_SHOW") continue
+
+    for (const rm of res.rooms) {
+      const arr = rm.arrivalDate
+      const dep = rm.departureDate
+      const arrivalTime = new Date(arr).getTime()
+
+      if (arrivalTime > latestSortTimestamp) {
+        latestSortTimestamp = arrivalTime
+        latestArrival = arr
+      }
+
+      if (rm.status === "OCCUPIED" || (res.status === "CHECKED_IN" && arr <= todayStr && dep >= todayStr)) {
+        hasInHouse = true
+      } else if (arr > todayStr && (res.status === "CONFIRMED" || res.status === "CHECKED_IN")) {
+        hasUpcoming = true
+      }
+    }
+  }
+
+  if (latestSortTimestamp === 0 && reservations[0]) {
+    latestSortTimestamp = new Date(reservations[0].createdAt).getTime()
+  }
+
+  let status: StayStatus = "PAST"
+  let statusLabel = "Past"
+  if (hasInHouse) {
+    status = "IN_HOUSE"
+    statusLabel = "In house"
+  } else if (hasUpcoming) {
+    status = "UPCOMING"
+    statusLabel = "Upcoming"
+  } else if (latestSortTimestamp === 0) {
+    status = "NONE"
+    statusLabel = "No stays"
+  }
+
+  const lastStayDateStr = latestArrival
+    ? formatDate(latestArrival)
+    : reservations[0]
+    ? formatDate(reservations[0].createdAt)
+    : "—"
+
+  return {
+    status,
+    statusLabel,
+    lastStayDateStr,
+    sortDate: latestSortTimestamp,
+  }
+}
+
 export function CustomerList({
   initialCustomers,
   initialPagination,
@@ -73,6 +168,7 @@ export function CustomerList({
   const router = useRouter()
   const [customers, setCustomers] = React.useState<SerializedCustomer[]>(initialCustomers)
   const [searchTerm, setSearchTerm] = React.useState("")
+  const [filterTab, setFilterTab] = React.useState<FilterTab>("ALL")
   const [currentPage, setCurrentPage] = React.useState(initialPagination?.page || 1)
   const [pagination, setPagination] = React.useState<CustomerPagination>(
     initialPagination || {
@@ -84,7 +180,12 @@ export function CustomerList({
   )
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const isInitialMount = React.useRef(true)
+
+  // Track previous filters to prevent initial mount and Strict Mode double refetches
+  const prevFiltersRef = React.useRef({
+    searchTerm,
+    currentPage,
+  })
 
   // Register Guest Dialog State
   const [isRegisterOpen, setIsRegisterOpen] = React.useState(false)
@@ -132,6 +233,16 @@ export function CustomerList({
           _count?: { reservations: number }
           reservationsCount?: number
           createdAt: string | Date
+          reservations?: {
+            id: string
+            status: string
+            createdAt: string | Date
+            rooms?: {
+              arrivalDate: string | Date
+              departureDate: string | Date
+              status: string
+            }[]
+          }[]
         }) => ({
           id: c.id,
           firstName: c.firstName,
@@ -145,6 +256,16 @@ export function CustomerList({
           remarks: c.remarks,
           reservationsCount: c._count?.reservations ?? c.reservationsCount ?? 0,
           createdAt: typeof c.createdAt === "string" ? c.createdAt : new Date(c.createdAt).toISOString(),
+          reservations: c.reservations?.map((r) => ({
+            id: r.id,
+            status: r.status,
+            createdAt: typeof r.createdAt === "string" ? r.createdAt : new Date(r.createdAt).toISOString(),
+            rooms: r.rooms?.map((rm) => ({
+              arrivalDate: typeof rm.arrivalDate === "string" ? rm.arrivalDate.split("T")[0] : new Date(rm.arrivalDate).toISOString().split("T")[0],
+              departureDate: typeof rm.departureDate === "string" ? rm.departureDate.split("T")[0] : new Date(rm.departureDate).toISOString().split("T")[0],
+              status: rm.status,
+            })) || [],
+          })) || [],
         }))
 
         setCustomers(mapped)
@@ -161,10 +282,14 @@ export function CustomerList({
   }, [searchTerm, currentPage])
 
   React.useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false
+    const prev = prevFiltersRef.current
+    const hasChanged = prev.searchTerm !== searchTerm || prev.currentPage !== currentPage
+
+    if (!hasChanged) {
       return
     }
+
+    prevFiltersRef.current = { searchTerm, currentPage }
 
     const timer = setTimeout(() => {
       fetchCustomers(searchTerm, currentPage)
@@ -172,6 +297,57 @@ export function CustomerList({
 
     return () => clearTimeout(timer)
   }, [fetchCustomers, searchTerm, currentPage])
+
+  // Attach stay meta to each customer and sort by last stay date descending
+  const customersWithMeta = React.useMemo(() => {
+    return customers.map((c) => ({
+      customer: c,
+      meta: getCustomerStayMeta(c),
+    }))
+  }, [customers])
+
+  // Filter chips counts
+  const tabCounts = React.useMemo(() => {
+    let inHouse = 0
+    let upcoming = 0
+    let repeat = 0
+
+    for (const item of customersWithMeta) {
+      if (item.meta.status === "IN_HOUSE") inHouse++
+      if (item.meta.status === "UPCOMING") upcoming++
+      if (item.customer.reservationsCount >= 2) repeat++
+    }
+
+    return {
+      all: customersWithMeta.length,
+      inHouse,
+      upcoming,
+      repeat,
+    }
+  }, [customersWithMeta])
+
+  // Sort and filter customers
+  const filteredAndSortedCustomers = React.useMemo(() => {
+    let list = [...customersWithMeta]
+
+    if (filterTab === "IN_HOUSE") {
+      list = list.filter((item) => item.meta.status === "IN_HOUSE")
+    } else if (filterTab === "UPCOMING") {
+      list = list.filter((item) => item.meta.status === "UPCOMING")
+    } else if (filterTab === "REPEAT") {
+      list = list.filter((item) => item.customer.reservationsCount >= 2)
+    }
+
+    // Sort by last stay date descending; if no stay, sort by registration date descending
+    list.sort((a, b) => {
+      if (a.meta.sortDate !== b.meta.sortDate) {
+        return b.meta.sortDate - a.meta.sortDate
+      }
+      return new Date(b.customer.createdAt).getTime() - new Date(a.customer.createdAt).getTime()
+    })
+
+    return list
+  }, [customersWithMeta, filterTab])
 
   const handleRegisterGuest = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -208,6 +384,7 @@ export function CustomerList({
         remarks: data.customer.remarks,
         reservationsCount: 0,
         createdAt: new Date().toISOString(),
+        reservations: [],
       }
 
       setCustomers((prev) => [newCustomer, ...prev])
@@ -239,8 +416,15 @@ export function CustomerList({
     }
   }
 
+  const filterTabs: { key: FilterTab; label: string; count: number }[] = [
+    { key: "ALL", label: "All", count: tabCounts.all },
+    { key: "IN_HOUSE", label: "In house", count: tabCounts.inHouse },
+    { key: "UPCOMING", label: "Upcoming", count: tabCounts.upcoming },
+    { key: "REPEAT", label: "Repeat", count: tabCounts.repeat },
+  ]
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Page Header */}
       <PageHeader
         title="Guests"
@@ -260,12 +444,45 @@ export function CustomerList({
         }
       />
 
-      {/* Toolbar: Search input */}
-      <div className="flex items-center justify-between">
+      {/* Toolbar: Filter chips and Search input */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        {/* Filter chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {filterTabs.map((tab) => {
+            const isActive = filterTab === tab.key
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setFilterTab(tab.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer shrink-0",
+                  isActive
+                    ? "bg-primary text-primary-foreground font-semibold shadow-2xs"
+                    : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-mono",
+                    isActive
+                      ? "bg-primary-foreground/20 text-primary-foreground font-semibold"
+                      : "bg-muted-foreground/15 text-muted-foreground"
+                  )}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/70" />
           <Input
-            placeholder="Search by guest name, phone, email, or ID..."
+            placeholder="Search by name, phone, email, or ID..."
             className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
             value={searchTerm}
             onChange={(e) => {
@@ -281,7 +498,7 @@ export function CustomerList({
         isLoading={loading}
         error={error}
         onRetry={() => fetchCustomers()}
-        isEmpty={customers.length === 0}
+        isEmpty={filteredAndSortedCustomers.length === 0}
         emptyState={
           <EmptyState
             icon={<Users className="size-6" />}
@@ -289,17 +506,25 @@ export function CustomerList({
             description={
               searchTerm
                 ? `No guests match "${searchTerm}".`
+                : filterTab !== "ALL"
+                ? `No guests in the "${filterTabs.find((t) => t.key === filterTab)?.label}" filter.`
                 : "No guests registered in directory yet."
             }
             action={
-              <Button
-                size="sm"
-                onClick={() => setIsRegisterOpen(true)}
-                className="gap-1.5"
-              >
-                <Plus className="size-4" />
-                <span>Register First Guest</span>
-              </Button>
+              filterTab !== "ALL" ? (
+                <Button size="sm" variant="outline" onClick={() => setFilterTab("ALL")}>
+                  Clear Filter
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => setIsRegisterOpen(true)}
+                  className="gap-1.5"
+                >
+                  <Plus className="size-4" />
+                  <span>Register First Guest</span>
+                </Button>
+              )
             }
           />
         }
@@ -312,31 +537,71 @@ export function CustomerList({
         }}
         mobileView={
           <MobileCardList
-            items={customers}
-            keyExtractor={(c) => c.id}
-            renderCard={(c) => {
+            items={filteredAndSortedCustomers}
+            keyExtractor={({ customer }) => customer.id}
+            renderCard={({ customer: c, meta }) => {
               const fullName = `${c.firstName} ${c.lastName || ""}`.trim()
+              const initials = `${c.firstName[0] || ""}${c.lastName?.[0] || ""}`.toUpperCase()
+              const subline = c.address
+                ? c.nationality
+                  ? `${c.address} · ${c.nationality}`
+                  : c.address
+                : c.nationality || null
+
               return (
                 <div
                   onClick={() => router.push(`/customers/${c.id}`)}
-                  className="rounded-xl border border-border/80 bg-card p-4 space-y-2 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
+                  className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-foreground text-sm">{fullName}</span>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-mono text-muted-foreground">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="size-10 rounded-full bg-primary/10 text-primary font-semibold text-xs flex items-center justify-center shrink-0 border border-primary/20">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-foreground text-sm block truncate">
+                          {fullName}
+                        </span>
+                        {subline && (
+                          <span className="text-xs text-muted-foreground block truncate">
+                            {subline}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-muted/80 px-2 py-0.5 text-[11px] font-mono text-muted-foreground shrink-0">
                       {c.reservationsCount} stay{c.reservationsCount === 1 ? "" : "s"}
                     </span>
                   </div>
 
-                  <div className="space-y-0.5 text-xs text-muted-foreground">
-                    <div>{c.phone || c.email || "No contact registered"}</div>
-                    {c.idProofNumber ? (
-                      <div className="font-mono text-[11px]">
-                        {c.idProofType || "ID"}: {c.idProofNumber}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-muted-foreground/60 italic">Unrecorded ID</div>
-                    )}
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-border/40">
+                    <div className="space-y-0.5 text-muted-foreground">
+                      <div>{c.phone || c.email || "No contact"}</div>
+                      {c.idProofNumber && (
+                        <div className="font-mono text-[11px]">
+                          {c.idProofType || "ID"}: {c.idProofNumber.startsWith("••••") ? c.idProofNumber : `•••• ${c.idProofNumber.slice(-4)}`}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[11px] text-foreground font-medium block">
+                        {meta.lastStayDateStr}
+                      </span>
+                      {meta.status !== "NONE" && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <span
+                            className={cn(
+                              "size-1.5 rounded-full",
+                              meta.status === "IN_HOUSE" && "bg-emerald-500",
+                              meta.status === "UPCOMING" && "bg-blue-500",
+                              meta.status === "PAST" && "bg-muted-foreground/60"
+                            )}
+                          />
+                          {meta.statusLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               )
@@ -350,59 +615,128 @@ export function CustomerList({
               <TableHead className="text-xs font-semibold">Guest</TableHead>
               <TableHead className="text-xs font-semibold">Contact</TableHead>
               <TableHead className="text-xs font-semibold">ID Proof</TableHead>
+              <TableHead className="text-xs font-semibold">Last Stay</TableHead>
               <TableHead className="text-right text-xs font-semibold">Stays</TableHead>
-              <TableHead className="w-[44px]" />
+              <TableHead className="w-[120px] text-right" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {customers.map((c) => {
+            {filteredAndSortedCustomers.map(({ customer: c, meta }) => {
               const fullName = `${c.firstName} ${c.lastName || ""}`.trim()
+              const initials = `${c.firstName[0] || ""}${c.lastName?.[0] || ""}`.toUpperCase()
+              const subline = c.address
+                ? c.nationality
+                  ? `${c.address} · ${c.nationality}`
+                  : c.address
+                : c.nationality || null
+
               return (
                 <TableRow
                   key={c.id}
                   onClick={() => router.push(`/customers/${c.id}`)}
                   className="h-16 text-xs hover:bg-muted/40 cursor-pointer transition-colors group"
                 >
+                  {/* Guest: Initials avatar + name + muted subline */}
                   <TableCell className="font-medium">
-                    <span className="font-semibold text-foreground text-xs block">{fullName}</span>
-                    {c.address && (
-                      <span className="text-[11px] text-muted-foreground block truncate max-w-[220px]">
-                        {c.address}
-                      </span>
-                    )}
-                    {c.nationality && (
-                      <span className="text-[10px] text-muted-foreground/80 block">
-                        {c.nationality}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-3">
+                      <div className="size-9 rounded-full bg-primary/10 text-primary font-semibold text-xs flex items-center justify-center shrink-0 border border-primary/20">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-foreground text-xs sm:text-sm block group-hover:text-primary transition-colors truncate max-w-[200px]">
+                          {fullName}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground block truncate max-w-[200px]">
+                          {subline || "—"}
+                        </span>
+                      </div>
+                    </div>
                   </TableCell>
 
+                  {/* Contact: Phone & Email */}
                   <TableCell>
-                    <span className="text-foreground block">{c.phone || "—"}</span>
-                    <span className="text-[11px] text-muted-foreground block truncate max-w-[200px]">
+                    <span className="text-foreground text-xs font-mono block">{c.phone || "—"}</span>
+                    <span className="text-[11px] text-muted-foreground block truncate max-w-[190px]">
                       {c.email || "No email"}
                     </span>
                   </TableCell>
 
+                  {/* ID Proof: Masked ID (•••• 1234) */}
                   <TableCell>
                     {c.idProofNumber ? (
                       <div>
-                        <span className="font-mono text-foreground text-xs block">{c.idProofNumber}</span>
-                        <span className="text-[10px] text-muted-foreground">{c.idProofType || "Document"}</span>
+                        <span className="font-mono text-foreground text-xs block">
+                          {c.idProofNumber.startsWith("••••")
+                            ? c.idProofNumber
+                            : `•••• ${c.idProofNumber.slice(-4)}`}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {c.idProofType || "Document"}
+                        </span>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground/60 italic text-xs">Unrecorded</span>
+                      <span className="text-muted-foreground/50 italic text-xs">Unrecorded</span>
                     )}
                   </TableCell>
 
+                  {/* Last Stay: Date with small status tag (In house / Upcoming / Past) */}
+                  <TableCell>
+                    <div>
+                      <span className="text-foreground text-xs font-medium block">
+                        {meta.lastStayDateStr}
+                      </span>
+                      {meta.status !== "NONE" ? (
+                        <div className="inline-flex items-center gap-1.5 mt-0.5">
+                          <span
+                            className={cn(
+                              "size-1.5 rounded-full shrink-0",
+                              meta.status === "IN_HOUSE" && "bg-emerald-500",
+                              meta.status === "UPCOMING" && "bg-blue-500",
+                              meta.status === "PAST" && "bg-muted-foreground/60"
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              "text-[10px] font-medium",
+                              meta.status === "IN_HOUSE" && "text-emerald-700 dark:text-emerald-400",
+                              meta.status === "UPCOMING" && "text-blue-700 dark:text-blue-400",
+                              meta.status === "PAST" && "text-muted-foreground"
+                            )}
+                          >
+                            {meta.statusLabel}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/60">No prior stays</span>
+                      )}
+                    </div>
+                  </TableCell>
+
+                  {/* Stays Count */}
                   <TableCell className="text-right font-mono font-medium">
-                    <span className="rounded-full bg-muted/70 px-2.5 py-1 text-xs text-foreground">
+                    <span className="rounded-full bg-muted/80 px-2.5 py-0.5 text-xs text-foreground">
                       {c.reservationsCount} stay{c.reservationsCount === 1 ? "" : "s"}
                     </span>
                   </TableCell>
 
-                  <TableCell className="text-right p-0 pr-4">
-                    <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors ml-auto" />
+                  {/* Action: Hover "Book stay" + Chevron */}
+                  <TableCell className="text-right pr-4">
+                    <div
+                      className="flex items-center justify-end gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Link href={`/reservations/new?customerId=${c.id}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2.5 text-[11px] gap-1 opacity-0 group-hover:opacity-100 transition-opacity font-medium border-primary/30 text-primary hover:bg-primary/10 hover:border-primary/50"
+                        >
+                          <CalendarPlus className="size-3" />
+                          <span>Book stay</span>
+                        </Button>
+                      </Link>
+                      <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors ml-1" />
+                    </div>
                   </TableCell>
                 </TableRow>
               )

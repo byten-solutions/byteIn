@@ -48,7 +48,10 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
   const [statusFilter, setStatusFilter] = React.useState<string>("ALL")
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const isInitialMount = React.useRef(true)
+  const prevFiltersRef = React.useRef({
+    search,
+    statusFilter,
+  })
 
   const fetchInvoices = React.useCallback(async (searchTerm = search, status = statusFilter) => {
     setLoading(true)
@@ -74,10 +77,16 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
   }, [search, statusFilter])
 
   React.useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false
+    const prev = prevFiltersRef.current
+    const hasChanged =
+      prev.search !== search ||
+      prev.statusFilter !== statusFilter
+
+    if (!hasChanged) {
       return
     }
+
+    prevFiltersRef.current = { search, statusFilter }
 
     const timer = setTimeout(() => {
       fetchInvoices(search, statusFilter)
@@ -117,7 +126,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
             className={cn(
               "text-sm font-bold font-mono tabular-nums",
               totalOutstandingNum > 0
-                ? "text-amber-600 dark:text-amber-400 font-extrabold"
+                ? "text-primary font-bold"
                 : "text-foreground"
             )}
           />
@@ -183,16 +192,16 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
                   onClick={() => router.push(`/billing/${inv.id}`)}
                   className="rounded-xl border border-border/80 bg-card p-4 space-y-3 cursor-pointer hover:border-primary/40 transition-colors shadow-xs"
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-sm text-foreground">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-bold text-sm text-foreground truncate min-w-0">
                       #{inv.invoiceNumber}
                     </span>
                     <StatusBadge status={inv.status} size="sm" />
                   </div>
 
-                  <div className="text-xs">
-                    <div className="font-medium text-foreground">{inv.customerName}</div>
-                    <div className="text-muted-foreground text-[11px]">
+                  <div className="text-xs min-w-0 space-y-0.5">
+                    <div className="font-medium text-foreground truncate" title={inv.customerName}>{inv.customerName}</div>
+                    <div className="text-muted-foreground text-[11px] truncate">
                       Reservation #{inv.reservationNo}
                     </div>
                   </div>
@@ -208,7 +217,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
                         value={inv.balanceDue}
                         className={cn(
                           "text-sm font-bold",
-                          balanceNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                          balanceNum > 0 ? "text-foreground font-bold" : "text-muted-foreground"
                         )}
                       />
                     </div>
@@ -270,8 +279,8 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
                     <MoneyText
                       value={inv.balanceDue}
                       className={cn(
-                        "font-bold text-xs",
-                        balanceNum > 0 ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-foreground"
+                        "font-bold text-xs font-mono",
+                        balanceNum > 0 ? "text-foreground font-bold" : "text-muted-foreground"
                       )}
                     />
                   </TableCell>

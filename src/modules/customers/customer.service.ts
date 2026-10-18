@@ -88,6 +88,19 @@ export class CustomerService {
           _count: {
             select: { reservations: true },
           },
+          reservations: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            include: {
+              rooms: {
+                select: {
+                  arrivalDate: true,
+                  departureDate: true,
+                  status: true,
+                },
+              },
+            },
+          },
         },
       }),
       prisma.customer.count({ where }),
