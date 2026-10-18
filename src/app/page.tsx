@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import Link from "next/link"
 import {
@@ -16,6 +17,7 @@ import { CheckInOutService } from "@/modules/check-in-out/check-in-out.service"
 import { getHotelTodayDateUtc } from "@/lib/date"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   StatCard,
   StatusBadge,
@@ -35,38 +37,36 @@ export default async function Page() {
     occupied: 0,
     maintenance: 0,
     outOfService: 0,
-    reservations: 0,
     confirmedReservations: 0,
   }
 
-  let arrivals: Awaited<ReturnType<typeof CheckInOutService.getDailyArrivals>> = []
-  let departures: Awaited<ReturnType<typeof CheckInOutService.getDailyDepartures>> = []
-
   if (session) {
-    const today = getHotelTodayDateUtc()
-    const [
-      total,
-      clean,
-      dirty,
-      occupied,
-      maintenance,
-      outOfService,
-      totalRes,
-      confirmedRes,
-      todayArrivals,
-      todayDepartures,
-    ] = await Promise.all([
-      prisma.room.count(),
-      prisma.room.count({ where: { status: RoomStatus.VACANT_CLEAN } }),
-      prisma.room.count({ where: { status: RoomStatus.VACANT_DIRTY } }),
-      prisma.room.count({ where: { status: RoomStatus.OCCUPIED } }),
-      prisma.room.count({ where: { status: RoomStatus.MAINTENANCE } }),
-      prisma.room.count({ where: { status: RoomStatus.OUT_OF_SERVICE } }),
-      prisma.reservation.count(),
-      prisma.reservation.count({ where: { status: ReservationStatus.CONFIRMED } }),
-      CheckInOutService.getDailyArrivals(today),
-      CheckInOutService.getDailyDepartures(today),
+    const [roomGroups, confirmedRes] = await Promise.all([
+      prisma.room.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+      }),
+      prisma.reservation.count({
+        where: { status: ReservationStatus.CONFIRMED },
+      }),
     ])
+
+    let clean = 0
+    let dirty = 0
+    let occupied = 0
+    let maintenance = 0
+    let outOfService = 0
+    let total = 0
+
+    for (const group of roomGroups) {
+      const c = group._count._all
+      total += c
+      if (group.status === RoomStatus.VACANT_CLEAN) clean = c
+      else if (group.status === RoomStatus.VACANT_DIRTY) dirty = c
+      else if (group.status === RoomStatus.OCCUPIED) occupied = c
+      else if (group.status === RoomStatus.MAINTENANCE) maintenance = c
+      else if (group.status === RoomStatus.OUT_OF_SERVICE) outOfService = c
+    }
 
     counts = {
       total,
@@ -75,12 +75,8 @@ export default async function Page() {
       occupied,
       maintenance,
       outOfService,
-      reservations: totalRes,
       confirmedReservations: confirmedRes,
     }
-
-    arrivals = todayArrivals
-    departures = todayDepartures
   }
 
   return (
@@ -185,127 +181,9 @@ export default async function Page() {
             </div>
 
             {/* Daily Operations: Arrivals & Departures Matrices */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-              {/* Arrivals Today */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
-                    <LogIn className="size-4 text-emerald-600 dark:text-emerald-400" />
-                    <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
-                      Arrivals Today
-                    </h2>
-                  </div>
-                  <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-                    {arrivals.length} scheduled
-                  </span>
-                </div>
-
-                {arrivals.length === 0 ? (
-                  <EmptyState
-                    icon={<LogIn className="size-5" />}
-                    title="No arrivals scheduled today"
-                    description="No confirmed guest check-ins scheduled for today's shift."
-                    className="min-h-44"
-                  />
-                ) : (
-                  <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-                    {arrivals.map((alloc) => (
-                      <Link
-                        key={alloc.id}
-                        href={`/reservations/${alloc.reservationId}`}
-                        className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
-                      >
-                        <div className="space-y-1 min-w-0 pr-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]" title={`Room ${alloc.room.roomNo}`}>
-                              Room {alloc.room.roomNo}
-                            </span>
-                            <span className="text-muted-foreground truncate text-[11px] min-w-0" title={alloc.roomCategory.name}>
-                              • {alloc.roomCategory.name}
-                            </span>
-                          </div>
-                          <div className="text-muted-foreground truncate text-xs">
-                            Guest:{" "}
-                            <span className="font-semibold text-foreground">
-                              {alloc.reservation.customer.firstName}{" "}
-                              {alloc.reservation.customer.lastName}
-                            </span>{" "}
-                            <span className="font-mono text-[11px] text-muted-foreground/70">
-                              (#{alloc.reservation.reservationNo})
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <StatusBadge status={alloc.room.status} size="sm" />
-                          <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Departures Today */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex items-center gap-2">
-                    <LogOut className="size-4 text-sky-600 dark:text-sky-400" />
-                    <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
-                      Departures Today
-                    </h2>
-                  </div>
-                  <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-                    {departures.length} scheduled
-                  </span>
-                </div>
-
-                {departures.length === 0 ? (
-                  <EmptyState
-                    icon={<LogOut className="size-5" />}
-                    title="No departures scheduled today"
-                    description="No guest check-outs scheduled for today's shift."
-                    className="min-h-44"
-                  />
-                ) : (
-                  <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-                    {departures.map((alloc) => (
-                      <Link
-                        key={alloc.id}
-                        href={`/reservations/${alloc.reservationId}`}
-                        className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
-                      >
-                        <div className="space-y-1 min-w-0 pr-3">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]" title={`Room ${alloc.room.roomNo}`}>
-                              Room {alloc.room.roomNo}
-                            </span>
-                            <span className="text-muted-foreground truncate text-[11px] min-w-0" title={alloc.roomCategory.name}>
-                              • {alloc.roomCategory.name}
-                            </span>
-                          </div>
-                          <div className="text-muted-foreground truncate text-xs">
-                            Guest:{" "}
-                            <span className="font-semibold text-foreground">
-                              {alloc.reservation.customer.firstName}{" "}
-                              {alloc.reservation.customer.lastName}
-                            </span>{" "}
-                            <span className="font-mono text-[11px] text-muted-foreground/70">
-                              (#{alloc.reservation.reservationNo})
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <StatusBadge status={alloc.room.status} size="sm" />
-                          <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <Suspense fallback={<DailyOperationsSkeleton />}>
+              <DailyOperationsSection />
+            </Suspense>
           </div>
         ) : (
           <div className="flex min-h-[60vh] items-center justify-center">
@@ -336,3 +214,177 @@ export default async function Page() {
     </AppShell>
   )
 }
+
+function DailyOperationsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-5 w-24 rounded-full" />
+        </div>
+        <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-5 w-24 rounded-full" />
+        </div>
+        <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+async function DailyOperationsSection() {
+  const today = getHotelTodayDateUtc()
+  const [arrivals, departures] = await Promise.all([
+    CheckInOutService.getDailyArrivals(today),
+    CheckInOutService.getDailyDepartures(today),
+  ])
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+      {/* Arrivals Today */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <LogIn className="size-4 text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
+              Arrivals Today
+            </h2>
+          </div>
+          <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+            {arrivals.length} scheduled
+          </span>
+        </div>
+
+        {arrivals.length === 0 ? (
+          <EmptyState
+            icon={<LogIn className="size-5" />}
+            title="No arrivals scheduled today"
+            description="No confirmed guest check-ins scheduled for today's shift."
+            className="min-h-44"
+          />
+        ) : (
+          <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
+            {arrivals.map((alloc) => (
+              <Link
+                key={alloc.id}
+                href={`/reservations/${alloc.reservationId}`}
+                className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
+              >
+                <div className="space-y-1 min-w-0 pr-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
+                      title={`Room ${alloc.room.roomNo}`}
+                    >
+                      Room {alloc.room.roomNo}
+                    </span>
+                    <span
+                      className="text-muted-foreground truncate text-[11px] min-w-0"
+                      title={alloc.roomCategory.name}
+                    >
+                      • {alloc.roomCategory.name}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground truncate text-xs">
+                    Guest:{" "}
+                    <span className="font-semibold text-foreground">
+                      {alloc.reservation.customer.firstName}{" "}
+                      {alloc.reservation.customer.lastName}
+                    </span>{" "}
+                    <span className="font-mono text-[11px] text-muted-foreground/70">
+                      (#{alloc.reservation.reservationNo})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <StatusBadge status={alloc.room.status} size="sm" />
+                  <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Departures Today */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <LogOut className="size-4 text-sky-600 dark:text-sky-400" />
+            <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
+              Departures Today
+            </h2>
+          </div>
+          <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+            {departures.length} scheduled
+          </span>
+        </div>
+
+        {departures.length === 0 ? (
+          <EmptyState
+            icon={<LogOut className="size-5" />}
+            title="No departures scheduled today"
+            description="No guest check-outs scheduled for today's shift."
+            className="min-h-44"
+          />
+        ) : (
+          <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
+            {departures.map((alloc) => (
+              <Link
+                key={alloc.id}
+                href={`/reservations/${alloc.reservationId}`}
+                className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
+              >
+                <div className="space-y-1 min-w-0 pr-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
+                      title={`Room ${alloc.room.roomNo}`}
+                    >
+                      Room {alloc.room.roomNo}
+                    </span>
+                    <span
+                      className="text-muted-foreground truncate text-[11px] min-w-0"
+                      title={alloc.roomCategory.name}
+                    >
+                      • {alloc.roomCategory.name}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground truncate text-xs">
+                    Guest:{" "}
+                    <span className="font-semibold text-foreground">
+                      {alloc.reservation.customer.firstName}{" "}
+                      {alloc.reservation.customer.lastName}
+                    </span>{" "}
+                    <span className="font-mono text-[11px] text-muted-foreground/70">
+                      (#{alloc.reservation.reservationNo})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <StatusBadge status={alloc.room.status} size="sm" />
+                  <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
