@@ -613,6 +613,7 @@ async function main() {
           phone: c.phone,
           idProofType: c.idProofType,
           idProofNumber: c.idProofNumber,
+          registeredPropertyId: property.id,
         },
       });
     } else {
@@ -761,6 +762,7 @@ async function main() {
         data: {
           reservationNo: rData.reservationNo,
           customerId: custId,
+          propertyId: property.id,
           status: rData.status,
           createdBy: receptionistUser.id,
         },
@@ -963,6 +965,7 @@ async function main() {
       const inv = await prisma.invoice.create({
         data: {
           reservationId: resv.id,
+          propertyId: resv.propertyId,
           invoiceNumber: demo.invoiceNumber,
           subtotal: demo.subtotal,
           discountTotal: new Prisma.Decimal("0.00"),
@@ -974,7 +977,10 @@ async function main() {
             create: demo.items,
           },
           payments: {
-            create: demo.payment,
+            create: {
+              ...demo.payment,
+              propertyId: resv.propertyId,
+            },
           },
         },
       });

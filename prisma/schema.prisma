@@ -126,6 +126,10 @@ model Property {
   buildings      Building[]
   rooms          Room[]
   roomCategories RoomCategory[]
+  reservations   Reservation[]
+  invoices       Invoice[]
+  payments       Payment[]
+  customers      Customer[]
 
   @@map("properties")
 }
@@ -248,11 +252,14 @@ model Customer {
   idProofType   String?  @map("id_proof_type")
   idProofNumber String?  @map("id_proof_number")
   remarks       String?
+  registeredPropertyId String?   @map("registered_property_id")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  reservations Reservation[]
+  registeredProperty Property?     @relation(fields: [registeredPropertyId], references: [id], onDelete: SetNull)
+  reservations       Reservation[]
 
+  @@index([registeredPropertyId])
   @@index([phone])
   @@index([email])
   @@index([createdAt(sort: Desc)])
@@ -263,17 +270,22 @@ model Reservation {
   id              String            @id @default(cuid())
   reservationNo   String            @unique @map("reservation_no")
   customerId      String            @map("customer_id")
+  propertyId      String            @map("property_id")
   status          ReservationStatus @default(CONFIRMED)
   createdBy       String            @map("created_by")
   specialRequests String?           @map("special_requests")
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @updatedAt @map("updated_at")
 
+  property Property          @relation(fields: [propertyId], references: [id])
   customer Customer          @relation(fields: [customerId], references: [id])
   creator  User              @relation("CreatedReservations", fields: [createdBy], references: [id])
   rooms    ReservationRoom[]
   invoices Invoice[]
 
+  @@index([propertyId, createdAt(sort: Desc)])
+  @@index([propertyId, status, createdAt(sort: Desc)])
+  @@index([propertyId, customerId])
   @@index([customerId])
   @@index([status])
   @@index([createdBy])
@@ -323,6 +335,7 @@ model ReservationRoom {
 model Invoice {
   id            String        @id @default(cuid())
   reservationId String        @map("reservation_id")
+  propertyId    String        @map("property_id")
   invoiceNumber String        @unique @map("invoice_number")
   subtotal      Decimal       @db.Decimal(10, 2)
   discountTotal Decimal       @default(0) @map("discount_total") @db.Decimal(10, 2)
@@ -333,10 +346,13 @@ model Invoice {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
+  property    Property      @relation(fields: [propertyId], references: [id])
   reservation Reservation   @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   items       InvoiceItem[]
   payments    Payment[]
 
+  @@index([propertyId, createdAt(sort: Desc)])
+  @@index([propertyId, status, createdAt(sort: Desc)])
   @@index([reservationId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -366,6 +382,7 @@ model InvoiceItem {
 model Payment {
   id              String        @id @default(cuid())
   invoiceId       String        @map("invoice_id")
+  propertyId      String        @map("property_id")
   amount          Decimal       @db.Decimal(10, 2)
   paymentMethod   String        @map("payment_method")
   referenceNumber String?       @map("reference_number")
@@ -378,10 +395,13 @@ model Payment {
   voidedBy        String?       @map("voided_by")
   createdAt       DateTime      @default(now()) @map("created_at")
 
-  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
-  creator User    @relation("RecordedPayments", fields: [createdBy], references: [id])
-  voider  User?   @relation("VoidedPayments", fields: [voidedBy], references: [id])
+  property Property @relation(fields: [propertyId], references: [id])
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  creator  User     @relation("RecordedPayments", fields: [createdBy], references: [id])
+  voider   User?    @relation("VoidedPayments", fields: [voidedBy], references: [id])
 
+  @@index([propertyId, paidAt(sort: Desc)])
+  @@index([paidAt(sort: Desc)])
   @@index([invoiceId])
   @@index([createdBy])
   @@index([voidedBy])

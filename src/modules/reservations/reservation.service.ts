@@ -235,41 +235,11 @@ export class ReservationService {
     try {
       const result = await prisma.$transaction(
         async (tx) => {
-          // 1. Resolve or create customer
-          let customerId = input.customerId;
-          if (!customerId && input.newCustomer) {
-            const customer = await tx.customer.create({
-              data: {
-                firstName: input.newCustomer.firstName.trim(),
-                lastName: input.newCustomer.lastName?.trim() || null,
-                phone: input.newCustomer.phone?.trim() || null,
-                email: input.newCustomer.email?.trim() || null,
-                nationality: input.newCustomer.nationality?.trim() || null,
-                address: input.newCustomer.address?.trim() || null,
-                idProofType: input.newCustomer.idProofType?.trim() || null,
-                idProofNumber: normalizeIdProofNumber(input.newCustomer.idProofNumber),
-                remarks: input.newCustomer.remarks?.trim() || null,
-              },
-            });
-            customerId = customer.id;
-          } else if (customerId) {
-            const customer = await tx.customer.findUnique({
-              where: { id: customerId },
-            });
-            if (!customer) {
-              throw new NotFoundError("Customer not found");
-            }
-          } else {
-            throw new BadRequestError(
-              "Either an existing customerId or newCustomer details must be provided"
-            );
-          }
-
-          // 2. Acquire row-level locks on requested rooms in deterministic order
+          // 1. Acquire row-level locks on requested rooms in deterministic order
           // This serializes concurrent booking transactions touching the same room(s)
           await tx.$queryRaw`SELECT "id" FROM "rooms" WHERE "id" = ANY(${sortedRoomIds}::text[]) FOR UPDATE`;
 
-          // 3. Load rooms and verify physical operational status
+          // 2. Load rooms and verify physical operational status
           const rooms = await tx.room.findMany({
             where: { id: { in: sortedRoomIds } },
             include: { category: true },
@@ -291,6 +261,39 @@ export class ReservationService {
           if (distinctPropertyIds.size > 1) {
             throw new BadRequestError(
               "All rooms in a reservation must belong to the same property"
+            );
+          }
+
+          const reservationPropertyId = rooms[0]!.propertyId;
+
+          // 3. Resolve or create customer
+          let customerId = input.customerId;
+          if (!customerId && input.newCustomer) {
+            const customer = await tx.customer.create({
+              data: {
+                firstName: input.newCustomer.firstName.trim(),
+                lastName: input.newCustomer.lastName?.trim() || null,
+                phone: input.newCustomer.phone?.trim() || null,
+                email: input.newCustomer.email?.trim() || null,
+                nationality: input.newCustomer.nationality?.trim() || null,
+                address: input.newCustomer.address?.trim() || null,
+                idProofType: input.newCustomer.idProofType?.trim() || null,
+                idProofNumber: normalizeIdProofNumber(input.newCustomer.idProofNumber),
+                remarks: input.newCustomer.remarks?.trim() || null,
+                registeredPropertyId: reservationPropertyId,
+              },
+            });
+            customerId = customer.id;
+          } else if (customerId) {
+            const customer = await tx.customer.findUnique({
+              where: { id: customerId },
+            });
+            if (!customer) {
+              throw new NotFoundError("Customer not found");
+            }
+          } else {
+            throw new BadRequestError(
+              "Either an existing customerId or newCustomer details must be provided"
             );
           }
 
@@ -365,6 +368,7 @@ export class ReservationService {
             data: {
               reservationNo,
               customerId: customerId!,
+              propertyId: reservationPropertyId,
               status: ReservationStatus.CONFIRMED,
               createdBy: creatorUserId,
               specialRequests: input.specialRequests?.trim() || null,
@@ -504,6 +508,7 @@ export class ReservationService {
             const invoice = await tx.invoice.create({
               data: {
                 reservationId: createdReservation.id,
+                propertyId: reservationPropertyId,
                 invoiceNumber,
                 subtotal,
                 discountTotal: new Prisma.Decimal(0),

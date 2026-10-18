@@ -36,10 +36,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAuth(undefined, req);
+    const session = await requireAuth(undefined, req);
+    const searchParams = req.nextUrl.searchParams;
+    const requestedPropertyId = searchParams.get("propertyId") || undefined;
+    const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
+      allowSuperAdminGlobal: true,
+    });
     const body = await req.json();
     const validated = createCustomerSchema.parse(body);
-    const customer = await CustomerService.createCustomer(validated);
+    const customer = await CustomerService.createCustomer(validated, effectivePropertyId || null);
     return NextResponse.json({ success: true, customer }, { status: 201 });
   } catch (error) {
     return handleApiError(error, "Failed to create customer");

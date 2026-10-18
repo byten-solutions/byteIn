@@ -201,6 +201,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-ECHK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -225,6 +226,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     // Create another reservation that books the room before futureArrival so room is not free
     await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-CONF-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -275,6 +277,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-NSDATE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -336,6 +339,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-CHGROOM-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -434,6 +438,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-CANCPAY-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -456,6 +461,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     // Create invoice and recorded payment
     await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-CANCPAY-${Date.now()}`,
         status: InvoiceStatus.PARTIALLY_PAID,
@@ -473,11 +479,12 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
         },
         payments: {
           create: {
+            propertyId: testPropertyId,
             amount: 1000,
             paymentMethod: "CASH",
             status: PaymentStatus.RECORDED,
             paidAt: new Date(),
-            creator: { connect: { id: receptionistUserId } },
+            createdBy: receptionistUserId,
           },
         },
       },
@@ -542,6 +549,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-CANCVOID-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -563,6 +571,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-CANCVOID-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -637,6 +646,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-EXTINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -660,6 +670,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-EXTINV-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -729,6 +740,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-EARLYCHK-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -757,6 +769,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     // The policy dictates: never reduce total below paid ($2500). Max adjustment = -$1500!
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-EARLYCHK-${Date.now()}`,
         status: InvoiceStatus.PARTIALLY_PAID,
@@ -775,11 +788,12 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
         },
         payments: {
           create: {
+            propertyId: testPropertyId,
             amount: 2500,
             paymentMethod: "CREDIT_CARD",
             status: PaymentStatus.RECORDED,
             paidAt: new Date(),
-            creator: { connect: { id: receptionistUserId } },
+            createdBy: receptionistUserId,
           },
         },
       },
@@ -834,6 +848,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-NSBILL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -857,6 +872,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-NSBILL-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -930,6 +946,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-RMINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -952,6 +969,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     // Auto-create invoice with 3 nights @ 1000 = $3000
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-RMCHG-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -1039,6 +1057,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-ADJ-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -1060,6 +1079,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-ADJ-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -1137,6 +1157,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-ADMCAN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -1157,6 +1178,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-ADMCAN-${Date.now()}`,
         status: InvoiceStatus.PARTIALLY_PAID,
@@ -1175,6 +1197,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
         },
         payments: {
           create: {
+            propertyId: testPropertyId,
             amount: 1500,
             paymentMethod: "CASH",
             referenceNumber: "CASH-ADMCAN-01",
@@ -1237,6 +1260,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-EARLYALLOW-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -1258,6 +1282,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-EARLYALLOW-${Date.now()}`,
         status: InvoiceStatus.ISSUED,
@@ -1326,6 +1351,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-BKDATE-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -1427,6 +1453,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
   it("REQUIRE_PAYMENT_IDEMPOTENCY_KEY = true: payment submission without Idempotency-Key is rejected with 400", async () => {
     const reservation = await prisma.reservation.create({
       data: {
+        propertyId: testPropertyId,
         reservationNo: `RES-IDEMP-${Date.now()}`,
         customerId: testCustomerId,
         createdBy: receptionistUserId,
@@ -1436,6 +1463,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     const invoice = await prisma.invoice.create({
       data: {
+        propertyId: testPropertyId,
         reservationId: reservation.id,
         invoiceNumber: `INV-IDEMP-${Date.now()}`,
         status: InvoiceStatus.ISSUED,

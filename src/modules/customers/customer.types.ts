@@ -8,6 +8,7 @@ export interface CreateCustomerInput {
   idProofType?: string | null;
   idProofNumber?: string | null;
   remarks?: string | null;
+  registeredPropertyId?: string | null;
 }
 
 export interface UpdateCustomerInput {

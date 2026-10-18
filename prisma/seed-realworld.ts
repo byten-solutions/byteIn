@@ -639,6 +639,7 @@ async function main() {
     id: string;
     reservationNo: string;
     customerId: string;
+    propertyId: string;
     status: ReservationStatus;
     createdBy: string;
     specialRequests: string | null;
@@ -666,6 +667,7 @@ async function main() {
   interface SeedInvoice {
     id: string;
     reservationId: string;
+    propertyId: string;
     invoiceNumber: string;
     subtotal: Prisma.Decimal;
     discountTotal: Prisma.Decimal;
@@ -691,6 +693,7 @@ async function main() {
   interface SeedPayment {
     id: string;
     invoiceId: string;
+    propertyId: string;
     amount: Prisma.Decimal;
     paymentMethod: string;
     referenceNumber: string;
@@ -796,6 +799,7 @@ async function main() {
         id: resId,
         reservationNo: resNo,
         customerId: customer.id,
+        propertyId: room.propertyId,
         status: resStatus,
         createdBy: receptionistUser.id,
         specialRequests: randomChoice(SPECIAL_REQUESTS),
@@ -861,6 +865,7 @@ async function main() {
       allInvoices.push({
         id: invId,
         reservationId: resId,
+        propertyId: room.propertyId,
         invoiceNumber: invNo,
         subtotal,
         discountTotal,
@@ -905,6 +910,7 @@ async function main() {
         allPayments.push({
           id: generateId("pay"),
           invoiceId: invId,
+          propertyId: room.propertyId,
           amount: grandTotal,
           paymentMethod: randomChoice(["CREDIT_CARD", "UPI", "BANK_TRANSFER", "CASH"]),
           referenceNumber: `TXN-${randomInt(10000000, 99999999)}`,
@@ -919,6 +925,7 @@ async function main() {
         allPayments.push({
           id: generateId("pay"),
           invoiceId: invId,
+          propertyId: room.propertyId,
           amount: advanceAmount,
           paymentMethod: randomChoice(["CREDIT_CARD", "UPI"]),
           referenceNumber: `DEP-${randomInt(10000000, 99999999)}`,
@@ -941,6 +948,7 @@ async function main() {
         id: r.id,
         reservationNo: r.reservationNo,
         customerId: r.customerId,
+        propertyId: r.propertyId,
         status: r.status,
         createdBy: r.createdBy,
         specialRequests: r.specialRequests,
@@ -978,6 +986,7 @@ async function main() {
       data: chunk.map((inv) => ({
         id: inv.id,
         reservationId: inv.reservationId,
+        propertyId: inv.propertyId,
         invoiceNumber: inv.invoiceNumber,
         subtotal: inv.subtotal,
         discountTotal: inv.discountTotal,
@@ -1013,6 +1022,7 @@ async function main() {
       data: chunk.map((p) => ({
         id: p.id,
         invoiceId: p.invoiceId,
+        propertyId: p.propertyId,
         amount: p.amount,
         paymentMethod: p.paymentMethod,
         referenceNumber: p.referenceNumber,

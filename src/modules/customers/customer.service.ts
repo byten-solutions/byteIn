@@ -41,7 +41,7 @@ export function maskCustomer<T extends { idProofNumber?: string | null }>(custom
 }
 
 export class CustomerService {
-  static async createCustomer(input: CreateCustomerInput) {
+  static async createCustomer(input: CreateCustomerInput, propertyId?: string | null) {
     const created = await prisma.customer.create({
       data: {
         firstName: input.firstName.trim(),
@@ -53,6 +53,7 @@ export class CustomerService {
         idProofType: input.idProofType?.trim() || null,
         idProofNumber: normalizeIdProofNumber(input.idProofNumber),
         remarks: input.remarks?.trim() || null,
+        registeredPropertyId: propertyId ?? input.registeredPropertyId ?? null,
       },
     });
     return maskCustomer(created);

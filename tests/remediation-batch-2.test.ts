@@ -125,6 +125,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-CANCEL-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -195,6 +196,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-MULTI-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -296,6 +298,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-NOSHOW-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -351,6 +354,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-REBOOK-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -384,6 +388,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-EXTEND-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -408,6 +413,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-COLLISION-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -490,6 +496,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-CHANGE-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {
@@ -572,6 +579,7 @@ describe("Batch 2 Remediations: Reservation Lifecycle & Allocation State Engine"
         data: {
           reservationNo: `RES-EARLY-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
           rooms: {

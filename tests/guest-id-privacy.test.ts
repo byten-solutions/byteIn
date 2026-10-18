@@ -222,6 +222,7 @@ describe("Guest ID Privacy & Masking Tests", () => {
       data: {
         reservationNo: `RES-PRIV-${Date.now().toString().slice(-6)}`,
         customerId: testCustomerId,
+        propertyId: testPropertyId,
         createdBy: receptionistUserId,
         rooms: {
           create: {

@@ -206,11 +206,13 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
               data: {
                 reservationNo: `TEST-RES-AUTH-${Date.now()}`,
                 customerId: testCustomerId,
+                propertyId: testPropertyId,
                 status: ReservationStatus.CONFIRMED,
                 createdBy: receptionistUserId,
               },
             })
           ).id,
+          propertyId: testPropertyId,
           invoiceNumber: `INV-AUTH-${Date.now()}`,
           subtotal: 500,
           grandTotal: 500,
@@ -221,6 +223,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       const paymentA = await prisma.payment.create({
         data: {
           invoiceId: invA.id,
+          propertyId: testPropertyId,
           amount: 200,
           paymentMethod: "CASH",
           status: PaymentStatus.RECORDED,
@@ -317,6 +320,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         data: {
           reservationNo: `TEST-RES-IDEMP-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
         },
@@ -325,6 +329,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       const inv = await prisma.invoice.create({
         data: {
           reservationId: resv.id,
+          propertyId: testPropertyId,
           invoiceNumber: `INV-IDEMP-${Date.now()}`,
           subtotal: 400,
           grandTotal: 400,
@@ -403,6 +408,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         data: {
           reservationNo: `TEST-RES-RESTRICT-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: adminUserId,
         },
@@ -444,6 +450,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         data: {
           reservationNo: `TEST-RES-INV-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: adminUserId,
         },
@@ -452,6 +459,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       const inv = await prisma.invoice.create({
         data: {
           reservationId: resv.id,
+          propertyId: testPropertyId,
           invoiceNumber: `INV-RESTRICT-${Date.now()}`,
           subtotal: 100,
           grandTotal: 100,
@@ -501,6 +509,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         data: {
           reservationNo: `TEST-RES-PAST-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: adminUserId,
         },
@@ -564,6 +573,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         data: {
           reservationNo: `TEST-RES-XMAS-${Date.now()}`,
           customerId: testCustomerId,
+          propertyId: testPropertyId,
           status: ReservationStatus.CONFIRMED,
           createdBy: receptionistUserId,
         },
@@ -585,6 +595,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       const inv = await prisma.invoice.create({
         data: {
           reservationId: resv.id,
+          propertyId: testPropertyId,
           invoiceNumber: `INV-XMAS-${Date.now()}`,
           subtotal: 8000,
           grandTotal: 8000,

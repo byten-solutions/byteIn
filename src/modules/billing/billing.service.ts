@@ -351,6 +351,7 @@ export class BillingService {
       const invoice = await tx.invoice.create({
         data: {
           reservationId: reservation.id,
+          propertyId: reservation.propertyId,
           invoiceNumber,
           subtotal,
           discountTotal,
@@ -1192,6 +1193,7 @@ export class BillingService {
       const payment = await tx.payment.create({
         data: {
           invoiceId,
+          propertyId: invoice.propertyId,
           amount: paymentAmount,
           paymentMethod: input.paymentMethod.toUpperCase().trim(),
           referenceNumber: input.referenceNumber?.trim() || null,

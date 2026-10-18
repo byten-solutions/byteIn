@@ -194,6 +194,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       const today = getHotelTodayDateUtc();
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-VOID-SAME-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -203,6 +204,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-VOID-SAME-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -221,6 +223,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           },
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 1000,
               paymentMethod: "CASH",
               referenceNumber: "CASH-SAME-01",
@@ -267,6 +270,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       const today = getHotelTodayDateUtc();
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-VOID-NOREASON-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -276,6 +280,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-VOID-NOREASON-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -285,6 +290,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           grandTotal: 1000,
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 500,
               paymentMethod: "CASH",
               status: PaymentStatus.RECORDED,
@@ -339,6 +345,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-VOID-OLD-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -348,6 +355,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-VOID-OLD-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -366,6 +374,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           },
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 1000,
               paymentMethod: "CASH",
               referenceNumber: "CASH-OLD-01",
@@ -415,6 +424,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-VOID-ADM-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -424,6 +434,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-VOID-ADM-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -442,6 +453,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           },
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 1000,
               paymentMethod: "CASH",
               referenceNumber: "CASH-ADM-01",
@@ -489,6 +501,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       // 1. Create a reservation and an invoice with a payment recorded yesterday (Shift 1)
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-SHIFT-VOID-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -498,6 +511,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-SHIFT-VOID-${Date.now()}`,
           status: InvoiceStatus.PAID,
@@ -507,6 +521,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           grandTotal: 1500,
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 1500,
               paymentMethod: "CASH",
               referenceNumber: "CASH-SHIFT-01",
@@ -928,6 +943,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       // 1. Create a reservation with a rate override (room booked at 2000 vs category base price)
       const resvOverride = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-DISC-REP-${Date.now()}`,
           customerId: discCustomer.id,
           createdBy: adminUserId,
@@ -948,6 +964,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       // 2. Create an invoice with explicit discount item
       const invDiscount = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resvOverride.id,
           invoiceNumber: `INV-DISC-REP-${Date.now()}`,
           status: InvoiceStatus.ISSUED,
@@ -1020,6 +1037,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     it("rejects discount line item without reason with HTTP 400", async () => {
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-DISC-VALID-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -1029,6 +1047,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-DISC-VALID-${Date.now()}`,
           status: InvoiceStatus.DRAFT,
@@ -1066,6 +1085,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     it("accepts discount line item with reason and records DISCOUNT_APPLIED audit log", async () => {
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-DISC-AUDIT-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -1075,6 +1095,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-DISC-AUDIT-${Date.now()}`,
           status: InvoiceStatus.DRAFT,
@@ -1241,6 +1262,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       const today = getHotelTodayDateUtc();
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-DEL-BLOCK-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -1250,6 +1272,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-DEL-BLOCK-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -1268,6 +1291,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           },
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 500,
               paymentMethod: "CASH",
               status: PaymentStatus.RECORDED,
@@ -1333,6 +1357,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     it("allows editing invoice items when no payments exist yet", async () => {
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-EDIT-DRAFT-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -1342,6 +1367,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-EDIT-DRAFT-${Date.now()}`,
           status: InvoiceStatus.DRAFT,
@@ -1393,6 +1419,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       const today = getHotelTodayDateUtc();
       const resv = await prisma.reservation.create({
         data: {
+          propertyId: testPropertyId,
           reservationNo: `RES-ADD-ALLOW-${Date.now()}`,
           customerId: testCustomerId,
           createdBy: receptionistUserId,
@@ -1402,6 +1429,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const inv = await prisma.invoice.create({
         data: {
+          propertyId: testPropertyId,
           reservationId: resv.id,
           invoiceNumber: `INV-ADD-ALLOW-${Date.now()}`,
           status: InvoiceStatus.PARTIALLY_PAID,
@@ -1420,6 +1448,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           },
           payments: {
             create: {
+              propertyId: testPropertyId,
               amount: 500,
               paymentMethod: "CASH",
               status: PaymentStatus.RECORDED,
