@@ -29,7 +29,6 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
-  SheetFooter,
 } from "@/components/ui/sheet";
 import {
   Dialog,
@@ -899,11 +898,11 @@ export function RoomManager({
                 )}
               </div>
 
-              <SheetFooter className="pt-4 border-t border-border/60 flex items-center justify-between gap-2">
+              <div className="pt-4 border-t border-border/60 flex flex-row items-center justify-end gap-2.5">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="text-xs"
+                  className="h-8 text-xs font-medium"
                   onClick={() => setSelectedRoomDetail(null)}
                 >
                   Close
@@ -911,18 +910,18 @@ export function RoomManager({
                 {isAdmin && (
                   <Button
                     size="sm"
-                    className="text-xs"
+                    className="h-8 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 shadow-2xs"
                     onClick={() => {
                       const r = selectedRoomDetail;
                       setSelectedRoomDetail(null);
                       openEditRoom(r);
                     }}
                   >
-                    <Pencil className="size-3.5 mr-1" />
-                    Edit Room
+                    <Pencil className="size-3.5" />
+                    <span>Edit Room</span>
                   </Button>
                 )}
-              </SheetFooter>
+              </div>
             </>
           )}
         </SheetContent>
