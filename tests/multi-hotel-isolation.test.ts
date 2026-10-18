@@ -7,6 +7,9 @@ import { AuthService } from "../src/modules/auth/auth.service";
 import { ReservationService } from "../src/modules/reservations/reservation.service";
 import { CheckInOutService } from "../src/modules/check-in-out/check-in-out.service";
 import { ReportsService } from "../src/modules/reports/reports.service";
+import { BillingService } from "../src/modules/billing/billing.service";
+import { CustomerService } from "../src/modules/customers/customer.service";
+import { RoomService } from "../src/modules/rooms/room.service";
 import { ForbiddenError, NotFoundError } from "../src/lib/errors";
 import { getHotelTodayDateUtc } from "../src/lib/date";
 import type { SessionPayload } from "../src/modules/auth/auth.types";
@@ -591,6 +594,221 @@ describe("Multi-Hotel Isolation & Access Control Tests", () => {
           (err: unknown) => err instanceof AuthError && err.statusCode === 400
         );
       });
+    });
+  });
+
+  describe("4. Adversarial Isolation & Invariant Checks", () => {
+    it("cross-hotel reservation mutations are strictly rejected", async () => {
+      // Receptionist at Hotel A tries to cancel Hotel B reservation
+      await assert.rejects(
+        async () => {
+          await ReservationService.cancelReservation(
+            reservationBId,
+            hotelARecepUser.id,
+            "Attacking hotel B reservation",
+            RoleName.RECEPTIONIST,
+            propertyA.id
+          );
+        },
+        NotFoundError
+      );
+
+      // Receptionist at Hotel A tries to check in Hotel B allocation
+      const allocB = await prisma.reservationRoom.findFirstOrThrow({
+        where: { reservationId: reservationBId },
+      });
+      await assert.rejects(
+        async () => {
+          await CheckInOutService.checkIn(
+            { allocationId: allocB.id },
+            hotelARecepUser.id,
+            propertyA.id
+          );
+        },
+        NotFoundError
+      );
+    });
+
+    it("cross-hotel invoice mutations are strictly rejected", async () => {
+      let invoiceB = await prisma.invoice.findFirst({
+        where: { reservationId: reservationBId },
+      });
+      if (!invoiceB) {
+        const created = await BillingService.createInvoiceForReservation(
+          { reservationId: reservationBId },
+          hotelBAdminUser.id,
+          propertyB.id
+        );
+        invoiceB = await prisma.invoice.findUniqueOrThrow({
+          where: { id: created.id },
+        });
+      }
+
+      // Hotel A tries to record payment on Hotel B invoice
+      await assert.rejects(
+        async () => {
+          await BillingService.recordPayment(
+            invoiceB.id,
+            { amount: 50, paymentMethod: "CASH" },
+            hotelARecepUser.id,
+            propertyA.id
+          );
+        },
+        NotFoundError
+      );
+
+      // Hotel A tries to create invoice for Hotel B reservation
+      await assert.rejects(
+        async () => {
+          await BillingService.createInvoiceForReservation(
+            { reservationId: reservationBId },
+            hotelARecepUser.id,
+            propertyA.id
+          );
+        },
+        ForbiddenError
+      );
+    });
+
+    it("cross-hotel room allocation rejected by DB trigger enforce_reservation_room_property()", async () => {
+      const today = getHotelTodayDateUtc();
+      const tomorrow = new Date(today);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+      await assert.rejects(
+        async () => {
+          await prisma.$executeRaw`
+            INSERT INTO reservation_rooms (
+              id, reservation_id, room_id, room_category_id, arrival_date, departure_date, booked_nightly_rate, status, updated_at
+            ) VALUES (
+              'adversarial-alloc-trigger', ${reservationAId}, ${roomB.id}, ${categoryB.id}, ${today}, ${tomorrow}, 100, 'CONFIRMED', NOW()
+            )
+          `;
+        },
+        (err: Error) => {
+          return err.message.includes("belongs to a different property than reservation");
+        }
+      );
+    });
+
+    it("cross-hotel customer isolation and cross-hotel reservation visibility", async () => {
+      const today = getHotelTodayDateUtc();
+      const tomorrow = new Date(today);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+      // 1. Customer C registered at Hotel B
+      const customerC = await CustomerService.createCustomer(
+        { firstName: "Isolated", lastName: "Guest", phone: "+3333333333" },
+        propertyB.id
+      );
+
+      // 2. Hotel A receptionist cannot see Customer C
+      const listA1 = await CustomerService.getCustomers({ propertyId: propertyA.id });
+      assert.equal(
+        listA1.customers.some((c) => c.id === customerC.id),
+        false,
+        "Customer C must not appear in Hotel A customer list"
+      );
+
+      await assert.rejects(
+        async () => CustomerService.getCustomerById(customerC.id, propertyA.id),
+        NotFoundError
+      );
+
+      // 3. Customer C books at Hotel A
+      const roomAData = await prisma.room.findUniqueOrThrow({ where: { id: roomA.id } });
+      const roomA2 = await prisma.room.create({
+        data: {
+          propertyId: propertyA.id,
+          buildingId: roomAData.buildingId,
+          floorId: roomAData.floorId,
+          roomCategoryId: categoryA.id,
+          roomNo: "A-102",
+          capacity: 2,
+          status: RoomStatus.VACANT_CLEAN,
+        },
+      });
+
+      const resCA = await ReservationService.createReservation(
+        {
+          customerId: customerC.id,
+          allocations: [
+            {
+              roomId: roomA2.id,
+              roomCategoryId: categoryA.id,
+              arrivalDate: today,
+              departureDate: tomorrow,
+              bookedNightlyRate: 150.0,
+            },
+          ],
+        },
+        hotelAAdminUser.id
+      );
+
+      // 4. Hotel A receptionist now CAN see Customer C because they have a reservation at Hotel A
+      const listA2 = await CustomerService.getCustomers({ propertyId: propertyA.id });
+      assert.equal(
+        listA2.customers.some((c) => c.id === customerC.id),
+        true,
+        "Customer C must now appear in Hotel A customer list"
+      );
+
+      const custDetails = await CustomerService.getCustomerById(customerC.id, propertyA.id);
+      assert.equal(custDetails.id, customerC.id);
+
+      // Clean up Customer C booking and room
+      await prisma.payment.deleteMany({ where: { invoice: { reservationId: resCA.id } } });
+      await prisma.invoiceItem.deleteMany({ where: { invoice: { reservationId: resCA.id } } });
+      await prisma.invoice.deleteMany({ where: { reservationId: resCA.id } });
+      await prisma.reservationRoom.deleteMany({ where: { reservationId: resCA.id } });
+      await prisma.reservation.deleteMany({ where: { id: resCA.id } });
+      await prisma.room.delete({ where: { id: roomA2.id } });
+      await prisma.customer.delete({ where: { id: customerC.id } });
+    });
+
+    it("invariant drift check: all reservations have property_id matching all their rooms", async () => {
+      const resDrift = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint as count FROM (
+          SELECT r.id FROM reservations r
+          JOIN reservation_rooms rr ON rr.reservation_id = r.id
+          JOIN rooms rm ON rm.id = rr.room_id
+          WHERE rm.property_id != r.property_id
+        ) m;
+      `;
+      assert.equal(Number(resDrift[0]?.count ?? 0), 0, "No reservation room property drift permitted");
+    });
+
+    it("invariant drift check: all invoices have property_id matching reservation.property_id", async () => {
+      const invDrift = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint as count FROM invoices i
+        JOIN reservations r ON i.reservation_id = r.id
+        WHERE i.property_id != r.property_id;
+      `;
+      assert.equal(Number(invDrift[0]?.count ?? 0), 0, "No invoice property drift permitted");
+    });
+
+    it("invariant drift check: all payments have property_id matching invoice.property_id", async () => {
+      const payDrift = await prisma.$queryRaw<Array<{ count: bigint }>>`
+        SELECT count(*)::bigint as count FROM payments p
+        JOIN invoices i ON p.invoice_id = i.id
+        WHERE p.property_id != i.property_id;
+      `;
+      assert.equal(Number(payDrift[0]?.count ?? 0), 0, "No payment property drift permitted");
+    });
+
+    it("cache isolation: write in hotel A does not invalidate or corrupt hotel B cached summaries", async () => {
+      const summaryBBefore = await BillingService.getBillingSummary(propertyB.id);
+      const roomsBBefore = await RoomService.getRoomsSummary(propertyB.id);
+
+      // Perform mutation and scoped invalidation in Hotel A
+      BillingService.invalidateBillingCache(propertyA.id);
+      RoomService.invalidateRoomsCache(propertyA.id);
+
+      const summaryBAfter = await BillingService.getBillingSummary(propertyB.id);
+      const roomsBAfter = await RoomService.getRoomsSummary(propertyB.id);
+
+      assert.deepEqual(summaryBBefore, summaryBAfter, "Hotel B billing summary must remain unaffected by Hotel A invalidation");
+      assert.deepEqual(roomsBBefore, roomsBAfter, "Hotel B room summary must remain unaffected by Hotel A invalidation");
     });
   });
 });

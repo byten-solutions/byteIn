@@ -732,9 +732,9 @@ export class ReservationService {
     }
 
     if (propertyId) {
-      const belongsToProperty = reservation.rooms.some(
-        (r) => r.room.propertyId === propertyId
-      );
+      const belongsToProperty = reservation.propertyId
+        ? reservation.propertyId === propertyId
+        : reservation.rooms.some((r) => r.room.propertyId === propertyId);
       if (!belongsToProperty) {
         throw new NotFoundError("Reservation not found");
       }
