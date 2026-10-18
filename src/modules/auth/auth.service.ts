@@ -9,6 +9,7 @@ import {
   type ChangePasswordInput,
   type SafeUser,
   type SessionPayload,
+  type SafePropertySummary,
 } from "./auth.types";
 import { BadRequestError, ForbiddenError, NotFoundError } from "@/lib/errors";
 
@@ -90,6 +91,8 @@ export class AuthService {
       email: payload.email,
       name: payload.name,
       role: payload.role,
+      propertyId: payload.propertyId ?? null,
+      property: payload.property ?? null,
       tokenVersion: payload.tokenVersion ?? 1,
       mustChangePassword: payload.mustChangePassword ?? false,
     })
@@ -122,6 +125,8 @@ export class AuthService {
         email: payload.email as string,
         name: (payload.name as string) || "",
         role: payload.role as SessionPayload["role"],
+        propertyId: (payload.propertyId as string | null | undefined) ?? null,
+        property: (payload.property as SafePropertySummary | null | undefined) ?? null,
         tokenVersion: typeof payload.tokenVersion === "number" ? payload.tokenVersion : 1,
         mustChangePassword: Boolean(payload.mustChangePassword),
         iat: payload.iat,
@@ -153,6 +158,13 @@ export class AuthService {
       },
       include: {
         role: true,
+        property: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -198,12 +210,22 @@ export class AuthService {
       ...metadata,
     });
 
+    const propertySummary: SafePropertySummary | null = user.property
+      ? {
+          id: user.property.id,
+          name: user.property.name,
+          status: user.property.status,
+        }
+      : null;
+
     // 7. Generate session token
     const sessionPayload: SessionPayload = {
       sub: user.id,
       email: user.email,
       name: user.name,
       role: user.role.name,
+      propertyId: user.propertyId,
+      property: propertySummary,
       tokenVersion: user.tokenVersion,
       mustChangePassword: user.mustChangePassword,
     };
@@ -214,6 +236,8 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role.name,
+      propertyId: user.propertyId,
+      property: propertySummary,
       status: user.status,
       mustChangePassword: user.mustChangePassword,
       lastLoginAt: now,
@@ -288,7 +312,16 @@ export class AuthService {
         mustChangePassword: false,
         tokenVersion: { increment: 1 },
       },
-      include: { role: true },
+      include: {
+        role: true,
+        property: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
     });
 
     // 4. Record audit log
@@ -299,12 +332,22 @@ export class AuthService {
       ...metadata,
     });
 
+    const propertySummary: SafePropertySummary | null = updatedUser.property
+      ? {
+          id: updatedUser.property.id,
+          name: updatedUser.property.name,
+          status: updatedUser.property.status,
+        }
+      : null;
+
     // 5. Mint new session token for the current session with the updated tokenVersion
     const newSessionPayload: SessionPayload = {
       sub: updatedUser.id,
       email: updatedUser.email,
       name: updatedUser.name,
       role: updatedUser.role.name,
+      propertyId: updatedUser.propertyId,
+      property: propertySummary,
       tokenVersion: updatedUser.tokenVersion,
       mustChangePassword: false,
     };
@@ -317,6 +360,8 @@ export class AuthService {
         name: updatedUser.name,
         email: updatedUser.email,
         role: updatedUser.role.name,
+        propertyId: updatedUser.propertyId,
+        property: propertySummary,
         status: updatedUser.status,
         mustChangePassword: false,
         lastLoginAt: updatedUser.lastLoginAt,
@@ -331,7 +376,16 @@ export class AuthService {
   static async getCurrentUser(userId: string): Promise<SafeUser | null> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { role: true },
+      include: {
+        role: true,
+        property: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
     });
 
     if (!user) return null;
@@ -341,7 +395,16 @@ export class AuthService {
       name: user.name,
       email: user.email,
       role: user.role.name,
+      propertyId: user.propertyId,
+      property: user.property
+        ? {
+            id: user.property.id,
+            name: user.property.name,
+            status: user.property.status,
+          }
+        : null,
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,
     };

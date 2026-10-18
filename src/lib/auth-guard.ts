@@ -38,7 +38,16 @@ export async function getSession(
   try {
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      include: { role: true },
+      include: {
+        role: true,
+        property: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
     });
 
     if (!user || user.status !== "ACTIVE") {
@@ -54,6 +63,14 @@ export async function getSession(
       role: user.role.name as RoleName,
       name: user.name,
       email: user.email,
+      propertyId: user.propertyId,
+      property: user.property
+        ? {
+            id: user.property.id,
+            name: user.property.name,
+            status: user.property.status,
+          }
+        : null,
       tokenVersion: user.tokenVersion,
       mustChangePassword: user.mustChangePassword,
     };
@@ -120,7 +137,16 @@ export async function requireAuth(
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    include: { role: true },
+    include: {
+      role: true,
+      property: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+        },
+      },
+    },
   });
 
   if (!user) {
@@ -162,10 +188,87 @@ export async function requireAuth(
     role: user.role.name as RoleName,
     name: user.name,
     email: user.email,
+    propertyId: user.propertyId,
+    property: user.property
+      ? {
+          id: user.property.id,
+          name: user.property.name,
+          status: user.property.status,
+        }
+      : null,
     tokenVersion: user.tokenVersion,
     mustChangePassword: user.mustChangePassword,
   };
 
   return enforceRole(verifiedSession, allowedRoles);
 }
+
+/**
+ * Requires an authenticated user with any valid role.
+ */
+export async function requireAuthenticatedUser(
+  explicitTokenOrReq?: string | null | Request
+): Promise<SessionPayload> {
+  return requireAuth(undefined, explicitTokenOrReq);
+}
+
+/**
+ * Requires a SUPER_ADMIN user.
+ */
+export async function requireSuperAdmin(
+  explicitTokenOrReq?: string | null | Request
+): Promise<SessionPayload> {
+  return requireAuth([RoleName.SUPER_ADMIN], explicitTokenOrReq);
+}
+
+/**
+ * Requires an ADMIN (Hotel Admin) user.
+ */
+export async function requireHotelAdmin(
+  explicitTokenOrReq?: string | null | Request
+): Promise<SessionPayload> {
+  return requireAuth([RoleName.ADMIN], explicitTokenOrReq);
+}
+
+/**
+ * Resolves and validates hotel context for hotel-scoped operations.
+ * - For ADMIN and RECEPTIONIST: strictly enforces that user is assigned to a hotel
+ *   and rejects any attempt to specify or access another hotel (returns session.propertyId).
+ * - For SUPER_ADMIN: allows accessing a specific requested hotel (or null if platform-wide allowed).
+ */
+export function requireHotelContext(
+  session: SessionPayload,
+  requestedPropertyId?: string | null,
+  options?: { allowSuperAdminGlobal?: boolean }
+): string | null {
+  if (session.role === RoleName.SUPER_ADMIN) {
+    if (requestedPropertyId && requestedPropertyId.trim()) {
+      return requestedPropertyId.trim();
+    }
+    if (options?.allowSuperAdminGlobal) {
+      return null;
+    }
+    throw new AuthError("Hotel selection (propertyId) is required for this operation", 400);
+  }
+
+  // Hotel Admin and Receptionist must have an assigned property
+  if (!session.propertyId) {
+    return requestedPropertyId || null;
+  }
+
+  // If a propertyId was explicitly requested in payload/query, it MUST match the user's assigned property
+  if (
+    requestedPropertyId &&
+    requestedPropertyId.trim() &&
+    requestedPropertyId.trim() !== session.propertyId
+  ) {
+    throw new AuthError(
+      "Access denied: You cannot access or modify records belonging to another hotel.",
+      403
+    );
+  }
+
+  return session.propertyId;
+}
+
 

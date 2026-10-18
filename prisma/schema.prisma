@@ -15,6 +15,7 @@ generator client {
 // --------------------------------------------------------
 
 enum RoleName {
+  SUPER_ADMIN
   ADMIN
   RECEPTIONIST
 }
@@ -84,6 +85,7 @@ model User {
   email        String    @unique
   passwordHash String    @map("password_hash")
   roleId       String    @map("role_id")
+  propertyId   String?   @map("property_id")
   status             String    @default("ACTIVE") // ACTIVE / DISABLED
   mustChangePassword Boolean   @default(false) @map("must_change_password")
   tokenVersion       Int       @default(1) @map("token_version")
@@ -92,12 +94,14 @@ model User {
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
   role         Role          @relation(fields: [roleId], references: [id])
+  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
   reservations Reservation[] @relation("CreatedReservations")
   payments       Payment[]     @relation("RecordedPayments")
   voidedPayments Payment[]     @relation("VoidedPayments")
   auditLogs      AuditLog[]
 
   @@index([roleId])
+  @@index([propertyId])
   @@map("users")
 }
 
@@ -118,6 +122,7 @@ model Property {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  users          User[]
   buildings      Building[]
   rooms          Room[]
   roomCategories RoomCategory[]
