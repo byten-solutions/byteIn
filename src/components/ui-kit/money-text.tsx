@@ -6,6 +6,7 @@ export interface MoneyTextProps extends React.HTMLAttributes<HTMLSpanElement> {
   value: string | number | null | undefined
   sign?: "auto" | "always" | "never"
   highlightZero?: boolean
+  subtleCents?: boolean
 }
 
 export function formatMoney(
@@ -18,6 +19,7 @@ export function MoneyText({
   value,
   sign = "never",
   highlightZero = false,
+  subtleCents = false,
   className,
   ...props
 }: MoneyTextProps) {
@@ -31,6 +33,32 @@ export function MoneyText({
   if (isNegative && sign !== "never") prefix = "-"
 
   const formatted = formatMoneyInr(Math.abs(isNaN(num) ? 0 : num))
+
+  if (subtleCents) {
+    const lastDot = formatted.lastIndexOf(".")
+    const whole = lastDot !== -1 ? formatted.slice(0, lastDot) : formatted
+    const decimal = lastDot !== -1 ? formatted.slice(lastDot) : ""
+
+    return (
+      <span
+        className={cn(
+          "font-mono font-medium tracking-tight select-all inline-flex items-baseline",
+          isNegative && "text-rose-600 dark:text-rose-400",
+          isZero && !highlightZero && "text-muted-foreground",
+          className
+        )}
+        {...props}
+      >
+        {prefix}
+        <span>{whole}</span>
+        {decimal && (
+          <span className="text-[0.78em] font-normal opacity-80 tracking-normal ml-0.5">
+            {decimal}
+          </span>
+        )}
+      </span>
+    )
+  }
 
   return (
     <span

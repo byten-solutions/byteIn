@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
   InvoiceStatus,
@@ -49,6 +50,77 @@ export class BillingService {
     const dd = String(today.getDate()).padStart(2, "0");
     const randomHex = crypto.randomBytes(2).toString("hex").toUpperCase();
     return `INV-${yyyy}${mm}${dd}-${randomHex}`;
+  }
+
+  /**
+   * Invalidation helper for billing summary and invoice counts.
+   */
+  public static invalidateBillingCache(): void {
+    try {
+      revalidateTag("billing-summary", "max");
+      revalidateTag("invoice-count", "max");
+    } catch {
+      // Ignore outside Next.js request context (e.g. tests or worker tasks)
+    }
+  }
+
+  /**
+   * Computes table-wide billing summary (totalInvoiced, totalCollected, totalOutstanding)
+   * in a single SQL query, cached with tag 'billing-summary'.
+   */
+  public static async getBillingSummary(): Promise<{
+    totalInvoiced: string;
+    totalCollected: string;
+    totalOutstanding: string;
+  }> {
+    const fetchSummary = async () => {
+      const rows = await prisma.$queryRaw<
+        Array<{ totalInvoiced: string | null; totalCollected: string | null }>
+      >`
+        SELECT
+          COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID'), 0)::text AS "totalInvoiced",
+          COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices inv ON p.invoice_id = inv.id WHERE p.status = 'RECORDED' AND inv.status != 'VOID'), 0)::text AS "totalCollected"
+      `;
+
+      const totalInvoicedDec = new Prisma.Decimal(rows[0]?.totalInvoiced || "0");
+      const totalCollectedDec = new Prisma.Decimal(rows[0]?.totalCollected || "0");
+      const totalOutstandingDec = Prisma.Decimal.max(
+        new Prisma.Decimal(0),
+        totalInvoicedDec.sub(totalCollectedDec)
+      );
+
+      return {
+        totalInvoiced: totalInvoicedDec.toFixed(2),
+        totalCollected: totalCollectedDec.toFixed(2),
+        totalOutstanding: totalOutstandingDec.toFixed(2),
+      };
+    };
+
+    try {
+      const cached = unstable_cache(fetchSummary, ["billing-summary"], {
+        tags: ["billing-summary"],
+        revalidate: 3600,
+      });
+      return await cached();
+    } catch {
+      return fetchSummary();
+    }
+  }
+
+  /**
+   * Cached count for unfiltered invoice list queries.
+   */
+  public static async getUnfilteredInvoiceCount(): Promise<number> {
+    const fetchCount = () => prisma.invoice.count();
+    try {
+      const cached = unstable_cache(fetchCount, ["invoice-unfiltered-count"], {
+        tags: ["invoice-count"],
+        revalidate: 60,
+      });
+      return await cached();
+    } catch {
+      return fetchCount();
+    }
   }
 
   /**
@@ -140,7 +212,7 @@ export class BillingService {
     input: CreateInvoiceInput,
     staffUserId: string
   ): Promise<InvoiceDetailDTO> {
-    return prisma.$transaction(async (tx) => {
+    const invoice = await prisma.$transaction(async (tx) => {
       // 1. Fetch reservation and verify existence
       const reservation = await tx.reservation.findUnique({
         where: { id: input.reservationId },
@@ -300,6 +372,8 @@ export class BillingService {
 
       return this.formatInvoiceDetail(invoice);
     });
+    this.invalidateBillingCache();
+    return invoice;
   }
 
   /**
@@ -420,45 +494,34 @@ export class BillingService {
       ];
     }
 
-    const [total, records, aggregateInvoices, aggregatePayments] =
-      await Promise.all([
-        prisma.invoice.count({ where }),
-        prisma.invoice.findMany({
-          where,
-          include: {
-            reservation: {
-              include: { customer: true },
-            },
-            items: true,
-            payments: {
-              include: {
-                creator: { select: { name: true, role: true } },
-              },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-          skip,
-          take: limit,
-        }),
-        prisma.invoice.aggregate({
-          where: { status: { not: InvoiceStatus.VOID } },
-          _sum: { grandTotal: true },
-        }),
-        prisma.payment.aggregate({
-          where: {
-            status: PaymentStatus.RECORDED,
-            invoice: { status: { not: InvoiceStatus.VOID } },
-          },
-          _sum: { amount: true },
-        }),
-      ]);
-
-    const totalInvoiced = aggregateInvoices._sum.grandTotal || new Prisma.Decimal(0);
-    const totalCollected = aggregatePayments._sum.amount || new Prisma.Decimal(0);
-    const totalOutstanding = Prisma.Decimal.max(
-      new Prisma.Decimal(0),
-      totalInvoiced.sub(totalCollected)
+    const hasFilter = Boolean(
+      query.status ||
+      (query.search && query.search.trim() !== "") ||
+      query.reservationId ||
+      query.customerId
     );
+
+    const [total, records, summary] = await Promise.all([
+      hasFilter ? prisma.invoice.count({ where }) : this.getUnfilteredInvoiceCount(),
+      prisma.invoice.findMany({
+        where,
+        include: {
+          reservation: {
+            include: { customer: true },
+          },
+          items: true,
+          payments: {
+            include: {
+              creator: { select: { name: true, role: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      this.getBillingSummary(),
+    ]);
 
     return {
       invoices: records.map((inv) => this.formatInvoiceDetail(inv)),
@@ -466,11 +529,7 @@ export class BillingService {
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1,
-      summary: {
-        totalInvoiced: totalInvoiced.toFixed(2),
-        totalCollected: totalCollected.toFixed(2),
-        totalOutstanding: totalOutstanding.toFixed(2),
-      },
+      summary,
     };
   }
 
@@ -483,7 +542,7 @@ export class BillingService {
     input: AddInvoiceItemInput,
     staffUserId: string
   ): Promise<InvoiceDetailDTO> {
-    return prisma.$transaction(async (tx) => {
+    const updatedInvoice = await prisma.$transaction(async (tx) => {
       // 0. Acquire row lock on invoice
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
 
@@ -608,6 +667,8 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updatedInvoice);
     });
+    this.invalidateBillingCache();
+    return updatedInvoice;
   }
 
   /**
@@ -620,7 +681,7 @@ export class BillingService {
     input: UpdateInvoiceItemInput,
     staffUserId: string
   ): Promise<InvoiceDetailDTO> {
-    return prisma.$transaction(async (tx) => {
+    const updatedInvoice = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
 
       const invoice = await tx.invoice.findUnique({
@@ -747,6 +808,8 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updatedInvoice);
     });
+    this.invalidateBillingCache();
+    return updatedInvoice;
   }
 
   /**
@@ -757,7 +820,7 @@ export class BillingService {
     itemId: string,
     staffUserId: string
   ): Promise<InvoiceDetailDTO> {
-    return prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
 
       const invoice = await tx.invoice.findUnique({
@@ -855,6 +918,8 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updated);
     });
+    this.invalidateBillingCache();
+    return updated;
   }
 
   /**
@@ -864,7 +929,7 @@ export class BillingService {
     invoiceId: string,
     staffUserId: string
   ): Promise<InvoiceDetailDTO> {
-    return prisma.$transaction(async (tx) => {
+    const updated = await prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findUnique({
         where: { id: invoiceId },
       });
@@ -907,6 +972,8 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updated);
     });
+    this.invalidateBillingCache();
+    return updated;
   }
 
   /**
@@ -922,7 +989,7 @@ export class BillingService {
     invoice: InvoiceDetailDTO;
     receipt: PaymentReceiptDTO;
   }> {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 0. Acquire row-level lock on invoice to serialize concurrent payments
       await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
 
@@ -1125,6 +1192,8 @@ export class BillingService {
         receipt,
       };
     });
+    this.invalidateBillingCache();
+    return result;
   }
 
   /**
@@ -1146,7 +1215,7 @@ export class BillingService {
       throw new BadRequestError("Void reason must be at least 3 characters");
     }
 
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
         include: { invoice: true },
@@ -1250,5 +1319,7 @@ export class BillingService {
 
       return this.formatInvoiceDetail(updated);
     });
+    this.invalidateBillingCache();
+    return result;
   }
 }

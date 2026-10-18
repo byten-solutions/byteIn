@@ -8,6 +8,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { BillingService } from "../billing/billing.service";
 import {
   BadRequestError,
   ConflictError,
@@ -42,7 +43,7 @@ export class CheckInOutService {
     input: CheckInInput,
     staffUserId: string
   ): Promise<CheckInResult> {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 0. Acquire row-level lock on the allocation to serialize concurrent check-in/out requests
       await tx.$queryRaw`SELECT "id" FROM "reservation_rooms" WHERE "id" = ${input.allocationId} FOR UPDATE`;
 
@@ -250,6 +251,8 @@ export class CheckInOutService {
         reservationStatus: allocation.reservation.status,
       };
     });
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
   /**
@@ -266,7 +269,7 @@ export class CheckInOutService {
     input: CheckOutInput,
     staffUserId: string
   ): Promise<CheckOutResult> {
-    return prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 0. Acquire row-level lock on the allocation to serialize concurrent check-out requests
       await tx.$queryRaw`SELECT "id" FROM "reservation_rooms" WHERE "id" = ${input.allocationId} FOR UPDATE`;
 
@@ -483,9 +486,10 @@ export class CheckInOutService {
         reservationStatus,
       };
     });
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
-  /**
   /**
    * Retrieves today's arrivals (CONFIRMED allocations scheduled for today) in hotel operating timezone
    */

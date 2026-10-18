@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { unstable_cache, revalidateTag } from "next/cache";
 import {
   Prisma,
   RoomStatus,
@@ -48,6 +49,33 @@ export class ReservationConflictError extends ConflictError {
 }
 
 export class ReservationService {
+  /**
+   * Invalidation helper for reservation counts.
+   */
+  public static invalidateReservationCache(): void {
+    try {
+      revalidateTag("reservation-count", "max");
+    } catch {
+      // Ignore outside Next.js request context (e.g. tests or worker tasks)
+    }
+  }
+
+  /**
+   * Cached count for unfiltered reservation list queries.
+   */
+  public static async getUnfilteredReservationCount(): Promise<number> {
+    const fetchCount = () => prisma.reservation.count();
+    try {
+      const cached = unstable_cache(fetchCount, ["reservation-unfiltered-count"], {
+        tags: ["reservation-count"],
+        revalidate: 60,
+      });
+      return await cached();
+    } catch {
+      return fetchCount();
+    }
+  }
+
   /**
    * Generates a collision-resistant human-readable reservation number:
    * Format: RES-YYYYMMDD-XXXX (e.g. RES-20261011-8F2B)
@@ -204,7 +232,7 @@ export class ReservationService {
     ).sort();
 
     try {
-      return await prisma.$transaction(
+      const result = await prisma.$transaction(
         async (tx) => {
           // 1. Resolve or create customer
           let customerId = input.customerId;
@@ -496,6 +524,9 @@ export class ReservationService {
           timeout: 15000,
         }
       );
+      this.invalidateReservationCache();
+      BillingService.invalidateBillingCache();
+      return result;
     } catch (error: unknown) {
       // Catch PostgreSQL Exclusion Constraint violation (code 23P01)
       const err = error as { code?: string; message?: string } | undefined;
@@ -535,6 +566,8 @@ export class ReservationService {
       ];
     }
 
+    const hasFilter = Boolean(status || (search && search.trim() !== ""));
+
     const [reservations, total] = await Promise.all([
       prisma.reservation.findMany({
         where,
@@ -564,7 +597,7 @@ export class ReservationService {
           },
         },
       }),
-      prisma.reservation.count({ where }),
+      hasFilter ? prisma.reservation.count({ where }) : this.getUnfilteredReservationCount(),
     ]);
 
     return {
@@ -691,7 +724,7 @@ export class ReservationService {
       }
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Cancel all CONFIRMED allocations
       await tx.reservationRoom.updateMany({
         where: {
@@ -769,6 +802,9 @@ export class ReservationService {
 
       return updatedRes;
     });
+    this.invalidateReservationCache();
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
   /**
@@ -799,7 +835,7 @@ export class ReservationService {
       );
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Cancel allocation
       const updatedAlloc = await tx.reservationRoom.update({
         where: { id: allocationId },
@@ -840,6 +876,9 @@ export class ReservationService {
 
       return updatedAlloc;
     });
+    this.invalidateReservationCache();
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
   /**
@@ -876,7 +915,7 @@ export class ReservationService {
       }
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // 1. Transition to NO_SHOW
       const updatedAlloc = await tx.reservationRoom.update({
         where: { id: allocationId },
@@ -1011,6 +1050,8 @@ export class ReservationService {
 
       return updatedAlloc;
     });
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
   /**
@@ -1044,7 +1085,7 @@ export class ReservationService {
       throw new BadRequestError("New departure date must be strictly after the current departure date");
     }
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Check physical room availability between [currentDepartureDate, newDepartureDate)
       const conflictingAllocations = await tx.reservationRoom.findMany({
         where: {
@@ -1157,6 +1198,8 @@ export class ReservationService {
 
       return updatedAlloc;
     });
+    BillingService.invalidateBillingCache();
+    return result;
   }
 
   /**

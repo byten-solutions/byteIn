@@ -84,30 +84,105 @@ export class CustomerService {
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
-        include: {
-          _count: {
-            select: { reservations: true },
-          },
-          reservations: {
-            orderBy: { createdAt: "desc" },
-            take: 5,
-            include: {
-              rooms: {
-                select: {
-                  arrivalDate: true,
-                  departureDate: true,
-                  status: true,
-                },
-              },
-            },
-          },
-        },
       }),
       prisma.customer.count({ where }),
     ]);
 
+    const customerIds = customers.map((c) => c.id);
+    const countMap = new Map<string, number>();
+    const resMap = new Map<
+      string,
+      Array<{
+        id: string;
+        status: string;
+        createdAt: Date;
+        rooms: Array<{
+          arrivalDate: Date;
+          departureDate: Date;
+          status: string;
+        }>;
+      }>
+    >();
+
+    if (customerIds.length > 0) {
+      const [countGroups, resRows] = await Promise.all([
+        prisma.reservation.groupBy({
+          by: ["customerId"],
+          where: { customerId: { in: customerIds } },
+          _count: { _all: true },
+        }),
+        prisma.$queryRaw<
+          Array<{
+            reservationId: string;
+            customerId: string;
+            reservationStatus: string;
+            reservationCreatedAt: Date;
+            roomId: string | null;
+            arrivalDate: Date | null;
+            departureDate: Date | null;
+            roomStatus: string | null;
+          }>
+        >`
+          SELECT
+            r.id AS "reservationId",
+            r.customer_id AS "customerId",
+            r.status::text AS "reservationStatus",
+            r.created_at AS "reservationCreatedAt",
+            rr.id AS "roomId",
+            rr.arrival_date AS "arrivalDate",
+            rr.departure_date AS "departureDate",
+            rr.status::text AS "roomStatus"
+          FROM (
+            SELECT id, customer_id, status, created_at,
+                   ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY created_at DESC) as rn
+            FROM reservations
+            WHERE customer_id = ANY(${customerIds}::text[])
+          ) r
+          LEFT JOIN reservation_rooms rr ON rr.reservation_id = r.id
+          WHERE r.rn <= 5
+          ORDER BY r.customer_id, r.created_at DESC
+        `,
+      ]);
+
+      for (const g of countGroups) {
+        countMap.set(g.customerId, g._count._all);
+      }
+
+      for (const row of resRows) {
+        if (!resMap.has(row.customerId)) {
+          resMap.set(row.customerId, []);
+        }
+        const custResList = resMap.get(row.customerId)!;
+        let resObj = custResList.find((r) => r.id === row.reservationId);
+        if (!resObj) {
+          resObj = {
+            id: row.reservationId,
+            status: row.reservationStatus,
+            createdAt: row.reservationCreatedAt,
+            rooms: [],
+          };
+          custResList.push(resObj);
+        }
+        if (row.roomId && row.arrivalDate && row.departureDate && row.roomStatus) {
+          resObj.rooms.push({
+            arrivalDate: row.arrivalDate,
+            departureDate: row.departureDate,
+            status: row.roomStatus,
+          });
+        }
+      }
+    }
+
+    const enrichedCustomers = customers.map((c) =>
+      maskCustomer({
+        ...c,
+        _count: { reservations: countMap.get(c.id) || 0 },
+        reservations: resMap.get(c.id) || [],
+      })
+    );
+
     return {
-      customers: customers.map((c) => maskCustomer(c)),
+      customers: enrichedCustomers,
       pagination: {
         total,
         page,
