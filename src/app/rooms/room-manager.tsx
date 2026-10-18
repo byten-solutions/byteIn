@@ -643,8 +643,8 @@ export function RoomManager({
                     </span>
                   </div>
 
-                  {/* 6-8 per row compact card grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8 gap-2.5">
+                  {/* Responsive compact card grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
                     {flr.rooms.map((room) => {
                       const hasCustomName = isCustomDisplayName(
                         room.displayName,
@@ -724,63 +724,75 @@ export function RoomManager({
                               {room.category.name}
                             </div>
 
-                            {/* Status: dot + text, and note icon if exists */}
-                            <div className="flex items-center justify-between gap-1 pt-0.5">
+                            {/* Status & Attributes: dot + text on left, notes and capacity on right */}
+                            <div className="flex items-center justify-between gap-1 pt-0.5 min-w-0">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span
                                   className={cn("size-2 rounded-full shrink-0", statusCfg.dotClass)}
                                 />
-                                <span className="text-[11px] text-muted-foreground truncate">
+                                <span className="text-[11px] text-muted-foreground truncate font-medium">
                                   {statusCfg.label}
                                 </span>
                               </div>
-                              {room.notes && (
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {room.notes && (
+                                  <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="shrink-0"
+                                  >
+                                    <Tooltip>
+                                      <TooltipTrigger
+                                        render={
+                                          <span className="text-muted-foreground hover:text-foreground cursor-help inline-flex p-0.5">
+                                            <FileText className="size-3" />
+                                          </span>
+                                        }
+                                      />
+                                      <TooltipContent>
+                                        <p className="max-w-xs text-xs">{room.notes}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                )}
                                 <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="shrink-0"
+                                  className="flex items-center gap-1 text-muted-foreground/80 shrink-0"
+                                  title={`Max capacity: ${room.capacity} ${room.capacity === 1 ? "guest" : "guests"}`}
                                 >
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
-                                        <span className="text-muted-foreground hover:text-foreground cursor-help inline-flex p-0.5">
-                                          <FileText className="size-3" />
-                                        </span>
-                                      }
-                                    />
-                                    <TooltipContent>
-                                      <p className="max-w-xs text-xs">{room.notes}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
+                                  <Users className="size-3 text-muted-foreground/70" />
+                                  <span className="font-mono text-[11px] text-foreground font-medium">
+                                    {room.capacity}
+                                  </span>
                                 </div>
-                              )}
+                              </div>
                             </div>
                           </div>
 
-                          {/* Bottom row: Capacity on left, Price on right */}
-                          <div className="flex items-center justify-between text-xs pt-1.5 mt-2 border-t border-border/50 text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Users className="size-3 text-muted-foreground/70" />
-                              <span className="font-mono text-[11px] text-foreground font-medium">
-                                {room.capacity}
-                              </span>
-                            </div>
+                          {/* Bottom row: Dedicated Pricing Row (nightly rate with subtle cents) */}
+                          <div className="flex items-baseline justify-between gap-1 text-xs pt-1.5 mt-2 border-t border-border/50 text-muted-foreground min-w-0">
+                            <span className="text-[10px] text-muted-foreground/70 font-medium shrink-0">
+                              /night
+                            </span>
 
-                            <div className="flex items-baseline gap-1 font-mono text-right">
+                            <div className="flex items-baseline gap-1.5 font-mono text-right min-w-0 flex-wrap justify-end">
                               {room.priceOverride ? (
                                 <>
                                   <MoneyText
                                     value={room.priceOverride}
-                                    className="font-semibold text-primary text-xs"
+                                    className="font-bold text-primary text-xs tabular-nums"
+                                    subtleCents
                                   />
                                   <MoneyText
                                     value={room.category.basePrice}
-                                    className="text-[9px] text-muted-foreground line-through ml-0.5"
+                                    className="text-[10px] text-muted-foreground/60 line-through tabular-nums"
+                                    subtleCents
                                   />
                                 </>
                               ) : (
                                 <MoneyText
                                   value={room.category.basePrice}
-                                  className="font-medium text-foreground text-xs"
+                                  className="font-semibold text-foreground text-xs tabular-nums"
+                                  subtleCents
                                 />
                               )}
                             </div>

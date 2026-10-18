@@ -365,7 +365,7 @@ export function ReportsView({
           </div>
 
           {/* Daily Ops KPI Cards */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               label="Expected Arrivals"
               value={dailyOpsData.summary.expectedArrivalsCount}
@@ -782,7 +782,7 @@ export function ReportsView({
           </div>
 
           {/* Financial Summary KPIs */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               label="Shift Collections"
               value={formatMoney(parseFloat(collectionsData.totalCollected))}
@@ -1079,7 +1079,7 @@ export function ReportsView({
           </div>
 
           {/* Performance KPIs: Occupancy, ADR, RevPAR, Room Revenue */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <StatCard
               label="Occupancy Rate"
               value={`${occupancyData.occupancyRate}%`}
