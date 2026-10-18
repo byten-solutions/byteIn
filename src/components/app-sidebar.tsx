@@ -11,6 +11,7 @@ import {
   BedDouble,
   SlidersHorizontal,
   BarChart3,
+  UserCog,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { NavUser } from "@/components/nav-user"
@@ -25,54 +26,168 @@ interface AppSidebarProps {
   forceExpanded?: boolean
 }
 
-const navItems = [
-  {
-    section: "Operations",
-    items: [
+function getNavItems(role?: string | null) {
+  if (role === "SUPER_ADMIN") {
+    return [
       {
-        title: "Overview",
-        href: "/",
-        icon: LayoutDashboard,
-        exact: true,
+        section: "Platform",
+        items: [
+          {
+            title: "Overview",
+            href: "/",
+            icon: LayoutDashboard,
+            exact: true,
+          },
+          {
+            title: "Staff & Users",
+            href: "/users",
+            icon: UserCog,
+          },
+          {
+            title: "Platform Reports",
+            href: "/reports",
+            icon: BarChart3,
+          },
+        ],
       },
       {
-        title: "Reservations",
-        href: "/reservations",
-        icon: CalendarDays,
+        section: "Operations",
+        items: [
+          {
+            title: "Reservations",
+            href: "/reservations",
+            icon: CalendarDays,
+          },
+          {
+            title: "Billing",
+            href: "/billing",
+            icon: Receipt,
+          },
+          {
+            title: "Guests",
+            href: "/customers",
+            icon: Users,
+          },
+          {
+            title: "Rooms",
+            href: "/rooms",
+            icon: BedDouble,
+          },
+          {
+            title: "Categories",
+            href: "/categories",
+            icon: SlidersHorizontal,
+          },
+        ],
+      },
+    ]
+  }
+
+  if (role === "ADMIN") {
+    return [
+      {
+        section: "Operations",
+        items: [
+          {
+            title: "Overview",
+            href: "/",
+            icon: LayoutDashboard,
+            exact: true,
+          },
+          {
+            title: "Reservations",
+            href: "/reservations",
+            icon: CalendarDays,
+          },
+          {
+            title: "Billing",
+            href: "/billing",
+            icon: Receipt,
+          },
+          {
+            title: "Guests",
+            href: "/customers",
+            icon: Users,
+          },
+          {
+            title: "Reports",
+            href: "/reports",
+            icon: BarChart3,
+          },
+        ],
       },
       {
-        title: "Billing",
-        href: "/billing",
-        icon: Receipt,
+        section: "Property",
+        items: [
+          {
+            title: "Rooms",
+            href: "/rooms",
+            icon: BedDouble,
+          },
+          {
+            title: "Categories",
+            href: "/categories",
+            icon: SlidersHorizontal,
+          },
+        ],
       },
       {
-        title: "Guests",
-        href: "/customers",
-        icon: Users,
+        section: "Administration",
+        items: [
+          {
+            title: "Staff Users",
+            href: "/users",
+            icon: UserCog,
+          },
+        ],
       },
-      {
-        title: "Reports",
-        href: "/reports",
-        icon: BarChart3,
-      },
-    ],
-  },
-  {
-    section: "Property",
-    items: [
-      {
-        title: "Rooms",
-        href: "/rooms",
-        icon: BedDouble,
-      },
-      {
-        title: "Categories",
-        href: "/categories",
-        icon: SlidersHorizontal,
-      },
-    ],
-  },
-]
+    ]
+  }
+
+  return [
+    {
+      section: "Operations",
+      items: [
+        {
+          title: "Overview",
+          href: "/",
+          icon: LayoutDashboard,
+          exact: true,
+        },
+        {
+          title: "Reservations",
+          href: "/reservations",
+          icon: CalendarDays,
+        },
+        {
+          title: "Billing",
+          href: "/billing",
+          icon: Receipt,
+        },
+        {
+          title: "Guests",
+          href: "/customers",
+          icon: Users,
+        },
+      ],
+    },
+    {
+      section: "Property",
+      items: [
+        {
+          title: "Rooms",
+          href: "/rooms",
+          icon: BedDouble,
+        },
+        {
+          title: "Categories",
+          href: "/categories",
+          icon: SlidersHorizontal,
+        },
+      ],
+    },
+  ]
+}
 
 export function AppSidebar({
   className,
@@ -83,6 +198,7 @@ export function AppSidebar({
   const pathname = usePathname()
   const { isCollapsed: sidebarCollapsed } = useSidebar()
   const isCollapsed = forceExpanded ? false : sidebarCollapsed
+  const navItems = getNavItems(session?.role)
 
   const isItemActive = (href: string, exact = false) => {
     if (exact) {

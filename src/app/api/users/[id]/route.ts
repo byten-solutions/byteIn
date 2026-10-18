@@ -10,9 +10,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN],
+      req
+    );
     const { id } = await params;
-    const user = await UserService.getUserById(id);
+    const user = await UserService.getUserById(id, session);
     return NextResponse.json({
       success: true,
       data: user,
@@ -27,7 +30,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN],
+      req
+    );
     const { id } = await params;
 
     let body: Record<string, unknown> = {};
@@ -38,7 +44,7 @@ export async function PATCH(
     }
 
     const validated = updateUserSchema.parse(body);
-    const updated = await UserService.updateUser(id, validated, session.sub);
+    const updated = await UserService.updateUser(id, validated, session);
     return NextResponse.json({
       success: true,
       data: updated,
@@ -54,10 +60,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN],
+      req
+    );
     const { id } = await params;
 
-    await UserService.deleteUser(id, session.sub);
+    await UserService.deleteUser(id, session);
     return NextResponse.json({
       success: true,
       message: "User successfully deleted.",

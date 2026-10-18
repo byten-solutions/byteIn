@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Menu, PanelLeft, ChevronRight } from "lucide-react"
+import { Menu, PanelLeft, ChevronRight, Building2, Globe } from "lucide-react"
 import type { SessionPayload } from "@/modules/auth/auth.types"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useSidebar } from "@/components/sidebar-context"
@@ -19,6 +19,7 @@ interface AppHeaderProps {
 
 const routeTitles: Record<string, string> = {
   "/": "Overview",
+  "/users": "Staff & User Accounts",
   "/reservations": "Reservations",
   "/reservations/new": "New Reservation",
   "/billing": "Billing",
@@ -83,6 +84,22 @@ export function AppHeader({ session, stats }: AppHeaderProps) {
 
       {/* Right: Quick Clean/Dirty link, Theme Switch */}
       <div className="flex items-center gap-2.5 sm:gap-3">
+        {/* Hotel Context Badge */}
+        {session?.role === "SUPER_ADMIN" ? (
+          <div className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20">
+            <Globe className="size-3 text-purple-600 dark:text-purple-400" />
+            <span>All Hotels (Platform)</span>
+          </div>
+        ) : session?.property?.name ? (
+          <div
+            className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-muted/70 text-foreground border border-border/80"
+            title={session.property.name}
+          >
+            <Building2 className="size-3 text-muted-foreground" />
+            <span className="truncate max-w-[180px]">{session.property.name}</span>
+          </div>
+        ) : null}
+
         {/* Compact Clean/Dirty status link */}
         {stats && (stats.cleanRooms !== undefined || stats.dirtyRooms !== undefined) && (
           <Link

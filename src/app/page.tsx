@@ -9,8 +9,12 @@ import {
   LogIn,
   LogOut,
   ChevronRight,
+  Building2,
+  Users,
+  Sparkles,
+  ArrowUpRight,
 } from "lucide-react"
-import { RoomStatus, ReservationStatus } from "@prisma/client"
+import { RoomStatus, ReservationStatus, RoleName, PaymentStatus } from "@prisma/client"
 import { getSession } from "@/lib/auth-guard"
 import { prisma } from "@/lib/prisma"
 import { CheckInOutService } from "@/modules/check-in-out/check-in-out.service"
@@ -30,6 +34,243 @@ export default async function Page() {
     redirect("/change-password")
   }
 
+  // If Super Admin: Render Platform Overview Dashboard
+  if (session?.role === RoleName.SUPER_ADMIN) {
+    const [properties, totalUsers, totalConfirmedRes, totalPayments] = await Promise.all([
+      prisma.property.findMany({
+        include: {
+          _count: {
+            select: {
+              rooms: true,
+              users: true,
+              buildings: true,
+            },
+          },
+          rooms: {
+            select: {
+              status: true,
+            },
+          },
+        },
+        orderBy: { name: "asc" },
+      }),
+      prisma.user.count({
+        where: { status: "ACTIVE" },
+      }),
+      prisma.reservation.count({
+        where: { status: ReservationStatus.CONFIRMED },
+      }),
+      prisma.payment.aggregate({
+        _sum: { amount: true },
+        where: { status: PaymentStatus.RECORDED },
+      }),
+    ])
+
+    const totalRooms = properties.reduce((acc, p) => acc + p._count.rooms, 0)
+    const activeHotels = properties.filter((p) => p.status === "ACTIVE").length
+    const totalRevenue = totalPayments._sum.amount ? Number(totalPayments._sum.amount) : 0
+
+    return (
+      <AppShell session={session}>
+        <div className="mx-auto w-full max-w-7xl px-6 py-8 lg:px-10">
+          <div className="space-y-8">
+            {/* Super Admin Platform Header */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-border/60">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+                    Platform Administration
+                  </h1>
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20">
+                    Super Admin
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Global System Console • Administrator: <span className="font-medium text-foreground">{session.name}</span> ({session.email})
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href="/properties">
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80">
+                    <Building2 className="size-3.5" />
+                    Manage Hotels
+                  </Button>
+                </Link>
+                <Link href="/users">
+                  <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5 border-border/80">
+                    <Users className="size-3.5" />
+                    Staff Accounts
+                  </Button>
+                </Link>
+                <Link href="/reports">
+                  <Button size="sm" className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
+                    <Sparkles className="size-3.5" />
+                    Global Reports
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Platform KPI Metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <StatCard
+                label="Properties"
+                value={properties.length}
+                subtext={`${activeHotels} Active • ${properties.length - activeHotels} Inactive`}
+                indicatorColor="bg-purple-500"
+                href="/properties"
+              />
+              <StatCard
+                label="Total Rooms"
+                value={totalRooms}
+                subtext={`Across ${properties.length} properties`}
+                indicatorColor="bg-emerald-500"
+                href="/rooms"
+              />
+              <StatCard
+                label="Active Staff"
+                value={totalUsers}
+                subtext="Hotel admins & receptionists"
+                indicatorColor="bg-sky-500"
+                href="/users"
+              />
+              <StatCard
+                label="Platform Revenue"
+                value={`$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                subtext={`${totalConfirmedRes} active confirmed bookings`}
+                indicatorColor="bg-amber-500"
+                href="/reports"
+              />
+            </div>
+
+            {/* Hotel Portfolio Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
+                    <Building2 className="size-4 text-primary" />
+                    Hotel Portfolio Directory
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    All managed hotel properties, live operational capacity, and assigned staff
+                  </p>
+                </div>
+                <Link href="/properties">
+                  <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-primary hover:text-primary">
+                    View All
+                    <ArrowUpRight className="size-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              {properties.length === 0 ? (
+                <EmptyState
+                  icon={<Building2 className="size-6" />}
+                  title="No properties configured"
+                  description="Add hotel properties in the Property Manager to begin dispatching operations."
+                  action={
+                    <Link href="/properties">
+                      <Button size="sm">Add First Property</Button>
+                    </Link>
+                  }
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {properties.map((prop) => {
+                    const cleanRooms = prop.rooms.filter((r) => r.status === RoomStatus.VACANT_CLEAN).length
+                    const occupiedRooms = prop.rooms.filter((r) => r.status === RoomStatus.OCCUPIED).length
+
+                    return (
+                      <div
+                        key={prop.id}
+                        className="rounded-xl border border-border/80 bg-card p-5 shadow-2xs hover:border-primary/40 transition-colors flex flex-col justify-between"
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                                {prop.name}
+                              </h3>
+                              {prop.city && (
+                                <p className="text-xs text-muted-foreground">
+                                  {prop.city}{prop.country ? `, ${prop.country}` : ""}
+                                </p>
+                              )}
+                            </div>
+                            <span
+                              className={`text-[10px] font-mono uppercase font-semibold px-2 py-0.5 rounded-full border ${
+                                prop.status === "ACTIVE"
+                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                                  : "bg-muted text-muted-foreground border-border"
+                              }`}
+                            >
+                              {prop.status}
+                            </span>
+                          </div>
+
+                          {prop.address && (
+                            <p className="text-xs text-muted-foreground truncate" title={prop.address}>
+                              {prop.address}
+                              {prop.city ? `, ${prop.city}` : ""}
+                            </p>
+                          )}
+
+                          {/* Quick stat counters */}
+                          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60 text-center">
+                            <div className="rounded-lg bg-muted/40 p-2">
+                              <div className="text-xs font-bold text-foreground font-mono tabular-nums">
+                                {prop._count.rooms}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">Total Rooms</div>
+                            </div>
+                            <div className="rounded-lg bg-emerald-500/10 p-2">
+                              <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300 font-mono tabular-nums">
+                                {cleanRooms}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">Clean Ready</div>
+                            </div>
+                            <div className="rounded-lg bg-sky-500/10 p-2">
+                              <div className="text-xs font-bold text-sky-700 dark:text-sky-300 font-mono tabular-nums">
+                                {occupiedRooms}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">Occupied</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Hotel Quick Actions */}
+                        <div className="flex items-center gap-2 pt-4 mt-2 border-t border-border/60">
+                          <Link href={`/rooms?propertyId=${prop.id}`} className="flex-1">
+                            <Button variant="outline" size="sm" className="w-full h-7 text-[11px] gap-1">
+                              <BedDouble className="size-3" />
+                              Rack
+                            </Button>
+                          </Link>
+                          <Link href={`/reservations?propertyId=${prop.id}`} className="flex-1">
+                            <Button variant="outline" size="sm" className="w-full h-7 text-[11px] gap-1">
+                              Bookings
+                            </Button>
+                          </Link>
+                          <Link href={`/users?propertyId=${prop.id}`}>
+                            <Button variant="ghost" size="sm" className="h-7 text-[11px] px-2" title="Manage Staff">
+                              <Users className="size-3.5" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  // If Admin or Receptionist (Scoped to Hotel Property)
   let counts = {
     total: 0,
     clean: 0,
@@ -41,13 +282,27 @@ export default async function Page() {
   }
 
   if (session) {
+    const propertyId = session.propertyId || undefined
+
     const [roomGroups, confirmedRes] = await Promise.all([
       prisma.room.groupBy({
         by: ["status"],
+        where: propertyId ? { propertyId } : undefined,
         _count: { _all: true },
       }),
       prisma.reservation.count({
-        where: { status: ReservationStatus.CONFIRMED },
+        where: {
+          status: ReservationStatus.CONFIRMED,
+          ...(propertyId
+            ? {
+                roomAllocations: {
+                  some: {
+                    room: { propertyId },
+                  },
+                },
+              }
+            : {}),
+        },
       }),
     ])
 
@@ -79,6 +334,8 @@ export default async function Page() {
     }
   }
 
+  const hotelName = session?.property?.name || "Hotel"
+
   return (
     <AppShell
       session={session}
@@ -92,7 +349,7 @@ export default async function Page() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-                    Reception Dispatch
+                    {hotelName} Reception Dispatch
                   </h1>
                   <span className="font-mono text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
                     Live Shift
@@ -182,7 +439,7 @@ export default async function Page() {
 
             {/* Daily Operations: Arrivals & Departures Matrices */}
             <Suspense fallback={<DailyOperationsSkeleton />}>
-              <DailyOperationsSection />
+              <DailyOperationsSection propertyId={session.propertyId || undefined} />
             </Suspense>
           </div>
         ) : (
@@ -244,11 +501,11 @@ function DailyOperationsSkeleton() {
   )
 }
 
-async function DailyOperationsSection() {
+async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
   const today = getHotelTodayDateUtc()
   const [arrivals, departures] = await Promise.all([
-    CheckInOutService.getDailyArrivals(today),
-    CheckInOutService.getDailyDepartures(today),
+    CheckInOutService.getDailyArrivals(today, propertyId),
+    CheckInOutService.getDailyDepartures(today, propertyId),
   ])
 
   return (
@@ -387,4 +644,3 @@ async function DailyOperationsSection() {
     </div>
   )
 }
-

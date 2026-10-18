@@ -18,7 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { RoomStatus } from "@prisma/client";
+import { RoomStatus, RoleName } from "@prisma/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,6 +64,7 @@ interface CategoryOption {
 interface BuildingOption {
   id: string;
   name: string;
+  propertyName?: string;
   floors: { id: string; floorNo: number; name: string | null }[];
 }
 
@@ -119,7 +120,7 @@ interface Props {
   };
   categories: CategoryOption[];
   properties: PropertyOption[];
-  userRole: "ADMIN" | "RECEPTIONIST";
+  userRole: "SUPER_ADMIN" | "ADMIN" | "RECEPTIONIST";
   initialStatus?: string;
   initialPropertyId?: string;
   initialBuildingId?: string;
@@ -179,7 +180,7 @@ export function RoomManager({
   const [rooms, setRooms] = useState<RoomItem[]>(initialRooms);
   const [search, setSearch] = useState("");
   const [propertyFilter, setPropertyFilter] = useState<string>(
-    initialPropertyId || properties[0]?.id || "ALL"
+    initialPropertyId || "ALL"
   );
   const [buildingFilter, setBuildingFilter] = useState<string>(
     initialBuildingId || "ALL"
@@ -229,7 +230,7 @@ export function RoomManager({
   const [formPriceOverride, setFormPriceOverride] = useState("");
   const [formNotes, setFormNotes] = useState("");
 
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
 
   // Derive buildings and floors for the selected property
   const activeProperty = properties.find((p) => p.id === formPropertyId) || properties[0];
@@ -360,6 +361,16 @@ export function RoomManager({
     setFormPriceOverride("");
     setFormNotes("");
     if (categories[0]) setFormCategoryId(categories[0].id);
+    const targetProp = properties.find((p) => p.id === propertyFilter) || properties[0];
+    if (targetProp) {
+      setFormPropertyId(targetProp.id);
+      const bldg = (buildingFilter !== "ALL" ? targetProp.buildings.find((b) => b.id === buildingFilter) : null) || targetProp.buildings[0];
+      if (bldg) {
+        setFormBuildingId(bldg.id);
+        const flr = (floorFilter !== "ALL" ? bldg.floors.find((f) => f.id === floorFilter) : null) || bldg.floors[0];
+        if (flr) setFormFloorId(flr.id);
+      }
+    }
     setError(null);
     setIsRoomModalOpen(true);
   };
@@ -493,17 +504,26 @@ export function RoomManager({
   };
 
   // Filter toolbar building and floor options
-  const filterProperty = properties.find((p) => p.id === propertyFilter) || properties[0];
-  const filterBuildings = filterProperty?.buildings || [];
+  const filterProperty = properties.find((p) => p.id === propertyFilter);
+  const filterBuildings: BuildingOption[] = filterProperty
+    ? filterProperty.buildings.map((b) => ({ ...b, propertyName: filterProperty.name }))
+    : properties.flatMap((p) =>
+        p.buildings.map((b) => ({ ...b, propertyName: p.name }))
+      );
   const selectedBldg = filterBuildings.find((b) => b.id === buildingFilter);
-  const filterFloors = selectedBldg?.floors || [];
+  const filterFloors = selectedBldg
+    ? selectedBldg.floors
+    : filterBuildings.length === 1
+    ? filterBuildings[0].floors
+    : [];
 
   const hasActiveFilters =
     search !== "" ||
     statusFilter !== "ALL" ||
     categoryFilter !== "ALL" ||
     buildingFilter !== "ALL" ||
-    floorFilter !== "ALL";
+    floorFilter !== "ALL" ||
+    (userRole === RoleName.SUPER_ADMIN ? propertyFilter !== "ALL" : false);
 
   const clearFilters = () => {
     setSearch("");
@@ -511,12 +531,16 @@ export function RoomManager({
     setCategoryFilter("ALL");
     setBuildingFilter("ALL");
     setFloorFilter("ALL");
+    const defaultProp =
+      userRole === RoleName.SUPER_ADMIN ? "ALL" : (initialPropertyId || "ALL");
+    setPropertyFilter(defaultProp);
     fetchRooms(1, {
       search: "",
       status: "ALL",
       categoryId: "ALL",
       buildingId: "ALL",
       floorId: "ALL",
+      propertyId: defaultProp,
     });
   };
 
@@ -540,6 +564,7 @@ export function RoomManager({
     {
       buildingId: string;
       buildingName: string;
+      propertyName?: string;
       floors: {
         floorId: string;
         floorNo: number;
@@ -550,9 +575,11 @@ export function RoomManager({
   >((acc, room) => {
     let bldg = acc.find((b) => b.buildingId === room.building.id);
     if (!bldg) {
+      const prop = properties.find((p) => p.id === room.propertyId);
       bldg = {
         buildingId: room.building.id,
         buildingName: room.building.name,
+        propertyName: prop?.name,
         floors: [],
       };
       acc.push(bldg);
@@ -720,6 +747,9 @@ export function RoomManager({
           {filterBuildings.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
+              {propertyFilter === "ALL" && properties.length > 1 && b.propertyName
+                ? ` (${b.propertyName})`
+                : ""}
             </option>
           ))}
         </select>
@@ -803,6 +833,7 @@ export function RoomManager({
                   {/* Quiet Section Header: "Main Wing · Floor 1" */}
                   <div className="flex items-center gap-2 pt-2 first:pt-0">
                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {properties.length > 1 && bldg.propertyName ? `${bldg.propertyName} · ` : ""}
                       {bldg.buildingName} · Floor {flr.floorNo}
                     </span>
                     <div className="h-px bg-border/60 flex-1" />

@@ -62,7 +62,14 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
       .join("")
       .toUpperCase() || "U";
 
-  const isAdmin = session.role === "ADMIN";
+  const isSuperAdmin = session.role === "SUPER_ADMIN";
+  const isAdmin = session.role === "ADMIN" || isSuperAdmin;
+  const roleLabel =
+    session.role === "SUPER_ADMIN"
+      ? "Super Admin"
+      : session.role === "ADMIN"
+      ? "Hotel Admin"
+      : "Receptionist";
 
   return (
     <div className="relative w-full" ref={menuRef}>
@@ -73,7 +80,7 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
         aria-expanded={isOpen}
         aria-haspopup="true"
         aria-label="User account menu"
-        title={isCollapsed ? `${session.name} (${session.role})` : undefined}
+        title={isCollapsed ? `${session.name} (${roleLabel})` : undefined}
         className={cn(
           "flex items-center w-full rounded-lg text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isCollapsed
@@ -84,7 +91,10 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
         {/* Avatar */}
         <div
           className={cn(
-            "flex shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 font-bold tracking-tight",
+            "flex shrink-0 items-center justify-center rounded-lg font-bold tracking-tight",
+            isSuperAdmin
+              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+              : "bg-primary/10 text-primary border border-primary/20",
             isCollapsed ? "h-9 w-9 text-xs" : "h-8 w-8 text-xs"
           )}
         >
@@ -99,7 +109,7 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
                 {session.name}
               </p>
               <p className="text-[10px] text-muted-foreground truncate leading-tight">
-                {session.email}
+                {session.property?.name || (isSuperAdmin ? "Platform Admin" : session.email)}
               </p>
             </div>
             <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground/70" />
@@ -119,7 +129,14 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
         >
           {/* Header Card */}
           <div className="flex items-start gap-3 pb-3 border-b border-border/80">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold text-sm">
+            <div
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg font-bold text-sm",
+                isSuperAdmin
+                  ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30"
+                  : "bg-primary/15 text-primary"
+              )}
+            >
               {initials}
             </div>
             <div className="flex-1 min-w-0">
@@ -127,25 +144,35 @@ export function NavUser({ session, isCollapsed = false }: NavUserProps) {
               <p className="text-[11px] text-muted-foreground truncate">{session.email}</p>
               <div className="mt-1 flex items-center gap-1.5">
                 <Badge
-                  variant={isAdmin ? "default" : "secondary"}
-                  className="text-[10px] px-1.5 py-0 h-4 font-semibold"
+                  variant={isSuperAdmin ? "default" : isAdmin ? "secondary" : "outline"}
+                  className={cn(
+                    "text-[10px] px-1.5 py-0 h-4 font-semibold",
+                    isSuperAdmin && "bg-purple-600 hover:bg-purple-700 text-white"
+                  )}
                 >
                   <Shield className="w-2.5 h-2.5 mr-1 inline" />
-                  {session.role}
+                  {roleLabel}
                 </Badge>
               </div>
             </div>
           </div>
 
-          {/* Shift & Station Details */}
-          <div className="py-2.5 px-1 text-[11px] text-muted-foreground space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Station Mode:</span>
-              <span className="font-medium text-foreground">Reception Desk</span>
+          {/* Hotel & Station Details */}
+          <div className="py-2.5 px-1 text-[11px] text-muted-foreground space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="shrink-0">Hotel:</span>
+              <span
+                className="font-medium text-foreground truncate max-w-[150px] text-right"
+                title={session.property?.name || (isSuperAdmin ? "All Hotels (Platform)" : "Unassigned")}
+              >
+                {session.property?.name || (isSuperAdmin ? "All Hotels (Platform)" : "Unassigned")}
+              </span>
             </div>
             <div className="flex items-center justify-between">
-              <span>Shift Window:</span>
-              <span className="font-medium text-foreground">8 Hours Shift</span>
+              <span>Station Mode:</span>
+              <span className="font-medium text-foreground">
+                {isSuperAdmin ? "Platform Console" : "Reception Desk"}
+              </span>
             </div>
           </div>
 

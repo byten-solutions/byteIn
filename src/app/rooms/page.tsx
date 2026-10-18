@@ -4,7 +4,7 @@ import { RoomService, RoomCategoryService } from "@/modules/rooms/room.service";
 import { PropertyService } from "@/modules/properties/property.service";
 import { AppShell } from "@/components/app-shell";
 import { RoomManager } from "./room-manager";
-import { RoomStatus } from "@prisma/client";
+import { RoomStatus, RoleName } from "@prisma/client";
 
 const VALID_STATUSES = new Set([
   "VACANT_CLEAN",
@@ -43,21 +43,27 @@ export default async function RoomsPage(props: {
     PropertyService.getProperties(),
   ]);
 
-  const defaultPropertyId = searchParams?.propertyId || properties[0]?.id;
-  const activeProperty = properties.find((p) => p.id === defaultPropertyId) || properties[0];
-  const defaultBuildingId = searchParams?.buildingId || activeProperty?.buildings[0]?.id;
-  const activeBuilding =
-    activeProperty?.buildings.find((b) => b.id === defaultBuildingId) ||
-    activeProperty?.buildings[0];
-  const defaultFloorId = searchParams?.floorId || activeBuilding?.floors[0]?.id;
+  // Determine property scoping:
+  // - Super Admin: only filter by property if searchParams.propertyId is explicitly provided.
+  // - Hotel Admin / Receptionist: strictly scoped to session.propertyId.
+  const effectivePropertyId =
+    session.role === RoleName.SUPER_ADMIN
+      ? searchParams?.propertyId || undefined
+      : session.propertyId || undefined;
+
+  // No default building or floor filters when opening rooms section!
+  // Only filter if explicitly passed in searchParams.
+  const buildingId = searchParams?.buildingId || undefined;
+  const floorId = searchParams?.floorId || undefined;
+  const roomCategoryId = searchParams?.category || undefined;
 
   const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1;
 
   const initialRoomsResult = await RoomService.getRoomsPage({
-    propertyId: defaultPropertyId,
-    buildingId: defaultBuildingId,
-    floorId: defaultFloorId,
-    roomCategoryId: searchParams?.category,
+    propertyId: effectivePropertyId,
+    buildingId,
+    floorId,
+    roomCategoryId,
     status: initialStatus as RoomStatus | undefined,
     search: searchParams?.search,
     page: isNaN(page) ? 1 : page,
@@ -100,7 +106,12 @@ export default async function RoomsPage(props: {
     maxOccupancy: c.maxOccupancy,
   }));
 
-  const serializedProperties = properties.map((p) => ({
+  const visibleProperties =
+    session.role === RoleName.SUPER_ADMIN || !session.propertyId
+      ? properties
+      : properties.filter((p) => p.id === session.propertyId);
+
+  const serializedProperties = visibleProperties.map((p) => ({
     id: p.id,
     name: p.name,
     buildings: p.buildings.map((b) => ({
@@ -133,9 +144,9 @@ export default async function RoomsPage(props: {
           properties={serializedProperties}
           userRole={session.role}
           initialStatus={initialStatus}
-          initialPropertyId={defaultPropertyId}
-          initialBuildingId={defaultBuildingId}
-          initialFloorId={defaultFloorId}
+          initialPropertyId={effectivePropertyId}
+          initialBuildingId={buildingId}
+          initialFloorId={floorId}
         />
       </div>
     </AppShell>

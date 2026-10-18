@@ -68,7 +68,7 @@ interface CategoryItem {
 interface Props {
   initialCategories: CategoryItem[];
   amenities: AmenityItem[];
-  userRole: "ADMIN" | "RECEPTIONIST";
+  userRole: "SUPER_ADMIN" | "ADMIN" | "RECEPTIONIST";
 }
 
 export function CategoryManager({
@@ -101,7 +101,7 @@ export function CategoryManager({
   const [categoryToDelete, setCategoryToDelete] = useState<CategoryItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const isAdmin = userRole === "ADMIN";
+  const isAdmin = userRole === "ADMIN" || userRole === "SUPER_ADMIN";
 
   const openCreateCategory = () => {
     setEditingCategory(null);

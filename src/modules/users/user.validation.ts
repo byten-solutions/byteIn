@@ -11,6 +11,7 @@ export const createUserSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/, "Password must contain at least one special character"),
   roleId: z.string().min(1, "Role ID is required"),
+  propertyId: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "DISABLED"]).optional().default("ACTIVE"),
   mustChangePassword: z.boolean().optional().default(false),
 });
@@ -27,6 +28,7 @@ export const updateUserSchema = z.object({
     .regex(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/)
     .optional(),
   roleId: z.string().optional(),
+  propertyId: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "DISABLED"]).optional(),
   mustChangePassword: z.boolean().optional(),
 });

@@ -7,8 +7,26 @@ import { handleApiError } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAuth([RoleName.ADMIN], req);
-    const users = await UserService.listUsers();
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN],
+      req
+    );
+    const searchParams = req.nextUrl.searchParams;
+    const propertyId = searchParams.get("propertyId") || undefined;
+    const roleParam = searchParams.get("role") as RoleName | null;
+    const role =
+      roleParam && Object.values(RoleName).includes(roleParam)
+        ? roleParam
+        : undefined;
+    const status = searchParams.get("status") || undefined;
+    const search = searchParams.get("search") || undefined;
+
+    const users = await UserService.listUsers(session, {
+      propertyId,
+      role,
+      status,
+      search,
+    });
     return NextResponse.json({
       success: true,
       data: users,
@@ -20,7 +38,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await requireAuth([RoleName.ADMIN], req);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN],
+      req
+    );
 
     let body: Record<string, unknown> = {};
     try {
@@ -30,7 +51,7 @@ export async function POST(req: NextRequest) {
     }
 
     const validated = createUserSchema.parse(body);
-    const created = await UserService.createUser(validated, session.sub);
+    const created = await UserService.createUser(validated, session);
     return NextResponse.json(
       {
         success: true,
