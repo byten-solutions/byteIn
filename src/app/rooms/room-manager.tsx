@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Bed,
   Plus,
@@ -16,6 +15,8 @@ import {
   X,
   FileText,
   Eye,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { RoomStatus } from "@prisma/client";
 import { toast } from "sonner";
@@ -102,10 +103,27 @@ export interface RoomItem {
 
 interface Props {
   initialRooms: RoomItem[];
+  initialPagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  summaryCounts: {
+    total: number;
+    clean: number;
+    dirty: number;
+    occupied: number;
+    maintenance: number;
+    outOfService: number;
+  };
   categories: CategoryOption[];
   properties: PropertyOption[];
   userRole: "ADMIN" | "RECEPTIONIST";
   initialStatus?: string;
+  initialPropertyId?: string;
+  initialBuildingId?: string;
+  initialFloorId?: string;
 }
 
 const STATUS_FILTER_ITEMS: {
@@ -148,17 +166,35 @@ const STATUS_FILTER_ITEMS: {
 
 export function RoomManager({
   initialRooms,
+  initialPagination,
+  summaryCounts,
   categories,
   properties,
   userRole,
   initialStatus,
+  initialPropertyId,
+  initialBuildingId,
+  initialFloorId,
 }: Props) {
-  const router = useRouter();
   const [rooms, setRooms] = useState<RoomItem[]>(initialRooms);
   const [search, setSearch] = useState("");
+  const [propertyFilter, setPropertyFilter] = useState<string>(
+    initialPropertyId || properties[0]?.id || "ALL"
+  );
+  const [buildingFilter, setBuildingFilter] = useState<string>(
+    initialBuildingId || "ALL"
+  );
+  const [floorFilter, setFloorFilter] = useState<string>(
+    initialFloorId || "ALL"
+  );
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus || "ALL");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
-  const [floorFilter, setFloorFilter] = useState<string>("ALL");
+  const [page, setPage] = useState<number>(initialPagination?.page || 1);
+  const [totalPages, setTotalPages] = useState<number>(initialPagination?.totalPages || 1);
+  const [totalRooms, setTotalRooms] = useState<number>(initialPagination?.total || initialRooms.length);
+  const [counts, setCounts] = useState(summaryCounts);
+  const [isFetchingRooms, setIsFetchingRooms] = useState(false);
+  const isFirstRender = useRef(true);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +254,84 @@ export function RoomManager({
       setFormFloorId(b.floors[0].id);
     }
   };
+
+  const fetchRooms = useCallback(
+    async (
+      targetPage: number = 1,
+      overrides?: {
+        propertyId?: string;
+        buildingId?: string;
+        floorId?: string;
+        categoryId?: string;
+        status?: string;
+        search?: string;
+      }
+    ) => {
+      setIsFetchingRooms(true);
+      setError(null);
+      try {
+        const pId = overrides?.propertyId !== undefined ? overrides.propertyId : propertyFilter;
+        const bId = overrides?.buildingId !== undefined ? overrides.buildingId : buildingFilter;
+        const fId = overrides?.floorId !== undefined ? overrides.floorId : floorFilter;
+        const catId = overrides?.categoryId !== undefined ? overrides.categoryId : categoryFilter;
+        const stat = overrides?.status !== undefined ? overrides.status : statusFilter;
+        const q = overrides?.search !== undefined ? overrides.search : search;
+
+        const params = new URLSearchParams();
+        if (pId && pId !== "ALL") params.set("propertyId", pId);
+        if (bId && bId !== "ALL") params.set("buildingId", bId);
+        if (fId && fId !== "ALL") params.set("floorId", fId);
+        if (catId && catId !== "ALL") params.set("roomCategoryId", catId);
+        if (stat && stat !== "ALL") params.set("status", stat);
+        if (q && q.trim()) params.set("search", q.trim());
+        params.set("page", targetPage.toString());
+        params.set("limit", "50");
+
+        const res = await fetch(`/api/rooms?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to fetch rooms");
+        }
+
+        setRooms(data.rooms || []);
+        if (data.pagination) {
+          setPage(data.pagination.page);
+          setTotalPages(data.pagination.totalPages);
+          setTotalRooms(data.pagination.total);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Error loading rooms";
+        setError(msg);
+        toast.error(msg);
+      } finally {
+        setIsFetchingRooms(false);
+      }
+    },
+    [propertyFilter, buildingFilter, floorFilter, categoryFilter, statusFilter, search]
+  );
+
+  const refreshSummary = async () => {
+    try {
+      const res = await fetch("/api/rooms?summary=true");
+      const data = await res.json();
+      if (data.success && data.counts) {
+        setCounts(data.counts);
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchRooms(1, { search });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, fetchRooms]);
 
   // Open Create Room Modal
   const openCreateRoom = () => {
@@ -290,15 +404,8 @@ export function RoomManager({
 
       setIsRoomModalOpen(false);
       toast.success(editingRoom ? `Room ${data.room.roomNo} updated` : `Room ${data.room.roomNo} created`);
-      router.refresh();
-
-      if (editingRoom) {
-        setRooms((prev) =>
-          prev.map((r) => (r.id === editingRoom.id ? data.room : r))
-        );
-      } else {
-        setRooms((prev) => [...prev, data.room]);
-      }
+      await refreshSummary();
+      await fetchRooms(page);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error saving room";
       setError(msg);
@@ -330,12 +437,10 @@ export function RoomManager({
         throw new Error(data.error || "Failed to update room status");
       }
 
-      setRooms((prev) =>
-        prev.map((r) => (r.id === statusModalRoom.id ? data.room : r))
-      );
       toast.success(`Room ${statusModalRoom.roomNo} updated to ${newStatus.replace(/_/g, " ").toLowerCase()}`);
       setStatusModalRoom(null);
-      router.refresh();
+      await refreshSummary();
+      await fetchRooms(page);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error updating room status";
       setError(msg);
@@ -357,10 +462,10 @@ export function RoomManager({
         throw new Error(data.error || "Failed to delete room");
       }
 
-      setRooms((prev) => prev.filter((r) => r.id !== roomToDelete.id));
       toast.success(`Room ${roomToDelete.roomNo} deleted`);
       setRoomToDelete(null);
-      router.refresh();
+      await refreshSummary();
+      await fetchRooms(page);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error deleting room";
       toast.error(msg);
@@ -369,41 +474,32 @@ export function RoomManager({
     }
   };
 
-  // Counts for status metrics
-  const counts = {
-    total: rooms.length,
-    clean: rooms.filter((r) => r.status === RoomStatus.VACANT_CLEAN).length,
-    dirty: rooms.filter((r) => r.status === RoomStatus.VACANT_DIRTY).length,
-    occupied: rooms.filter((r) => r.status === RoomStatus.OCCUPIED).length,
-    maintenance: rooms.filter((r) => r.status === RoomStatus.MAINTENANCE).length,
-    outOfService: rooms.filter((r) => r.status === RoomStatus.OUT_OF_SERVICE).length,
-  };
-
-  // Distinct floors for filtering
-  const distinctFloors = Array.from(new Set(rooms.map((r) => r.floor.floorNo))).sort((a, b) => a - b);
-
-  // Filtering
-  const filteredRooms = rooms.filter((r) => {
-    if (statusFilter !== "ALL" && r.status !== statusFilter) return false;
-    if (categoryFilter !== "ALL" && r.roomCategoryId !== categoryFilter) return false;
-    if (floorFilter !== "ALL" && r.floor.floorNo.toString() !== floorFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      const matchNo = r.roomNo.toLowerCase().includes(q);
-      const matchName = r.displayName && r.displayName.toLowerCase().includes(q);
-      if (!matchNo && !matchName) return false;
-    }
-    return true;
-  });
+  // Filter toolbar building and floor options
+  const filterProperty = properties.find((p) => p.id === propertyFilter) || properties[0];
+  const filterBuildings = filterProperty?.buildings || [];
+  const selectedBldg = filterBuildings.find((b) => b.id === buildingFilter);
+  const filterFloors = selectedBldg?.floors || [];
 
   const hasActiveFilters =
-    search !== "" || statusFilter !== "ALL" || categoryFilter !== "ALL" || floorFilter !== "ALL";
+    search !== "" ||
+    statusFilter !== "ALL" ||
+    categoryFilter !== "ALL" ||
+    buildingFilter !== "ALL" ||
+    floorFilter !== "ALL";
 
   const clearFilters = () => {
     setSearch("");
     setStatusFilter("ALL");
     setCategoryFilter("ALL");
+    setBuildingFilter("ALL");
     setFloorFilter("ALL");
+    fetchRooms(1, {
+      search: "",
+      status: "ALL",
+      categoryId: "ALL",
+      buildingId: "ALL",
+      floorId: "ALL",
+    });
   };
 
   const isCustomDisplayName = (
@@ -421,8 +517,8 @@ export function RoomManager({
     return true;
   };
 
-  // Group filteredRooms by building, then floor
-  const groupedBuildings = filteredRooms.reduce<
+  // Group rooms by building, then floor
+  const groupedBuildings = rooms.reduce<
     {
       buildingId: string;
       buildingName: string;
@@ -492,7 +588,10 @@ export function RoomManager({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <button
           type="button"
-          onClick={() => setStatusFilter("ALL")}
+          onClick={() => {
+            setStatusFilter("ALL");
+            fetchRooms(1, { status: "ALL" });
+          }}
           className={cn(
             "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
             statusFilter === "ALL"
@@ -529,7 +628,11 @@ export function RoomManager({
             <button
               key={item.status}
               type="button"
-              onClick={() => setStatusFilter(item.status)}
+              onClick={() => {
+                const next = statusFilter === item.status ? "ALL" : item.status;
+                setStatusFilter(next);
+                fetchRooms(1, { status: next });
+              }}
               className={cn(
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
                 isActive
@@ -564,9 +667,69 @@ export function RoomManager({
           />
         </div>
 
+        {properties.length > 1 && (
+          <select
+            value={propertyFilter}
+            onChange={(e) => {
+              const val = e.target.value;
+              setPropertyFilter(val);
+              setBuildingFilter("ALL");
+              setFloorFilter("ALL");
+              fetchRooms(1, { propertyId: val, buildingId: "ALL", floorId: "ALL" });
+            }}
+            className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="ALL">All Properties</option>
+            {properties.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <select
+          value={buildingFilter}
+          onChange={(e) => {
+            const val = e.target.value;
+            setBuildingFilter(val);
+            setFloorFilter("ALL");
+            fetchRooms(1, { buildingId: val, floorId: "ALL" });
+          }}
+          className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="ALL">All Buildings</option>
+          {filterBuildings.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={floorFilter}
+          onChange={(e) => {
+            const val = e.target.value;
+            setFloorFilter(val);
+            fetchRooms(1, { floorId: val });
+          }}
+          className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="ALL">All Floors</option>
+          {filterFloors.map((flr) => (
+            <option key={flr.id} value={flr.id}>
+              Floor {flr.floorNo} {flr.name ? `(${flr.name})` : ""}
+            </option>
+          ))}
+        </select>
+
         <select
           value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setCategoryFilter(val);
+            fetchRooms(1, { categoryId: val });
+          }}
           className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
         >
           <option value="ALL">All Categories</option>
@@ -577,25 +740,12 @@ export function RoomManager({
           ))}
         </select>
 
-        <select
-          value={floorFilter}
-          onChange={(e) => setFloorFilter(e.target.value)}
-          className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
-        >
-          <option value="ALL">All Floors</option>
-          {distinctFloors.map((fNo) => (
-            <option key={fNo} value={fNo.toString()}>
-              Floor {fNo}
-            </option>
-          ))}
-        </select>
-
         {hasActiveFilters && (
           <Button
             variant="ghost"
             size="sm"
             onClick={clearFilters}
-            className="text-xs h-9 text-muted-foreground hover:text-foreground gap-1"
+            className="text-xs h-9 text-muted-foreground hover:text-foreground gap-1 cursor-pointer"
           >
             <X className="size-3.5" />
             <span>Reset</span>
@@ -604,17 +754,17 @@ export function RoomManager({
       </div>
 
       {/* Rooms Grid */}
-      {filteredRooms.length === 0 ? (
+      {rooms.length === 0 ? (
         <EmptyState
           icon={<Bed className="size-6" />}
-          title={rooms.length === 0 ? "No rooms configured" : "No matching rooms"}
+          title={totalRooms === 0 ? "No rooms configured" : "No matching rooms"}
           description={
-            rooms.length === 0
+            totalRooms === 0
               ? "Set up physical rooms and attach them to categories to begin managing operations."
               : "No rooms match your filter criteria. Try adjusting your search or clearing filters."
           }
           action={
-            isAdmin && rooms.length === 0 ? (
+            isAdmin && totalRooms === 0 ? (
               <Button onClick={openCreateRoom} size="sm">
                 <Plus className="size-4 mr-1.5" />
                 Add first room
@@ -627,7 +777,7 @@ export function RoomManager({
           }
         />
       ) : (
-        <div className="space-y-6">
+        <div className={cn("space-y-6 transition-opacity", isFetchingRooms && "opacity-50 pointer-events-none")}>
           {groupedBuildings.map((bldg) => (
             <div key={bldg.buildingId} className="space-y-4">
               {bldg.floors.map((flr) => (
@@ -805,6 +955,66 @@ export function RoomManager({
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination Footer */}
+      {totalPages > 1 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 py-3 text-xs text-muted-foreground border-t border-border/60">
+          <div>
+            Showing{" "}
+            <span className="font-mono tabular-nums font-semibold text-foreground">
+              {totalRooms === 0 ? 0 : (page - 1) * 50 + 1}
+            </span>{" "}
+            to{" "}
+            <span className="font-mono tabular-nums font-semibold text-foreground">
+              {Math.min(page * 50, totalRooms)}
+            </span>{" "}
+            of{" "}
+            <span className="font-mono tabular-nums font-semibold text-foreground">
+              {totalRooms}
+            </span>{" "}
+            rooms
+          </div>
+
+          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1"
+              disabled={page <= 1 || isFetchingRooms}
+              onClick={() => {
+                fetchRooms(page - 1);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            >
+              <ChevronLeft className="size-3.5" />
+              Previous
+            </Button>
+            <div className="px-2 text-xs">
+              Page{" "}
+              <span className="font-mono tabular-nums font-semibold text-foreground">
+                {page}
+              </span>{" "}
+              of{" "}
+              <span className="font-mono tabular-nums font-semibold text-foreground">
+                {totalPages}
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1"
+              disabled={page >= totalPages || isFetchingRooms}
+              onClick={() => {
+                fetchRooms(page + 1);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            >
+              Next
+              <ChevronRight className="size-3.5" />
+            </Button>
+          </div>
         </div>
       )}
 

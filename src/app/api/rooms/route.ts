@@ -22,6 +22,39 @@ export async function GET(req: NextRequest) {
         ? (statusParam as RoomStatus)
         : undefined;
     const search = searchParams.get("search") || undefined;
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+    const page = pageParam ? parseInt(pageParam, 10) : undefined;
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
+    if (searchParams.get("summary") === "true") {
+      const summary = await RoomService.getRoomsSummary();
+      return NextResponse.json({ success: true, ...summary });
+    }
+
+    if (page !== undefined || limit !== undefined) {
+      const result = await RoomService.getRoomsPage({
+        propertyId,
+        buildingId,
+        floorId,
+        roomCategoryId,
+        status,
+        search,
+        page,
+        limit,
+      });
+
+      return NextResponse.json({
+        success: true,
+        rooms: result.rooms,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: result.totalPages,
+        },
+      });
+    }
 
     const rooms = await RoomService.getRooms({
       propertyId,

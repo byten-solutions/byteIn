@@ -1,4 +1,5 @@
 import { Prisma, RoomStatus } from "@prisma/client";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import type {
   CreateCategoryInput,
@@ -184,6 +185,88 @@ export class AmenityService {
 }
 
 export class RoomService {
+  /**
+   * Invalidation helper for room status summary.
+   */
+  public static invalidateRoomsCache(): void {
+    try {
+      revalidateTag("rooms-summary", "max");
+    } catch {
+      // Ignore outside Next.js request context (e.g. tests or worker tasks)
+    }
+  }
+
+  /**
+   * Computes table-wide room status counts and property/building/floor facets,
+   * cached with tag 'rooms-summary'.
+   */
+  public static async getRoomsSummary(): Promise<{
+    counts: {
+      total: number;
+      clean: number;
+      dirty: number;
+      occupied: number;
+      maintenance: number;
+      outOfService: number;
+    };
+    facets: Array<{
+      propertyId: string;
+      buildingId: string;
+      floorId: string;
+      count: number;
+    }>;
+  }> {
+    const fetchSummary = async () => {
+      const [statusGroups, buildingFloorGroups] = await Promise.all([
+        prisma.room.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+        }),
+        prisma.room.groupBy({
+          by: ["propertyId", "buildingId", "floorId"],
+          _count: { _all: true },
+        }),
+      ]);
+
+      const counts = {
+        total: 0,
+        clean: 0,
+        dirty: 0,
+        occupied: 0,
+        maintenance: 0,
+        outOfService: 0,
+      };
+
+      for (const sg of statusGroups) {
+        counts.total += sg._count._all;
+        if (sg.status === RoomStatus.VACANT_CLEAN) counts.clean = sg._count._all;
+        else if (sg.status === RoomStatus.VACANT_DIRTY) counts.dirty = sg._count._all;
+        else if (sg.status === RoomStatus.OCCUPIED) counts.occupied = sg._count._all;
+        else if (sg.status === RoomStatus.MAINTENANCE) counts.maintenance = sg._count._all;
+        else if (sg.status === RoomStatus.OUT_OF_SERVICE) counts.outOfService = sg._count._all;
+      }
+
+      const facets = buildingFloorGroups.map((bf) => ({
+        propertyId: bf.propertyId,
+        buildingId: bf.buildingId,
+        floorId: bf.floorId,
+        count: bf._count._all,
+      }));
+
+      return { counts, facets };
+    };
+
+    try {
+      const cached = unstable_cache(fetchSummary, ["rooms-summary"], {
+        tags: ["rooms-summary"],
+        revalidate: 60,
+      });
+      return await cached();
+    } catch {
+      return fetchSummary();
+    }
+  }
+
   static async createRoom(input: CreateRoomInput) {
     // 1. Verify property
     const property = await prisma.property.findUnique({
@@ -246,7 +329,7 @@ export class RoomService {
         ? new Prisma.Decimal(input.priceOverride.toString())
         : null;
 
-    return prisma.room.create({
+    const created = await prisma.room.create({
       data: {
         propertyId: input.propertyId,
         buildingId: input.buildingId,
@@ -266,6 +349,64 @@ export class RoomService {
         property: true,
       },
     });
+    this.invalidateRoomsCache();
+    return created;
+  }
+
+  /**
+   * Retrieves paginated rooms with building/floor ordering and total count.
+   */
+  static async getRoomsPage(filters?: RoomFilterOptions) {
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.max(1, Math.min(200, filters?.limit || 50));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.RoomWhereInput = {};
+    if (filters?.propertyId) where.propertyId = filters.propertyId;
+    if (filters?.buildingId) where.buildingId = filters.buildingId;
+    if (filters?.floorId) where.floorId = filters.floorId;
+    if (filters?.roomCategoryId) where.roomCategoryId = filters.roomCategoryId;
+    if (filters?.status) where.status = filters.status;
+
+    if (filters?.search && filters.search.trim() !== "") {
+      const q = filters.search.trim();
+      where.OR = [
+        { roomNo: { contains: q, mode: "insensitive" } },
+        { displayName: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const [rooms, total] = await Promise.all([
+      prisma.room.findMany({
+        where,
+        include: {
+          category: {
+            include: {
+              amenities: { include: { amenity: true } },
+            },
+          },
+          building: true,
+          floor: true,
+          property: true,
+        },
+        orderBy: [
+          { building: { name: "asc" } },
+          { floor: { floorNo: "asc" } },
+          { roomNo: "asc" },
+        ],
+        skip,
+        take: limit,
+      }),
+      prisma.room.count({ where }),
+    ]);
+
+    return {
+      rooms,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
   }
 
   static async getRooms(filters?: RoomFilterOptions) {
@@ -277,12 +418,17 @@ export class RoomService {
     if (filters?.roomCategoryId) where.roomCategoryId = filters.roomCategoryId;
     if (filters?.status) where.status = filters.status;
 
-    if (filters?.search) {
+    if (filters?.search && filters.search.trim() !== "") {
+      const q = filters.search.trim();
       where.OR = [
-        { roomNo: { contains: filters.search, mode: "insensitive" } },
-        { displayName: { contains: filters.search, mode: "insensitive" } },
+        { roomNo: { contains: q, mode: "insensitive" } },
+        { displayName: { contains: q, mode: "insensitive" } },
       ];
     }
+
+    const page = filters?.page ? Math.max(1, filters.page) : undefined;
+    const limit = filters?.limit ? Math.max(1, Math.min(200, filters.limit)) : undefined;
+    const skip = page && limit ? (page - 1) * limit : undefined;
 
     return prisma.room.findMany({
       where,
@@ -296,7 +442,13 @@ export class RoomService {
         floor: true,
         property: true,
       },
-      orderBy: [{ building: { name: "asc" } }, { roomNo: "asc" }],
+      orderBy: [
+        { building: { name: "asc" } },
+        { floor: { floorNo: "asc" } },
+        { roomNo: "asc" },
+      ],
+      skip,
+      take: limit,
     });
   }
 
@@ -367,7 +519,7 @@ export class RoomService {
           : new Prisma.Decimal(input.priceOverride.toString())
         : undefined;
 
-    return prisma.room.update({
+    const updated = await prisma.room.update({
       where: { id },
       data: {
         ...(input.propertyId && { propertyId: input.propertyId }),
@@ -389,6 +541,8 @@ export class RoomService {
         property: true,
       },
     });
+    this.invalidateRoomsCache();
+    return updated;
   }
 
   /**
@@ -454,6 +608,7 @@ export class RoomService {
       console.error("Failed to record room status audit log:", auditErr);
     }
 
+    this.invalidateRoomsCache();
     return updated;
   }
 
@@ -475,6 +630,8 @@ export class RoomService {
       );
     }
 
-    return prisma.room.delete({ where: { id } });
+    const deleted = await prisma.room.delete({ where: { id } });
+    this.invalidateRoomsCache();
+    return deleted;
   }
 }

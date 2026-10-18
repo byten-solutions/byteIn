@@ -62,4 +62,6 @@ export interface RoomFilterOptions {
   roomCategoryId?: string;
   status?: RoomStatus;
   search?: string;
+  page?: number;
+  limit?: number;
 }
