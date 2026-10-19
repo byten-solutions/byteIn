@@ -137,11 +137,13 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     }
     testPropertyId = property.id;
 
-    let category = await prisma.roomCategory.findFirst();
+    let category = await prisma.roomCategory.findFirst({
+      where: { basePrice: { gte: 3000 } },
+    });
     if (!category) {
       category = await prisma.roomCategory.create({
         data: {
-          name: "Deluxe Suite",
+          name: `Deluxe Suite ${Date.now()}`,
           basePrice: 3000,
           maxOccupancy: 2,
         },
