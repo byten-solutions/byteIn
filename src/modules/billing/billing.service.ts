@@ -72,7 +72,7 @@ export class BillingService {
     totalCollected: string;
     totalOutstanding: string;
   }> {
-    return scopedCached("billing-summary", propertyId, 3600, async () => {
+    return scopedCached("billing-summary", propertyId, 60, async () => {
       const inv = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty;
       const pay = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty;
 
