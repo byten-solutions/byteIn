@@ -1,6 +1,7 @@
 import { Prisma, RoomStatus } from "@prisma/client";
 import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import { prisma } from "@/lib/prisma";
+import { NotFoundError } from "@/lib/errors";
 import type {
   CreateCategoryInput,
   UpdateCategoryInput,
@@ -459,10 +460,10 @@ export class RoomService {
     });
   }
 
-  static async updateRoom(id: string, input: UpdateRoomInput) {
+  static async updateRoom(id: string, input: UpdateRoomInput, opts?: { propertyId?: string }) {
     const existing = await prisma.room.findUnique({ where: { id } });
-    if (!existing) {
-      throw new Error("Room not found");
+    if (!existing || (opts?.propertyId && existing.propertyId !== opts.propertyId)) {
+      throw new NotFoundError("Room not found");
     }
 
     const buildingId = input.buildingId || existing.buildingId;
@@ -542,12 +543,24 @@ export class RoomService {
   static async updateRoomStatus(
     id: string,
     newStatus: RoomStatus,
-    notes?: string | null,
-    actor?: { userId?: string; name?: string }
+    notesOrOpts?: string | null | { propertyId?: string },
+    actor?: { userId?: string; name?: string },
+    opts?: { propertyId?: string }
   ) {
-    const room = await prisma.room.findUnique({ where: { id } });
-    if (!room) {
-      throw new Error("Room not found");
+    let notes: string | null | undefined = undefined;
+    let resolvedOpts = opts;
+    if (typeof notesOrOpts === "string" || notesOrOpts === null) {
+      notes = notesOrOpts;
+    } else if (notesOrOpts && typeof notesOrOpts === "object" && "propertyId" in notesOrOpts) {
+      resolvedOpts = notesOrOpts;
+    }
+
+    const room = await prisma.room.findUnique({
+      where: { id },
+      select: { id: true, propertyId: true, status: true, roomNo: true },
+    });
+    if (!room || (resolvedOpts?.propertyId && room.propertyId !== resolvedOpts.propertyId)) {
+      throw new NotFoundError("Room not found");
     }
 
     // Invariant: Cannot manually transition an OCCUPIED room without checkout workflow
@@ -603,7 +616,7 @@ export class RoomService {
     return updated;
   }
 
-  static async deleteRoom(id: string) {
+  static async deleteRoom(id: string, opts?: { propertyId?: string }) {
     const room = await prisma.room.findUnique({
       where: { id },
       include: {
@@ -611,8 +624,8 @@ export class RoomService {
       },
     });
 
-    if (!room) {
-      throw new Error("Room not found");
+    if (!room || (opts?.propertyId && room.propertyId !== opts.propertyId)) {
+      throw new NotFoundError("Room not found");
     }
 
     if (room._count.reservationRooms > 0) {

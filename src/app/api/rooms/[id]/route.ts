@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { RoleName } from "@prisma/client";
-import { requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { RoomService } from "@/modules/rooms/room.service";
 import { updateRoomSchema } from "@/modules/rooms/room.validation";
 import { handleApiError, ForbiddenError, NotFoundError } from "@/lib/errors";
@@ -44,9 +44,10 @@ export async function PUT(
       throw new ForbiddenError("Cannot modify rooms in another hotel");
     }
 
+    const scope = resolveScope(session, null, { allowSuperAdminGlobal: true });
     const body = await req.json();
     const validated = updateRoomSchema.parse(body);
-    const room = await RoomService.updateRoom(id, validated);
+    const room = await RoomService.updateRoom(id, validated, { propertyId: scope ?? undefined });
     return NextResponse.json({ success: true, room });
   } catch (error) {
     return handleApiError(error);
@@ -70,7 +71,8 @@ export async function DELETE(
       throw new ForbiddenError("Cannot delete rooms in another hotel");
     }
 
-    await RoomService.deleteRoom(id);
+    const scope = resolveScope(session, null, { allowSuperAdminGlobal: true });
+    await RoomService.deleteRoom(id, { propertyId: scope ?? undefined });
     return NextResponse.json({
       success: true,
       message: "Room deleted successfully",

@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZodError } from "zod";
 import { RoleName } from "@prisma/client";
-import { AuthError, requireAuth } from "@/lib/auth-guard";
+import { requireAuth, resolveScope } from "@/lib/auth-guard";
 import { RoomService } from "@/modules/rooms/room.service";
 import { updateRoomStatusSchema } from "@/modules/rooms/room.validation";
+import { handleApiError } from "@/lib/errors";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth([RoleName.ADMIN, RoleName.RECEPTIONIST]);
+    const session = await requireAuth(
+      [RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.RECEPTIONIST],
+      req
+    );
+    const scope = resolveScope(session, null, { allowSuperAdminGlobal: true });
     const { id } = await params;
     const body = await req.json();
     const validated = updateRoomStatusSchema.parse(body);
@@ -22,7 +26,8 @@ export async function PATCH(
       {
         userId: session.sub,
         name: session.name,
-      }
+      },
+      { propertyId: scope ?? undefined }
     );
 
     return NextResponse.json({
@@ -31,17 +36,6 @@ export async function PATCH(
       room,
     });
   } catch (error) {
-    if (error instanceof AuthError) {
-      return NextResponse.json({ error: error.message }, { status: error.statusCode });
-    }
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        { error: "Validation error", details: error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    const message = error instanceof Error ? error.message : "Failed to update room status";
-    const status = message.includes("not found") ? 404 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return handleApiError(error);
   }
 }
