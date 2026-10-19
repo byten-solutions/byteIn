@@ -18,11 +18,25 @@ export default async function ReservationsPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
 
-  const result = await ReservationService.getReservations({
-    page: 1,
-    limit: 20,
-    propertyId: scope ?? undefined,
-  })
+  let result: Awaited<ReturnType<typeof ReservationService.getReservations>> = {
+    reservations: [],
+    pagination: {
+      page: 1,
+      limit: 20,
+      total: 0,
+      totalPages: 1,
+    },
+  }
+
+  try {
+    result = await ReservationService.getReservations({
+      page: 1,
+      limit: 20,
+      propertyId: scope ?? undefined,
+    })
+  } catch (err) {
+    console.error("Failed to load reservations:", err)
+  }
 
   // Serialize Decimal objects and Date objects for client component
   const serializedReservations = result.reservations.map((r) => ({

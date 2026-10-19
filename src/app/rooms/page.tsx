@@ -39,11 +39,32 @@ export default async function RoomsPage(props: {
   const effectivePropertyId =
     resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true }) ?? undefined;
 
-  const [summary, categories, properties] = await Promise.all([
-    RoomService.getRoomsSummary(effectivePropertyId),
-    RoomCategoryService.getCategories(effectivePropertyId),
-    PropertyService.getProperties(),
-  ]);
+  let summary: Awaited<ReturnType<typeof RoomService.getRoomsSummary>> = {
+    counts: {
+      total: 0,
+      clean: 0,
+      dirty: 0,
+      occupied: 0,
+      maintenance: 0,
+      outOfService: 0,
+    },
+    facets: [],
+  };
+  let categories: Awaited<ReturnType<typeof RoomCategoryService.getCategories>> = [];
+  let properties: Awaited<ReturnType<typeof PropertyService.getProperties>> = [];
+
+  try {
+    const res = await Promise.all([
+      RoomService.getRoomsSummary(effectivePropertyId),
+      RoomCategoryService.getCategories(effectivePropertyId),
+      PropertyService.getProperties(),
+    ]);
+    summary = res[0];
+    categories = res[1];
+    properties = res[2];
+  } catch (err) {
+    console.error("Failed to load room summary, categories, or properties:", err);
+  }
 
   // No default building or floor filters when opening rooms section!
   // Only filter if explicitly passed in searchParams.
@@ -53,16 +74,28 @@ export default async function RoomsPage(props: {
 
   const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1;
 
-  const initialRoomsResult = await RoomService.getRoomsPage({
-    propertyId: effectivePropertyId,
-    buildingId,
-    floorId,
-    roomCategoryId,
-    status: initialStatus as RoomStatus | undefined,
-    search: searchParams?.search,
+  let initialRoomsResult: Awaited<ReturnType<typeof RoomService.getRoomsPage>> = {
+    rooms: [],
+    total: 0,
     page: isNaN(page) ? 1 : page,
     limit: 50,
-  });
+    totalPages: 1,
+  };
+
+  try {
+    initialRoomsResult = await RoomService.getRoomsPage({
+      propertyId: effectivePropertyId,
+      buildingId,
+      floorId,
+      roomCategoryId,
+      status: initialStatus as RoomStatus | undefined,
+      search: searchParams?.search,
+      page: isNaN(page) ? 1 : page,
+      limit: 50,
+    });
+  } catch (err) {
+    console.error("Failed to load rooms page:", err);
+  }
 
   // Serialize Decimal objects for client component props
   const serializedRooms = initialRoomsResult.rooms.map((r) => ({

@@ -188,6 +188,77 @@ export class BillingService {
     };
   }
 
+  private static formatInvoiceListItem(invoice: {
+    id: string;
+    propertyId: string;
+    invoiceNumber: string;
+    reservationId: string;
+    subtotal: Prisma.Decimal;
+    discountTotal: Prisma.Decimal;
+    taxTotal: Prisma.Decimal;
+    grandTotal: Prisma.Decimal;
+    status: InvoiceStatus;
+    issuedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    reservation: {
+      reservationNo: string;
+      customerId: string;
+      customer: {
+        firstName: string;
+        lastName: string | null;
+        email: string | null;
+        phone: string | null;
+      } | null;
+    } | null;
+    payments: Array<{
+      id: string;
+      amount: Prisma.Decimal;
+      status: PaymentStatus;
+    }>;
+  }): InvoiceDetailDTO {
+    const validPayments = (invoice.payments || []).filter(
+      (p) => p.status === PaymentStatus.RECORDED
+    );
+    const totalPaidDec = validPayments.reduce(
+      (sum: Prisma.Decimal, p) => sum.add(p.amount),
+      new Prisma.Decimal(0)
+    );
+    const grandTotalDec = new Prisma.Decimal(invoice.grandTotal);
+    const balanceDueDec = Prisma.Decimal.max(
+      new Prisma.Decimal(0),
+      grandTotalDec.sub(totalPaidDec)
+    );
+
+    const customerName = invoice.reservation?.customer
+      ? `${invoice.reservation.customer.firstName} ${invoice.reservation.customer.lastName || ""}`.trim()
+      : "Guest";
+
+    return {
+      id: invoice.id,
+      propertyId: invoice.propertyId,
+      invoiceNumber: invoice.invoiceNumber,
+      reservationId: invoice.reservationId,
+      reservationNo: invoice.reservation?.reservationNo || "",
+      customerId: invoice.reservation?.customerId || "",
+      customerName,
+      customerEmail: invoice.reservation?.customer?.email || null,
+      customerPhone: invoice.reservation?.customer?.phone || null,
+      subtotal: new Prisma.Decimal(invoice.subtotal).toFixed(2),
+      discountTotal: new Prisma.Decimal(invoice.discountTotal).toFixed(2),
+      taxTotal: new Prisma.Decimal(invoice.taxTotal).toFixed(2),
+      grandTotal: grandTotalDec.toFixed(2),
+      totalPaid: totalPaidDec.toFixed(2),
+      balanceDue: balanceDueDec.toFixed(2),
+      status: invoice.status,
+      issuedAt: invoice.issuedAt ? invoice.issuedAt.toISOString() : null,
+      createdAt: invoice.createdAt.toISOString(),
+      updatedAt: invoice.updatedAt.toISOString(),
+      items: [],
+      payments: [],
+    };
+  }
+
   /**
    * Creates an itemized invoice for a reservation, automatically snapshotting room charges
    * for each room allocation based on bookedNightlyRate and stay nights.
@@ -504,23 +575,47 @@ export class BillingService {
       !query.customerId &&
       !(query.search && query.search.trim());
 
-    const totalPromise =
-      isUnfiltered && !query.propertyId
-        ? BillingService.getUnfilteredInvoiceCount()
-        : prisma.invoice.count({ where });
+    const totalPromise = isUnfiltered
+      ? scopedCached("invoice-count", query.propertyId, 60, () => prisma.invoice.count({ where }))
+      : prisma.invoice.count({ where });
 
     const [total, records, summary] = await Promise.all([
       totalPromise,
       prisma.invoice.findMany({
         where,
-        include: {
+        select: {
+          id: true,
+          propertyId: true,
+          invoiceNumber: true,
+          reservationId: true,
+          subtotal: true,
+          discountTotal: true,
+          taxTotal: true,
+          grandTotal: true,
+          status: true,
+          issuedAt: true,
+          createdAt: true,
+          updatedAt: true,
           reservation: {
-            include: { customer: true },
+            select: {
+              reservationNo: true,
+              customerId: true,
+              customer: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  phone: true,
+                  email: true,
+                },
+              },
+            },
           },
-          items: true,
           payments: {
-            include: {
-              creator: { select: { name: true, role: true } },
+            where: { status: PaymentStatus.RECORDED },
+            select: {
+              id: true,
+              amount: true,
+              status: true,
             },
           },
         },
@@ -532,7 +627,7 @@ export class BillingService {
     ]);
 
     return {
-      invoices: records.map((inv) => this.formatInvoiceDetail(inv)),
+      invoices: records.map((inv) => this.formatInvoiceListItem(inv)),
       total,
       page,
       limit,

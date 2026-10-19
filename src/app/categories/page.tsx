@@ -18,10 +18,19 @@ export default async function CategoriesPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined;
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true });
 
-  const [categories, amenities] = await Promise.all([
-    RoomCategoryService.getCategories(scope ?? undefined),
-    AmenityService.getAmenities(),
-  ]);
+  let categories: Awaited<ReturnType<typeof RoomCategoryService.getCategories>> = [];
+  let amenities: Awaited<ReturnType<typeof AmenityService.getAmenities>> = [];
+
+  try {
+    const res = await Promise.all([
+      RoomCategoryService.getCategories(scope ?? undefined),
+      AmenityService.getAmenities(),
+    ]);
+    categories = res[0];
+    amenities = res[1];
+  } catch (err) {
+    console.error("Failed to load categories or amenities:", err);
+  }
 
   // Serializing Decimal for client props
   const serializedCategories = categories.map((cat) => ({

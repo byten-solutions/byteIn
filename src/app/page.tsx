@@ -36,6 +36,20 @@ export default async function Page() {
 
   // If Super Admin: Render Platform Overview Dashboard
   if (session?.role === RoleName.SUPER_ADMIN) {
+    let platformStats
+    try {
+      platformStats = await DashboardService.getPlatformStats()
+    } catch (err) {
+      console.error("Failed to load platform stats:", err)
+      platformStats = {
+        properties: [],
+        totalRooms: 0,
+        activeHotels: 0,
+        totalUsers: 0,
+        totalConfirmedRes: 0,
+        totalRevenue: 0,
+      }
+    }
     const {
       properties,
       totalRooms,
@@ -43,7 +57,7 @@ export default async function Page() {
       totalUsers,
       totalConfirmedRes,
       totalRevenue,
-    } = await DashboardService.getPlatformStats()
+    } = platformStats
 
     return (
       <AppShell session={session}>
@@ -245,17 +259,23 @@ export default async function Page() {
     )
   }
 
-  const counts = session
-    ? await DashboardService.getHotelStats(session.propertyId || undefined)
-    : {
-        total: 0,
-        clean: 0,
-        dirty: 0,
-        occupied: 0,
-        maintenance: 0,
-        outOfService: 0,
-        confirmedReservations: 0,
-      }
+  let counts = {
+    total: 0,
+    clean: 0,
+    dirty: 0,
+    occupied: 0,
+    maintenance: 0,
+    outOfService: 0,
+    confirmedReservations: 0,
+  }
+
+  if (session) {
+    try {
+      counts = await DashboardService.getHotelStats(session.propertyId || undefined)
+    } catch (err) {
+      console.error("Failed to load hotel stats:", err)
+    }
+  }
 
   const hotelName = session?.property?.name || "Hotel"
 
@@ -428,10 +448,19 @@ const DAILY_OPS_PREVIEW_LIMIT = 5
 
 async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
   const today = getHotelTodayDateUtc()
-  const [arrivals, departures] = await Promise.all([
-    CheckInOutService.getDailyArrivals(today, propertyId),
-    CheckInOutService.getDailyDepartures(today, propertyId),
-  ])
+  let arrivals: Awaited<ReturnType<typeof CheckInOutService.getDailyArrivals>> = []
+  let departures: Awaited<ReturnType<typeof CheckInOutService.getDailyDepartures>> = []
+
+  try {
+    const res = await Promise.all([
+      CheckInOutService.getDailyArrivals(today, propertyId),
+      CheckInOutService.getDailyDepartures(today, propertyId),
+    ])
+    arrivals = res[0]
+    departures = res[1]
+  } catch (err) {
+    console.error("Failed to load daily arrivals or departures:", err)
+  }
 
   const visibleArrivals = arrivals.slice(0, DAILY_OPS_PREVIEW_LIMIT)
   const visibleDepartures = departures.slice(0, DAILY_OPS_PREVIEW_LIMIT)
