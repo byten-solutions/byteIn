@@ -424,12 +424,22 @@ function DailyOperationsSkeleton() {
   )
 }
 
+const DAILY_OPS_PREVIEW_LIMIT = 5
+
 async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
   const today = getHotelTodayDateUtc()
   const [arrivals, departures] = await Promise.all([
     CheckInOutService.getDailyArrivals(today, propertyId),
     CheckInOutService.getDailyDepartures(today, propertyId),
   ])
+
+  const visibleArrivals = arrivals.slice(0, DAILY_OPS_PREVIEW_LIMIT)
+  const visibleDepartures = departures.slice(0, DAILY_OPS_PREVIEW_LIMIT)
+
+  const arrivalsHref = propertyId ? `/reports?propertyId=${encodeURIComponent(propertyId)}` : "/reports"
+  const departuresHref = propertyId
+    ? `/reports?subtab=departures&propertyId=${encodeURIComponent(propertyId)}`
+    : "/reports?subtab=departures"
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
@@ -442,9 +452,20 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
               Arrivals Today
             </h2>
           </div>
-          <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-            {arrivals.length} scheduled
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+              {arrivals.length} scheduled
+            </span>
+            {arrivals.length > 0 && (
+              <Link
+                href={arrivalsHref}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
+              >
+                <span>View more</span>
+                <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            )}
+          </div>
         </div>
 
         {arrivals.length === 0 ? (
@@ -456,7 +477,7 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
           />
         ) : (
           <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-            {arrivals.map((alloc) => (
+            {visibleArrivals.map((alloc) => (
               <Link
                 key={alloc.id}
                 href={`/reservations/${alloc.reservationId}`}
@@ -508,9 +529,20 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
               Departures Today
             </h2>
           </div>
-          <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-            {departures.length} scheduled
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
+              {departures.length} scheduled
+            </span>
+            {departures.length > 0 && (
+              <Link
+                href={departuresHref}
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
+              >
+                <span>View more</span>
+                <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            )}
+          </div>
         </div>
 
         {departures.length === 0 ? (
@@ -522,7 +554,7 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
           />
         ) : (
           <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-            {departures.map((alloc) => (
+            {visibleDepartures.map((alloc) => (
               <Link
                 key={alloc.id}
                 href={`/reservations/${alloc.reservationId}`}

@@ -44,6 +44,9 @@ interface ReportsViewProps {
   initialEndDate: string
   initialTodayDate: string
   initialWeekLaterDate: string
+  initialTab?: MainTab
+  initialOpsSubTab?: "arrivals" | "departures" | "in_house" | "pending"
+  initialPropertyId?: string
   initialOccupancy?: OccupancyReportDTO | null
   initialRevenue?: RevenueReportDTO | null
   initialReservations?: ReservationStatusReportDTO | null
@@ -60,6 +63,9 @@ export function ReportsView({
   initialEndDate,
   initialTodayDate,
   initialWeekLaterDate,
+  initialTab = "daily_ops",
+  initialOpsSubTab = "arrivals",
+  initialPropertyId,
   initialOccupancy,
   initialRevenue,
   initialReservations,
@@ -68,7 +74,7 @@ export function ReportsView({
   initialCollections,
   initialReceivables,
 }: ReportsViewProps) {
-  const [activeTab, setActiveTab] = React.useState<MainTab>("daily_ops")
+  const [activeTab, setActiveTab] = React.useState<MainTab>(initialTab)
 
   // Date filters
   const [startDate, setStartDate] = React.useState(initialStartDate)
@@ -78,7 +84,7 @@ export function ReportsView({
   const [gridEnd, setGridEnd] = React.useState(initialWeekLaterDate)
 
   // Sub-tab states
-  const [opsSubTab, setOpsSubTab] = React.useState<"arrivals" | "departures" | "in_house" | "pending">("arrivals")
+  const [opsSubTab, setOpsSubTab] = React.useState<"arrivals" | "departures" | "in_house" | "pending">(initialOpsSubTab)
   const [receivablesFilter, setReceivablesFilter] = React.useState<"all" | "in_house" | "departed">("all")
 
   // Data states
@@ -95,7 +101,8 @@ export function ReportsView({
   const fetchDailyOperations = React.useCallback(async (date: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/reports/daily-operations?date=${date}`)
+      const propParam = initialPropertyId ? `&propertyId=${encodeURIComponent(initialPropertyId)}` : ""
+      const res = await fetch(`/api/reports/daily-operations?date=${date}${propParam}`)
       const json = await res.json()
       if (json.success) {
         setDailyOpsData(json.data)
@@ -108,12 +115,13 @@ export function ReportsView({
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [initialPropertyId])
 
   React.useEffect(() => {
     let ignore = false
     if (!dailyOpsData) {
-      fetch(`/api/reports/daily-operations?date=${opsDate}`)
+      const propParam = initialPropertyId ? `&propertyId=${encodeURIComponent(initialPropertyId)}` : ""
+      fetch(`/api/reports/daily-operations?date=${opsDate}${propParam}`)
         .then((res) => res.json())
         .then((json) => {
           if (!ignore && json.success) {
@@ -129,7 +137,7 @@ export function ReportsView({
     return () => {
       ignore = true
     }
-  }, [dailyOpsData, opsDate])
+  }, [dailyOpsData, opsDate, initialPropertyId])
 
   const fetchPerformanceReports = async (start: string, end: string) => {
     setLoading(true)
