@@ -780,5 +780,23 @@ describe("Phase 4: Reservations & Availability Tests", () => {
       assert.ok(detail.rooms[0].room.roomNo);
       assert.ok(detail.rooms[0].roomCategory.name);
     });
+
+    it("should escape special SQL LIKE characters (%, _, \\) and return exact results", async () => {
+      // 1. Search for a literal string containing %, _, and \ that does not match any guest
+      const noMatch = await ReservationService.getReservations({
+        search: "test%_\\nomatch",
+      });
+      assert.equal(noMatch.reservations.length, 0);
+      assert.equal(noMatch.pagination.total, 0);
+
+      // 2. Search for Jane using partial term
+      const match = await ReservationService.getReservations({
+        search: "Jane",
+        page: 1,
+        limit: 10,
+      });
+      assert.ok(match.reservations.length > 0);
+      assert.equal(match.reservations.length, match.pagination.total);
+    });
   });
 });

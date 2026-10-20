@@ -49,6 +49,13 @@ export class ReservationConflictError extends ConflictError {
   }
 }
 
+/**
+ * Escapes characters with special meaning in SQL LIKE / ILIKE patterns: '%', '_', and '\\'.
+ */
+export function escapeLike(str: string): string {
+  return str.replace(/[\\%_]/g, "\\$&");
+}
+
 export class ReservationService {
   /**
    * Invalidation helper for reservation counts.
@@ -557,6 +564,99 @@ export class ReservationService {
     const { search, status, propertyId } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
 
+    const hasSearch = Boolean(search && search.trim() !== "");
+
+    if (hasSearch) {
+      const q = search!.trim();
+      const like = `%${escapeLike(q)}%`;
+      const scopeSql = propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty;
+      const statusSql = status ? Prisma.sql`AND r.status = ${status}::"ReservationStatus"` : Prisma.empty;
+      const match = Prisma.sql`(r.reservation_no ILIKE ${like}
+        OR r.customer_id IN (
+          SELECT c.id FROM customers c
+          WHERE c.first_name ILIKE ${like} 
+             OR c.last_name ILIKE ${like} 
+             OR c.phone ILIKE ${like} 
+             OR c.email ILIKE ${like}
+        ))`;
+
+      const [ids, countRows] = await Promise.all([
+        prisma.$queryRaw<{ id: string }[]>`
+          SELECT r.id FROM reservations r 
+          WHERE TRUE ${scopeSql} ${statusSql} AND ${match}
+          ORDER BY r.created_at DESC, r.id DESC 
+          LIMIT ${limit} OFFSET ${skip}`,
+        prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT count(*) FROM reservations r 
+          WHERE TRUE ${scopeSql} ${statusSql} AND ${match}`,
+      ]);
+
+      const total = Number(countRows[0]?.count ?? 0);
+      const idList = ids.map((i) => i.id);
+
+      if (idList.length === 0) {
+        return {
+          reservations: [],
+          pagination: {
+            total,
+            page,
+            limit,
+            totalPages: Math.max(1, Math.ceil(total / limit)),
+          },
+        };
+      }
+
+      // Hydrate records via findMany and preserve exact sort order from SQL query
+      const rawReservations = await prisma.reservation.findMany({
+        where: { id: { in: idList } },
+        include: {
+          customer: true,
+          creator: {
+            select: { id: true, name: true, email: true, role: true },
+          },
+          rooms: {
+            include: {
+              room: {
+                select: {
+                  id: true,
+                  roomNo: true,
+                  displayName: true,
+                  building: { select: { name: true } },
+                  floor: { select: { floorNo: true, name: true } },
+                },
+              },
+              roomCategory: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
+      });
+
+      const resMap = new Map(rawReservations.map((r) => [r.id, r]));
+      const ordered = idList
+        .map((id) => resMap.get(id))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+      return {
+        reservations: ordered.map((r) => ({
+          ...r,
+          customer: r.customer
+            ? {
+                ...r.customer,
+                idProofNumber: maskIdProofNumber(r.customer.idProofNumber),
+              }
+            : r.customer,
+        })),
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.max(1, Math.ceil(total / limit)),
+        },
+      };
+    }
+
     const where: Prisma.ReservationWhereInput = {};
 
     if (propertyId) {
@@ -567,40 +667,7 @@ export class ReservationService {
       where.status = status;
     }
 
-    if (search && search.trim() !== "") {
-      const q = search.trim();
-      if (q.length >= 3) {
-        // Use trigram index on customers first to avoid cross-table join filter
-        const matchingCustomers = await prisma.customer.findMany({
-          where: {
-            OR: [
-              { firstName: { contains: q, mode: "insensitive" } },
-              { lastName: { contains: q, mode: "insensitive" } },
-              { phone: { contains: q, mode: "insensitive" } },
-              { email: { contains: q, mode: "insensitive" } },
-            ],
-            ...(propertyId
-              ? {
-                  reservations: {
-                    some: { propertyId },
-                  },
-                }
-              : {}),
-          },
-          select: { id: true },
-          take: 2000,
-        });
-
-        const customerIds = matchingCustomers.map((c) => c.id);
-
-        where.OR = [
-          { reservationNo: { contains: q, mode: "insensitive" } },
-          ...(customerIds.length > 0 ? [{ customerId: { in: customerIds } }] : []),
-        ];
-      }
-    }
-
-    const isUnfiltered = !status && !(search && search.trim());
+    const isUnfiltered = !status;
     const totalPromise =
       isUnfiltered && !propertyId
         ? ReservationService.getUnfilteredReservationCount()
@@ -652,7 +719,7 @@ export class ReservationService {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.max(1, Math.ceil(total / limit)),
       },
     };
   }
