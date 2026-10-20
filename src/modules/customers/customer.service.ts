@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { NotFoundError } from "@/lib/errors";
-import { sanitizePagination } from "@/lib/pagination";
+import { sanitizePagination, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import type {
   CreateCustomerInput,
   UpdateCustomerInput,
@@ -61,7 +61,7 @@ export class CustomerService {
 
   static async getCustomers(options: CustomerFilterOptions = {}) {
     const { search, propertyId } = options;
-    const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
+    const { page, limit, skip } = sanitizePagination(options.page, options.limit, DEFAULT_PAGE_SIZE);
 
     const where: Prisma.CustomerWhereInput = {};
 

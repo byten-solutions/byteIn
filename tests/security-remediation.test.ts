@@ -436,7 +436,7 @@ describe("Security Remediation & Audit Fixes Verification", () => {
       assert.equal(parsed.success, true);
       if (parsed.success) {
         assert.equal(parsed.data.page, 1);
-        assert.equal(parsed.data.limit, 20);
+        assert.equal(parsed.data.limit, 25);
       }
     });
 

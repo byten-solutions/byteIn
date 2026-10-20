@@ -17,7 +17,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/errors";
-import { sanitizePagination } from "@/lib/pagination";
+import { sanitizePagination, DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { getHotelTodayDateUtc } from "@/lib/date";
 import { RoleName } from "@/modules/auth/auth.types";
 import {
@@ -562,7 +562,7 @@ export class ReservationService {
    */
   static async getReservations(options: ReservationFilterOptions = {}) {
     const { search, status, propertyId } = options;
-    const { page, limit, skip } = sanitizePagination(options.page, options.limit, 20);
+    const { page, limit, skip } = sanitizePagination(options.page, options.limit, DEFAULT_PAGE_SIZE);
 
     const hasSearch = Boolean(search && search.trim() !== "");
 
