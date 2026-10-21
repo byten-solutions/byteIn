@@ -6,7 +6,7 @@ import { AppShell } from "@/components/app-shell"
 import { CustomerList } from "./customer-list"
 
 export default async function CustomersPage(props: {
-  searchParams?: Promise<{ propertyId?: string; page?: string; limit?: string; search?: string }>
+  searchParams?: Promise<{ propertyId?: string; page?: string; limit?: string; search?: string; tab?: string }>
 }) {
   const session = await getSession()
   if (!session) {
@@ -21,11 +21,17 @@ export default async function CustomersPage(props: {
 
   const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1
   const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE
+  const tabParam = searchParams?.tab
+  const tab =
+    tabParam === "IN_HOUSE" || tabParam === "UPCOMING" || tabParam === "REPEAT"
+      ? tabParam
+      : undefined
 
   const result = await CustomerService.getCustomers({
     page: isNaN(page) ? 1 : page,
     limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
     search: searchParams?.search,
+    tab,
     propertyId: scope ?? undefined,
   })
 
@@ -60,6 +66,7 @@ export default async function CustomersPage(props: {
         <CustomerList
           initialCustomers={serializedCustomers}
           initialPagination={result.pagination}
+          initialTab={tab || "ALL"}
         />
       </div>
     </AppShell>

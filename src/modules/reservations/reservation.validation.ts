@@ -56,6 +56,8 @@ export const checkAvailabilitySchema = z
     propertyId: z.string().trim().min(1).optional(),
     roomCategoryId: z.string().trim().min(1).optional(),
     minCapacity: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
+    search: z.string().trim().optional(),
   })
   .refine(
     (data) => data.departureDate.getTime() > data.arrivalDate.getTime(),

@@ -14,6 +14,11 @@ export async function GET(req: NextRequest) {
       allowSuperAdminGlobal: true,
     });
     const search = searchParams.get("search") || undefined;
+    const tabParam = searchParams.get("tab") || undefined;
+    const tab =
+      tabParam === "IN_HOUSE" || tabParam === "UPCOMING" || tabParam === "REPEAT"
+        ? tabParam
+        : undefined;
 
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");
@@ -24,6 +29,7 @@ export async function GET(req: NextRequest) {
 
     const result = await CustomerService.getCustomers({
       search,
+      tab,
       page,
       limit,
       propertyId: effectivePropertyId || undefined,

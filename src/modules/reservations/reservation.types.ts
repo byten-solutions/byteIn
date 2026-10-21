@@ -10,6 +10,8 @@ export interface CheckAvailabilityInput {
   propertyId?: string;
   roomCategoryId?: string;
   minCapacity?: number;
+  limit?: number;
+  search?: string;
 }
 
 export interface RoomAllocationInput {

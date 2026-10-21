@@ -60,7 +60,7 @@ export class CustomerService {
   }
 
   static async getCustomers(options: CustomerFilterOptions = {}) {
-    const { search, propertyId } = options;
+    const { search, propertyId, tab } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, DEFAULT_PAGE_SIZE);
 
     const where: Prisma.CustomerWhereInput = {};
@@ -73,6 +73,48 @@ export class CustomerService {
           { registeredPropertyId: propertyId },
           { reservations: { some: { propertyId } } },
         ],
+      });
+    }
+
+    if (tab === "IN_HOUSE") {
+      andClauses.push({
+        reservations: {
+          some: {
+            ...(propertyId ? { propertyId } : {}),
+            rooms: {
+              some: {
+                status: "CHECKED_IN",
+              },
+            },
+          },
+        },
+      });
+    } else if (tab === "UPCOMING") {
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      andClauses.push({
+        reservations: {
+          some: {
+            ...(propertyId ? { propertyId } : {}),
+            status: "CONFIRMED",
+            rooms: {
+              some: {
+                status: "CONFIRMED",
+                arrivalDate: { gte: today },
+              },
+            },
+          },
+        },
+      });
+    } else if (tab === "REPEAT") {
+      const repeatRows = await prisma.$queryRaw<Array<{ customer_id: string }>>`
+        SELECT customer_id FROM reservations
+        WHERE 1=1 ${propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty}
+        GROUP BY customer_id
+        HAVING COUNT(*) >= 2
+      `;
+      andClauses.push({
+        id: { in: repeatRows.map((r) => r.customer_id) },
       });
     }
 

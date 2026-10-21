@@ -17,6 +17,8 @@ export async function GET(req: NextRequest) {
     });
     const roomCategoryId = searchParams.get("roomCategoryId") || undefined;
     const minCapacity = searchParams.get("minCapacity") || undefined;
+    const limitParam = searchParams.get("limit") || undefined;
+    const search = searchParams.get("search") || undefined;
 
     if (!arrivalDate || !departureDate) {
       return NextResponse.json(
@@ -31,6 +33,8 @@ export async function GET(req: NextRequest) {
       propertyId: effectivePropertyId || undefined,
       roomCategoryId,
       minCapacity,
+      limit: limitParam,
+      search,
     });
 
     const rooms = await ReservationService.checkAvailability(validated);

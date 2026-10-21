@@ -752,6 +752,32 @@ describe("Phase 4: Reservations & Availability Tests", () => {
       assert.equal(updated.phone, "+1-555-9999");
       assert.equal(updated.remarks, "VIP guest returning");
     });
+
+    it("should filter customers by tab (ALL, IN_HOUSE, UPCOMING, REPEAT) on the backend", async () => {
+      const allRes = await CustomerService.getCustomers({ tab: "ALL" });
+      assert.ok(allRes.customers.length >= 1);
+
+      const inHouseRes = await CustomerService.getCustomers({ tab: "IN_HOUSE" });
+      assert.ok(Array.isArray(inHouseRes.customers));
+
+      const upcomingRes = await CustomerService.getCustomers({ tab: "UPCOMING" });
+      assert.ok(Array.isArray(upcomingRes.customers));
+
+      const repeatRes = await CustomerService.getCustomers({ tab: "REPEAT" });
+      assert.ok(Array.isArray(repeatRes.customers));
+    });
+
+    it("should bound checkAvailability with limit and search query", async () => {
+      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
+      const bounded = await ReservationService.checkAvailability({
+        arrivalDate: tomorrow,
+        departureDate: nextWeek,
+        limit: 1,
+      });
+      assert.ok(bounded.length <= 1);
+    });
   });
 
   describe("8. Reservation Listing & Details Queries", () => {

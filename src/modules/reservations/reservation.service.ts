@@ -141,8 +141,15 @@ export class ReservationService {
       };
     }
 
+    if (input.search && input.search.trim()) {
+      where.roomNo = { contains: input.search.trim(), mode: "insensitive" };
+    }
+
+    const limit = input.limit !== undefined ? Math.min(100, Math.max(1, input.limit)) : 25;
+
     const rooms = await prisma.room.findMany({
       where,
+      take: limit,
       include: {
         building: { select: { id: true, name: true } },
         floor: { select: { id: true, floorNo: true, name: true } },

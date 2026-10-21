@@ -78,13 +78,14 @@ export interface CustomerPagination {
   totalPages: number
 }
 
+export type FilterTab = "ALL" | "IN_HOUSE" | "UPCOMING" | "REPEAT"
+export type StayStatus = "IN_HOUSE" | "UPCOMING" | "PAST" | "NONE"
+
 interface CustomerListProps {
   initialCustomers: SerializedCustomer[]
   initialPagination?: CustomerPagination
+  initialTab?: FilterTab
 }
-
-export type FilterTab = "ALL" | "IN_HOUSE" | "UPCOMING" | "REPEAT"
-export type StayStatus = "IN_HOUSE" | "UPCOMING" | "PAST" | "NONE"
 
 export interface CustomerStayMeta {
   status: StayStatus
@@ -165,13 +166,20 @@ function getCustomerStayMeta(c: SerializedCustomer): CustomerStayMeta {
 export function CustomerList({
   initialCustomers,
   initialPagination,
+  initialTab = "ALL",
 }: CustomerListProps) {
   const router = useRouter()
   const [customers, setCustomers] = React.useState<SerializedCustomer[]>(initialCustomers)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const [filterTab, setFilterTab] = React.useState<FilterTab>("ALL")
+  const [filterTab, setFilterTab] = React.useState<FilterTab>(initialTab)
   const [currentPage, setCurrentPage] = React.useState(initialPagination?.page || 1)
   const [currentLimit, setCurrentLimit] = React.useState(initialPagination?.limit || DEFAULT_PAGE_SIZE)
+  const [tabCounts, setTabCounts] = React.useState<Record<FilterTab, number>>({
+    ALL: initialTab === "ALL" ? (initialPagination?.total || initialCustomers.length) : 0,
+    IN_HOUSE: initialTab === "IN_HOUSE" ? (initialPagination?.total || 0) : 0,
+    UPCOMING: initialTab === "UPCOMING" ? (initialPagination?.total || 0) : 0,
+    REPEAT: initialTab === "REPEAT" ? (initialPagination?.total || 0) : 0,
+  })
   const [pagination, setPagination] = React.useState<CustomerPagination>(
     initialPagination || {
       total: initialCustomers.length,
@@ -189,6 +197,7 @@ export function CustomerList({
     searchTerm,
     currentPage,
     currentLimit,
+    filterTab,
   })
 
   // Register Guest Dialog State
@@ -209,7 +218,12 @@ export function CustomerList({
     remarks: "",
   })
 
-  const fetchCustomers = React.useCallback(async (query = searchTerm, page = currentPage, limit = currentLimit) => {
+  const fetchCustomers = React.useCallback(async (
+    query = searchTerm,
+    page = currentPage,
+    limit = currentLimit,
+    tab = filterTab
+  ) => {
     abortControllerRef.current?.abort()
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -219,6 +233,7 @@ export function CustomerList({
     try {
       const params = new URLSearchParams()
       if (query.trim()) params.set("search", query.trim())
+      if (tab !== "ALL") params.set("tab", tab)
       params.set("page", String(page))
       params.set("limit", String(limit))
 
@@ -281,6 +296,10 @@ export function CustomerList({
         setCustomers(mapped)
         if (data.pagination) {
           setPagination(data.pagination)
+          setTabCounts((prev) => ({
+            ...prev,
+            [tab]: data.pagination.total,
+          }))
         }
       }
     } catch (err: unknown) {
@@ -294,32 +313,33 @@ export function CustomerList({
         setLoading(false)
       }
     }
-  }, [searchTerm, currentPage, currentLimit])
+  }, [searchTerm, currentPage, currentLimit, filterTab])
 
   React.useEffect(() => {
     const prev = prevFiltersRef.current
     const searchChanged = prev.searchTerm !== searchTerm
     const pageChanged = prev.currentPage !== currentPage
     const limitChanged = prev.currentLimit !== currentLimit
+    const tabChanged = prev.filterTab !== filterTab
 
-    if (!searchChanged && !pageChanged && !limitChanged) {
+    if (!searchChanged && !pageChanged && !limitChanged && !tabChanged) {
       return
     }
 
-    if ((searchChanged || limitChanged) && currentPage !== 1) {
-      prevFiltersRef.current = { searchTerm, currentPage: 1, currentLimit }
+    if ((searchChanged || limitChanged || tabChanged) && currentPage !== 1) {
+      prevFiltersRef.current = { searchTerm, currentPage: 1, currentLimit, filterTab }
       setCurrentPage(1)
       return
     }
 
-    prevFiltersRef.current = { searchTerm, currentPage, currentLimit }
+    prevFiltersRef.current = { searchTerm, currentPage, currentLimit, filterTab }
 
     const timer = setTimeout(() => {
-      fetchCustomers(searchTerm, currentPage, currentLimit)
+      fetchCustomers(searchTerm, currentPage, currentLimit, filterTab)
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [fetchCustomers, searchTerm, currentPage, currentLimit])
+  }, [fetchCustomers, searchTerm, currentPage, currentLimit, filterTab])
 
   React.useEffect(() => {
     return () => {
@@ -335,48 +355,17 @@ export function CustomerList({
     }))
   }, [customers])
 
-  // Filter chips counts
-  const tabCounts = React.useMemo(() => {
-    let inHouse = 0
-    let upcoming = 0
-    let repeat = 0
-
-    for (const item of customersWithMeta) {
-      if (item.meta.status === "IN_HOUSE") inHouse++
-      if (item.meta.status === "UPCOMING") upcoming++
-      if (item.customer.reservationsCount >= 2) repeat++
-    }
-
-    return {
-      all: customersWithMeta.length,
-      inHouse,
-      upcoming,
-      repeat,
-    }
-  }, [customersWithMeta])
-
-  // Sort and filter customers
-  const filteredAndSortedCustomers = React.useMemo(() => {
-    let list = [...customersWithMeta]
-
-    if (filterTab === "IN_HOUSE") {
-      list = list.filter((item) => item.meta.status === "IN_HOUSE")
-    } else if (filterTab === "UPCOMING") {
-      list = list.filter((item) => item.meta.status === "UPCOMING")
-    } else if (filterTab === "REPEAT") {
-      list = list.filter((item) => item.customer.reservationsCount >= 2)
-    }
-
-    // Sort by last stay date descending; if no stay, sort by registration date descending
+  // Sort customers by last stay date descending; if no stay, sort by registration date descending
+  const sortedCustomers = React.useMemo(() => {
+    const list = [...customersWithMeta]
     list.sort((a, b) => {
       if (a.meta.sortDate !== b.meta.sortDate) {
         return b.meta.sortDate - a.meta.sortDate
       }
       return new Date(b.customer.createdAt).getTime() - new Date(a.customer.createdAt).getTime()
     })
-
     return list
-  }, [customersWithMeta, filterTab])
+  }, [customersWithMeta])
 
   const handleRegisterGuest = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -446,10 +435,10 @@ export function CustomerList({
   }
 
   const filterTabs: { key: FilterTab; label: string; count: number }[] = [
-    { key: "ALL", label: "All", count: tabCounts.all },
-    { key: "IN_HOUSE", label: "In house", count: tabCounts.inHouse },
-    { key: "UPCOMING", label: "Upcoming", count: tabCounts.upcoming },
-    { key: "REPEAT", label: "Repeat", count: tabCounts.repeat },
+    { key: "ALL", label: "All", count: tabCounts.ALL },
+    { key: "IN_HOUSE", label: "In house", count: tabCounts.IN_HOUSE },
+    { key: "UPCOMING", label: "Upcoming", count: tabCounts.UPCOMING },
+    { key: "REPEAT", label: "Repeat", count: tabCounts.REPEAT },
   ]
 
   return (
@@ -527,7 +516,7 @@ export function CustomerList({
         isLoading={loading}
         error={error}
         onRetry={() => fetchCustomers()}
-        isEmpty={filteredAndSortedCustomers.length === 0}
+        isEmpty={sortedCustomers.length === 0}
         emptyState={
           <EmptyState
             icon={<Users className="size-6" />}
@@ -570,7 +559,7 @@ export function CustomerList({
         }}
         mobileView={
           <MobileCardList
-            items={filteredAndSortedCustomers}
+            items={sortedCustomers}
             keyExtractor={({ customer }) => customer.id}
             renderCard={({ customer: c, meta }) => {
               const fullName = `${c.firstName} ${c.lastName || ""}`.trim()
@@ -655,7 +644,7 @@ export function CustomerList({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredAndSortedCustomers.map(({ customer: c, meta }) => {
+            {sortedCustomers.map(({ customer: c, meta }) => {
               const fullName = `${c.firstName} ${c.lastName || ""}`.trim()
               const initials = `${c.firstName[0] || ""}${c.lastName?.[0] || ""}`.toUpperCase()
               const subline = c.address

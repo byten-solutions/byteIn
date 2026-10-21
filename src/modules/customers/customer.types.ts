@@ -23,9 +23,12 @@ export interface UpdateCustomerInput {
   remarks?: string | null;
 }
 
+export type CustomerFilterTab = "ALL" | "IN_HOUSE" | "UPCOMING" | "REPEAT";
+
 export interface CustomerFilterOptions {
   propertyId?: string;
   search?: string;
+  tab?: CustomerFilterTab;
   page?: number;
   limit?: number;
 }

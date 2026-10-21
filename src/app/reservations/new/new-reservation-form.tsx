@@ -150,7 +150,7 @@ export function NewReservationForm({
     setFormError(null)
 
     try {
-      let url = `/api/availability?arrivalDate=${stayRange.from}&departureDate=${stayRange.to}`
+      let url = `/api/availability?arrivalDate=${stayRange.from}&departureDate=${stayRange.to}&limit=25`
       if (searchCategoryId) {
         url += `&roomCategoryId=${encodeURIComponent(searchCategoryId)}`
       }
