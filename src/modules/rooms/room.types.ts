@@ -64,4 +64,5 @@ export interface RoomFilterOptions {
   search?: string;
   page?: number;
   limit?: number;
+  cursor?: string;
 }

@@ -63,7 +63,7 @@ export default async function RoomsPage(props: {
     status: initialStatus as RoomStatus | undefined,
     search: searchParams?.search,
     page: isNaN(page) ? 1 : page,
-    limit: 25,
+    limit: 24,
   });
 
   // Serialize Decimal objects for client component props
@@ -135,6 +135,7 @@ export default async function RoomsPage(props: {
             total: initialRoomsResult.total,
             totalPages: initialRoomsResult.totalPages,
           }}
+          initialNextCursor={initialRoomsResult.nextCursor}
           summaryCounts={summary.counts}
           categories={serializedCategories}
           properties={serializedProperties}

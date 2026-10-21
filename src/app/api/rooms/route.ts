@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search") || undefined;
     const pageParam = searchParams.get("page");
     const limitParam = searchParams.get("limit");
+    const cursor = searchParams.get("cursor") || undefined;
     const page = pageParam ? parseInt(pageParam, 10) : undefined;
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, ...summary });
     }
 
-    if (page !== undefined || limit !== undefined) {
+    if (cursor !== undefined || page !== undefined || limit !== undefined) {
       const result = await RoomService.getRoomsPage({
         propertyId: effectivePropertyId || undefined,
         buildingId,
@@ -44,16 +45,19 @@ export async function GET(req: NextRequest) {
         search,
         page,
         limit,
+        cursor,
       });
 
       return NextResponse.json({
         success: true,
         rooms: result.rooms,
+        nextCursor: result.nextCursor,
         pagination: {
           page: result.page,
           limit: result.limit,
           total: result.total,
           totalPages: result.totalPages,
+          nextCursor: result.nextCursor,
         },
       });
     }

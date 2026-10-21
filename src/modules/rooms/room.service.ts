@@ -366,7 +366,7 @@ export class RoomService {
   static async getRoomsPage(filters?: RoomFilterOptions) {
     const page = Math.max(1, filters?.page || 1);
     const limit = Math.max(1, Math.min(100, filters?.limit || 50));
-    const skip = (page - 1) * limit;
+    const skip = filters?.cursor ? 0 : (page - 1) * limit;
 
     const where: Prisma.RoomWhereInput = {};
     if (filters?.propertyId) where.propertyId = filters.propertyId;
@@ -383,6 +383,27 @@ export class RoomService {
       ];
     }
 
+    if (filters?.cursor) {
+      const parts = filters.cursor.split(":");
+      if (parts.length === 2) {
+        const [cRoomNo, cId] = parts.map(decodeURIComponent);
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+          {
+            OR: [
+              { roomNo: { gt: cRoomNo } },
+              { AND: [{ roomNo: cRoomNo }, { id: { gt: cId } }] },
+            ],
+          },
+        ];
+      } else {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+          { id: { gt: filters.cursor } },
+        ];
+      }
+    }
+
     const [rooms, total] = await Promise.all([
       prisma.room.findMany({
         where,
@@ -396,16 +417,23 @@ export class RoomService {
           floor: true,
           property: true,
         },
-        orderBy: [
-          { building: { name: "asc" } },
-          { floor: { floorNo: "asc" } },
-          { roomNo: "asc" },
-        ],
+        orderBy: filters?.cursor
+          ? [{ roomNo: "asc" }, { id: "asc" }]
+          : [
+              { building: { name: "asc" } },
+              { floor: { floorNo: "asc" } },
+              { roomNo: "asc" },
+            ],
         skip,
         take: limit,
       }),
       prisma.room.count({ where }),
     ]);
+
+    const nextCursor =
+      rooms.length === limit
+        ? `${encodeURIComponent(rooms[rooms.length - 1].roomNo)}:${rooms[rooms.length - 1].id}`
+        : null;
 
     return {
       rooms,
@@ -413,6 +441,7 @@ export class RoomService {
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1,
+      nextCursor,
     };
   }
 

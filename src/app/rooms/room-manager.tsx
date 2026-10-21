@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState } from "react";
 import {
   Bed,
   Plus,
@@ -15,9 +15,9 @@ import {
   X,
   FileText,
   Eye,
-  ChevronLeft,
-  ChevronRight,
+  Loader2,
 } from "lucide-react";
+import { useInfiniteList } from "@/lib/use-infinite-list";
 import { RoomStatus, RoleName } from "@prisma/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -110,6 +110,7 @@ interface Props {
     total: number;
     totalPages: number;
   };
+  initialNextCursor?: string | null;
   summaryCounts: {
     total: number;
     clean: number;
@@ -168,6 +169,7 @@ const STATUS_FILTER_ITEMS: {
 export function RoomManager({
   initialRooms,
   initialPagination,
+  initialNextCursor,
   summaryCounts,
   categories,
   properties,
@@ -177,7 +179,6 @@ export function RoomManager({
   initialBuildingId,
   initialFloorId,
 }: Props) {
-  const [rooms, setRooms] = useState<RoomItem[]>(initialRooms);
   const [search, setSearch] = useState("");
   const [propertyFilter, setPropertyFilter] = useState<string>(
     initialPropertyId || "ALL"
@@ -190,13 +191,43 @@ export function RoomManager({
   );
   const [statusFilter, setStatusFilter] = useState<string>(initialStatus || "ALL");
   const [categoryFilter, setCategoryFilter] = useState<string>("ALL");
-  const [page, setPage] = useState<number>(initialPagination?.page || 1);
-  const [totalPages, setTotalPages] = useState<number>(initialPagination?.totalPages || 1);
-  const [totalRooms, setTotalRooms] = useState<number>(initialPagination?.total || initialRooms.length);
   const [counts, setCounts] = useState(summaryCounts);
-  const [isFetchingRooms, setIsFetchingRooms] = useState(false);
-  const isFirstRender = useRef(true);
-  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const {
+    items: rooms,
+    total: totalRooms,
+    isLoading: isFetchingRooms,
+    isLoadingMore,
+    hasMore,
+    error: listError,
+    loadMore,
+    retry: retryFetchRooms,
+    sentinelRef,
+  } = useInfiniteList<
+    RoomItem,
+    {
+      propertyId: string;
+      buildingId: string;
+      floorId: string;
+      roomCategoryId: string;
+      status: string;
+      search: string;
+    }
+  >({
+    endpoint: "/api/rooms",
+    limit: 24,
+    initialItems: initialRooms,
+    initialNextCursor: initialNextCursor ?? null,
+    initialTotal: initialPagination?.total,
+    filters: {
+      propertyId: propertyFilter,
+      buildingId: buildingFilter,
+      floorId: floorFilter,
+      roomCategoryId: categoryFilter,
+      status: statusFilter,
+      search,
+    },
+  });
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -257,72 +288,6 @@ export function RoomManager({
     }
   };
 
-  const fetchRooms = useCallback(
-    async (
-      targetPage: number = 1,
-      overrides?: {
-        propertyId?: string;
-        buildingId?: string;
-        floorId?: string;
-        categoryId?: string;
-        status?: string;
-        search?: string;
-      }
-    ) => {
-      abortControllerRef.current?.abort();
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-
-      setIsFetchingRooms(true);
-      setError(null);
-      try {
-        const pId = overrides?.propertyId !== undefined ? overrides.propertyId : propertyFilter;
-        const bId = overrides?.buildingId !== undefined ? overrides.buildingId : buildingFilter;
-        const fId = overrides?.floorId !== undefined ? overrides.floorId : floorFilter;
-        const catId = overrides?.categoryId !== undefined ? overrides.categoryId : categoryFilter;
-        const stat = overrides?.status !== undefined ? overrides.status : statusFilter;
-        const q = overrides?.search !== undefined ? overrides.search : search;
-
-        const params = new URLSearchParams();
-        if (pId && pId !== "ALL") params.set("propertyId", pId);
-        if (bId && bId !== "ALL") params.set("buildingId", bId);
-        if (fId && fId !== "ALL") params.set("floorId", fId);
-        if (catId && catId !== "ALL") params.set("roomCategoryId", catId);
-        if (stat && stat !== "ALL") params.set("status", stat);
-        if (q && q.trim()) params.set("search", q.trim());
-        params.set("page", targetPage.toString());
-        params.set("limit", "25");
-
-        const res = await fetch(`/api/rooms?${params.toString()}`, {
-          signal: controller.signal,
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "Failed to fetch rooms");
-        }
-
-        setRooms(data.rooms || []);
-        if (data.pagination) {
-          setPage(data.pagination.page);
-          setTotalPages(data.pagination.totalPages);
-          setTotalRooms(data.pagination.total);
-        }
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          return;
-        }
-        const msg = err instanceof Error ? err.message : "Error loading rooms";
-        setError(msg);
-        toast.error(msg);
-      } finally {
-        if (abortControllerRef.current === controller) {
-          setIsFetchingRooms(false);
-        }
-      }
-    },
-    [propertyFilter, buildingFilter, floorFilter, categoryFilter, statusFilter, search]
-  );
-
   const refreshSummary = async () => {
     try {
       const res = await fetch("/api/rooms?summary=true");
@@ -334,23 +299,6 @@ export function RoomManager({
       // Ignore
     }
   };
-
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    const timer = setTimeout(() => {
-      fetchRooms(1, { search });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search, fetchRooms]);
-
-  useEffect(() => {
-    return () => {
-      abortControllerRef.current?.abort();
-    };
-  }, []);
 
   // Open Create Room Modal
   const openCreateRoom = () => {
@@ -434,7 +382,7 @@ export function RoomManager({
       setIsRoomModalOpen(false);
       toast.success(editingRoom ? `Room ${data.room.roomNo} updated` : `Room ${data.room.roomNo} created`);
       await refreshSummary();
-      await fetchRooms(page);
+      retryFetchRooms();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error saving room";
       setError(msg);
@@ -469,7 +417,7 @@ export function RoomManager({
       toast.success(`Room ${statusModalRoom.roomNo} updated to ${newStatus.replace(/_/g, " ").toLowerCase()}`);
       setStatusModalRoom(null);
       await refreshSummary();
-      await fetchRooms(page);
+      retryFetchRooms();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error updating room status";
       setError(msg);
@@ -494,7 +442,7 @@ export function RoomManager({
       toast.success(`Room ${roomToDelete.roomNo} deleted`);
       setRoomToDelete(null);
       await refreshSummary();
-      await fetchRooms(page);
+      retryFetchRooms();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Error deleting room";
       toast.error(msg);
@@ -534,14 +482,6 @@ export function RoomManager({
     const defaultProp =
       userRole === RoleName.SUPER_ADMIN ? "ALL" : (initialPropertyId || "ALL");
     setPropertyFilter(defaultProp);
-    fetchRooms(1, {
-      search: "",
-      status: "ALL",
-      categoryId: "ALL",
-      buildingId: "ALL",
-      floorId: "ALL",
-      propertyId: defaultProp,
-    });
   };
 
   const isCustomDisplayName = (
@@ -635,7 +575,6 @@ export function RoomManager({
           type="button"
           onClick={() => {
             setStatusFilter("ALL");
-            fetchRooms(1, { status: "ALL" });
           }}
           className={cn(
             "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
@@ -676,7 +615,6 @@ export function RoomManager({
               onClick={() => {
                 const next = statusFilter === item.status ? "ALL" : item.status;
                 setStatusFilter(next);
-                fetchRooms(1, { status: next });
               }}
               className={cn(
                 "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-all whitespace-nowrap cursor-pointer shrink-0",
@@ -720,7 +658,6 @@ export function RoomManager({
               setPropertyFilter(val);
               setBuildingFilter("ALL");
               setFloorFilter("ALL");
-              fetchRooms(1, { propertyId: val, buildingId: "ALL", floorId: "ALL" });
             }}
             className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
           >
@@ -739,7 +676,6 @@ export function RoomManager({
             const val = e.target.value;
             setBuildingFilter(val);
             setFloorFilter("ALL");
-            fetchRooms(1, { buildingId: val, floorId: "ALL" });
           }}
           className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
         >
@@ -759,7 +695,6 @@ export function RoomManager({
           onChange={(e) => {
             const val = e.target.value;
             setFloorFilter(val);
-            fetchRooms(1, { floorId: val });
           }}
           className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
         >
@@ -776,7 +711,6 @@ export function RoomManager({
           onChange={(e) => {
             const val = e.target.value;
             setCategoryFilter(val);
-            fetchRooms(1, { categoryId: val });
           }}
           className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring"
         >
@@ -1007,65 +941,52 @@ export function RoomManager({
         </div>
       )}
 
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 py-3 text-xs text-muted-foreground border-t border-border/60">
-          <div>
-            Showing{" "}
-            <span className="font-mono tabular-nums font-semibold text-foreground">
-              {totalRooms === 0 ? 0 : (page - 1) * 50 + 1}
-            </span>{" "}
-            to{" "}
-            <span className="font-mono tabular-nums font-semibold text-foreground">
-              {Math.min(page * 50, totalRooms)}
-            </span>{" "}
-            of{" "}
-            <span className="font-mono tabular-nums font-semibold text-foreground">
-              {totalRooms}
-            </span>{" "}
-            rooms
-          </div>
+      {/* Infinite Scroll Sentinel and Load More Trigger */}
+      <div className="py-6 flex flex-col items-center justify-center gap-3">
+        {/* Sentinel element observed ~400px before end of scroll */}
+        <div ref={sentinelRef} className="h-2 w-full pointer-events-none" />
 
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
+        {isLoadingMore && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
+            <Loader2 className="size-4 animate-spin text-primary" />
+            <span>Loading more rooms...</span>
+          </div>
+        )}
+
+        {hasMore && !isLoadingMore && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => loadMore()}
+            className="text-xs h-8 px-4 gap-1.5 shadow-2xs"
+          >
+            <span>Load more rooms</span>
+            <span className="font-mono text-muted-foreground">
+              ({rooms.length} of {totalRooms})
+            </span>
+          </Button>
+        )}
+
+        {!hasMore && rooms.length > 0 && (
+          <div className="text-xs text-muted-foreground/60 font-mono">
+            Showing all {rooms.length} {rooms.length === 1 ? "room" : "rooms"}
+          </div>
+        )}
+
+        {listError && (
+          <div className="flex items-center gap-2 text-xs text-destructive">
+            <span>Failed to load more rooms</span>
             <Button
               variant="outline"
               size="sm"
-              className="h-8 text-xs gap-1"
-              disabled={page <= 1 || isFetchingRooms}
-              onClick={() => {
-                fetchRooms(page - 1);
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              }}
+              onClick={() => retryFetchRooms()}
+              className="h-7 text-xs px-2"
             >
-              <ChevronLeft className="size-3.5" />
-              Previous
-            </Button>
-            <div className="px-2 text-xs">
-              Page{" "}
-              <span className="font-mono tabular-nums font-semibold text-foreground">
-                {page}
-              </span>{" "}
-              of{" "}
-              <span className="font-mono tabular-nums font-semibold text-foreground">
-                {totalPages}
-              </span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1"
-              disabled={page >= totalPages || isFetchingRooms}
-              onClick={() => {
-                fetchRooms(page + 1);
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-            >
-              Next
-              <ChevronRight className="size-3.5" />
+              Retry
             </Button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Room Detail Slide-Over Side Panel */}
       {selectedRoomDetail && (
