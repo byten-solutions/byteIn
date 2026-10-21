@@ -452,11 +452,17 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
   const todayUtc = getHotelTodayDateUtc()
 
   let opsCounts: Awaited<ReturnType<typeof ReportsService.getDailyOperationsCounts>> = {
+    targetDate: todayStr,
     arrivals: 0,
+    checkedInArrivals: 0,
     departures: 0,
+    checkedOutDepartures: 0,
     inHouse: 0,
-    pending: 0,
     overdue: 0,
+    expectedArrivalsCount: 0,
+    expectedDeparturesCount: 0,
+    inHouseCount: 0,
+    pendingArrivalsCount: 0,
   }
   let arrivals: Awaited<ReturnType<typeof CheckInOutService.getDailyArrivals>> = []
   let departures: Awaited<ReturnType<typeof CheckInOutService.getDailyDepartures>> = []

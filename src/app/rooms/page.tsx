@@ -57,9 +57,7 @@ export default async function RoomsPage(props: {
     const res = await Promise.all([
       RoomService.getRoomsSummary(effectivePropertyId),
       RoomCategoryService.getCategories(effectivePropertyId),
-      session.role === RoleName.SUPER_ADMIN || !session.propertyId
-        ? PropertyService.getProperties()
-        : PropertyService.getPropertyById(session.propertyId).then((p) => (p ? [p] : [])),
+      PropertyService.getProperties(),
     ]);
     summary = res[0];
     categories = res[1];
@@ -82,6 +80,7 @@ export default async function RoomsPage(props: {
     page: isNaN(page) ? 1 : page,
     limit: 24,
     totalPages: 1,
+    nextCursor: null,
   };
 
   try {
