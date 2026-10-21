@@ -277,4 +277,54 @@ describe("PMS Daily Operations Report Tests (Arrivals, Departures, In-House, Ove
     assert.ok(overdue, "Past due allocation must appear in pending arrivals")
     assert.equal(overdue.allocationStatus, AllocationStatus.CONFIRMED)
   })
+
+  it("should compute daily operations counts accurately via fast SQL query", async () => {
+    const start = performance.now()
+    const counts = await ReportsService.getDailyOperationsCounts(todayIso, testPropertyId)
+    const elapsed = performance.now() - start
+
+    assert.ok(counts)
+    assert.ok(counts.arrivals >= 1, "Must count at least 1 arrival")
+    assert.ok(counts.departures >= 1, "Must count at least 1 departure")
+    assert.ok(counts.overdue >= 1, "Must count at least 1 overdue")
+    assert.ok(elapsed < 100, `Counts query took ${elapsed.toFixed(1)}ms (target < 30ms, allowable < 100ms in test environment)`)
+  })
+
+  it("should retrieve paginated daily operations list for active subtab", async () => {
+    const arrivalsList = await ReportsService.getDailyOperationsList({
+      type: "arrivals",
+      date: todayIso,
+      propertyId: testPropertyId,
+      page: 1,
+      limit: 25,
+    })
+
+    assert.ok(arrivalsList)
+    assert.equal(arrivalsList.type, "arrivals")
+    assert.ok(arrivalsList.total >= 1)
+    assert.ok(arrivalsList.rows.length >= 1)
+
+    const arrItem = arrivalsList.rows.find((r) => r.roomId === room501Id)
+    assert.ok(arrItem, "Room 501 must be in arrivals list")
+    assert.equal(arrItem.guestName, "Aarav Sharma")
+    assert.equal(arrItem.invoiceBalanceDue, "300.00")
+
+    // Test search filter q
+    const filtered = await ReportsService.getDailyOperationsList({
+      type: "arrivals",
+      date: todayIso,
+      propertyId: testPropertyId,
+      q: "Aarav",
+    })
+    assert.ok(filtered.total >= 1)
+
+    const emptyFiltered = await ReportsService.getDailyOperationsList({
+      type: "arrivals",
+      date: todayIso,
+      propertyId: testPropertyId,
+      q: "NonExistentGuest12345",
+    })
+    assert.equal(emptyFiltered.total, 0)
+    assert.equal(emptyFiltered.rows.length, 0)
+  })
 })

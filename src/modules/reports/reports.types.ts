@@ -184,6 +184,33 @@ export interface DailyOperationsReportDTO {
   pendingArrivals: DailyOperationItemDTO[] // overdue check-ins
 }
 
+export interface DailyOperationsCountsDTO {
+  targetDate: string
+  arrivals: number
+  checkedInArrivals: number
+  departures: number
+  checkedOutDepartures: number
+  inHouse: number
+  overdue: number
+  expectedArrivalsCount: number
+  expectedDeparturesCount: number
+  inHouseCount: number
+  pendingArrivalsCount: number
+}
+
+export interface DailyOperationsListDTO {
+  targetDate: string
+  type: "arrivals" | "departures" | "in-house" | "overdue"
+  rows: DailyOperationItemDTO[]
+  total: number
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
 // ----------------------------------------------------------------------------
 // 5. Room Availability Grid (Tape Chart / Rack Chart)
 // ----------------------------------------------------------------------------

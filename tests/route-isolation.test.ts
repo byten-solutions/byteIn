@@ -25,6 +25,8 @@ import * as RoomAllocNoShowRoute from "../src/app/api/room-allocations/[id]/no-s
 import * as CheckInOutDailyRoute from "../src/app/api/check-in-out/daily/route";
 import * as CustomersRoute from "../src/app/api/customers/route";
 import * as CustomerDetailRoute from "../src/app/api/customers/[id]/route";
+import * as DailyOpsCountsRoute from "../src/app/api/reports/daily-operations/counts/route";
+import * as DailyOpsListRoute from "../src/app/api/reports/daily-operations/list/route";
 
 describe("Permanent Route Isolation Sweep Test", () => {
   let propA: { id: string };
@@ -368,6 +370,8 @@ describe("Permanent Route Isolation Sweep Test", () => {
       "src/app/api/reports/revenue/route.ts",
       "src/app/api/reports/reservations/route.ts",
       "src/app/api/reports/daily-operations/route.ts",
+      "src/app/api/reports/daily-operations/counts/route.ts",
+      "src/app/api/reports/daily-operations/list/route.ts",
       "src/app/api/reports/collections/route.ts",
       "src/app/api/reports/receivables/route.ts",
       "src/app/api/reports/discounts/route.ts",
@@ -526,6 +530,16 @@ describe("Permanent Route Isolation Sweep Test", () => {
     const reqCust = makeReq(`http://localhost/api/customers?propertyId=${propB.id}`, "GET", tokenAdminA);
     const resCust = await CustomersRoute.GET(reqCust);
     assert.equal(resCust.status, 403, "Query override ?propertyId=B must be rejected with 403");
+
+    // 5a. GET /api/reports/daily-operations/counts?propertyId=B -> 403 Forbidden
+    const reqCounts = makeReq(`http://localhost/api/reports/daily-operations/counts?propertyId=${propB.id}`, "GET", tokenAdminA);
+    const resCounts = await DailyOpsCountsRoute.GET(reqCounts);
+    assert.equal(resCounts.status, 403, "Query override ?propertyId=B on counts must be rejected with 403");
+
+    // 5b. GET /api/reports/daily-operations/list?propertyId=B -> 403 Forbidden
+    const reqList = makeReq(`http://localhost/api/reports/daily-operations/list?type=arrivals&propertyId=${propB.id}`, "GET", tokenAdminA);
+    const resList = await DailyOpsListRoute.GET(reqList);
+    assert.equal(resList.status, 403, "Query override ?propertyId=B on list must be rejected with 403");
 
     // 6. Normal scoped requests for Hotel A return 200 and never contain Hotel B data
     const reqResOwn = makeReq(`http://localhost/api/reservations`, "GET", tokenAdminA);

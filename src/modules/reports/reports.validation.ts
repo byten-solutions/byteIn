@@ -221,3 +221,31 @@ export const discountsReportSchema = z
       path: ["endDate"],
     }
   )
+
+export const dailyOpsCountsSchema = z.object({
+  date: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "date must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+  propertyId: z.string().trim().min(1).optional(),
+})
+
+export const dailyOpsListSchema = z.object({
+  type: z.enum(["arrivals", "departures", "in-house", "overdue", "in_house", "pending"]),
+  date: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "date must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+  propertyId: z.string().trim().min(1).optional(),
+  q: z.string().trim().optional(),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(2000).optional().default(25),
+  sort: z.string().trim().optional(),
+  dir: z.enum(["asc", "desc"]).optional().default("asc"),
+})
