@@ -61,7 +61,7 @@ export class RoomCategoryService {
 
   static async getCategories(propertyId?: string) {
     return prisma.roomCategory.findMany({
-      where: propertyId ? { propertyId } : undefined,
+      where: propertyId ? { OR: [{ propertyId }, { propertyId: null }] } : undefined,
       include: {
         amenities: {
           include: { amenity: true },

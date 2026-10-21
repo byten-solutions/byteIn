@@ -226,4 +226,52 @@ describe("Room Availability Grid / Tape Chart Tests", () => {
     assert.equal(slotDec1.isAvailable, false)
     assert.equal(slotDec1.isOccupied, false)
   })
+
+  it("should paginate rooms and return pagination metadata", async () => {
+    const page1 = await ReportsService.getAvailabilityGrid(
+      startIso,
+      endIso,
+      testPropertyId,
+      undefined,
+      { categoryId: "all", page: 1, limit: 2 }
+    )
+    assert.equal(page1.rooms.length, 2)
+    assert.equal(page1.pagination?.total, 3)
+    assert.equal(page1.pagination?.totalPages, 2)
+    assert.equal(page1.pagination?.page, 1)
+
+    const page2 = await ReportsService.getAvailabilityGrid(
+      startIso,
+      endIso,
+      testPropertyId,
+      undefined,
+      { categoryId: "all", page: 2, limit: 2 }
+    )
+    assert.equal(page2.rooms.length, 1)
+    assert.equal(page2.pagination?.page, 2)
+  })
+
+  it("should filter rooms by search query q", async () => {
+    const searchGrid = await ReportsService.getAvailabilityGrid(
+      startIso,
+      endIso,
+      testPropertyId,
+      undefined,
+      { categoryId: "all", q: "G101" }
+    )
+    assert.equal(searchGrid.rooms.length, 1)
+    assert.equal(searchGrid.rooms[0]?.roomId, bookedRoomId)
+  })
+
+  it("should reject date ranges exceeding 31 days", async () => {
+    await assert.rejects(
+      async () => {
+        await ReportsService.getAvailabilityGrid("2026-01-01", "2026-02-15", testPropertyId)
+      },
+      {
+        name: "BadRequestError",
+        message: "Availability grid range cannot exceed 31 days",
+      }
+    )
+  })
 })

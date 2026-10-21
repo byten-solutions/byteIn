@@ -27,6 +27,7 @@ interface ReportsViewProps {
   initialTab?: MainTab
   initialOpsSubTab?: "arrivals" | "departures" | "in_house" | "pending"
   initialPropertyId?: string
+  userRole?: string
 }
 
 export function ReportsView({
@@ -37,6 +38,7 @@ export function ReportsView({
   initialTab = "daily_ops",
   initialOpsSubTab = "arrivals",
   initialPropertyId,
+  userRole,
 }: ReportsViewProps) {
   const [activeTab, setActiveTab] = React.useState<MainTab>(initialTab)
 
@@ -196,6 +198,7 @@ export function ReportsView({
               initialStartDate={initialTodayDate}
               initialEndDate={initialWeekLaterDate}
               propertyId={initialPropertyId}
+              isSuperAdmin={userRole === "SUPER_ADMIN"}
               refreshTrigger={refreshTriggers.availability_grid}
             />
           </div>

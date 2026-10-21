@@ -234,6 +234,7 @@ model Room {
   @@index([status])
   @@index([floorId])
   @@index([buildingId, status])
+  @@index([propertyId, roomCategoryId])
   @@map("rooms")
 }
 

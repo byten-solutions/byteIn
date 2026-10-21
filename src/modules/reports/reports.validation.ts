@@ -73,21 +73,31 @@ export const availabilityGridSchema = z
       .trim()
       .refine(isValidISODateString, {
         message: "startDate must be a valid calendar date in YYYY-MM-DD format",
-      }),
+      })
+      .optional(),
     endDate: z
       .string()
       .trim()
       .refine(isValidISODateString, {
         message: "endDate must be a valid calendar date in YYYY-MM-DD format",
-      }),
+      })
+      .optional(),
     propertyId: z.string().trim().min(1).optional(),
+    categoryId: z.string().trim().optional(),
     buildingId: z.string().trim().min(1).optional(),
+    floorId: z.string().trim().min(1).optional(),
+    q: z.string().trim().optional(),
+    page: z.coerce.number().int().min(1).optional().default(1),
+    limit: z.coerce.number().int().min(1).max(100).optional().default(25),
   })
   .refine(
     (data) => {
-      const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
-      const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
-      return e >= s
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        return e >= s
+      }
+      return true
     },
     {
       message: "endDate must be on or after startDate",
@@ -96,10 +106,13 @@ export const availabilityGridSchema = z
   )
   .refine(
     (data) => {
-      const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
-      const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
-      const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-      return diffDays <= 31
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
+        return diffDays <= 31
+      }
+      return true
     },
     {
       message: "Availability grid range cannot exceed 31 days",

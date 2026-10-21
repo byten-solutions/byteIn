@@ -1158,20 +1158,41 @@ export class ReportsService {
   /**
    * Generates Room Availability Grid / Tape Chart (Date-by-Room matrix)
    * Shows booked slots with guest names and links, vacant rooms, and maintenance blocks.
+   * Paginated by room (default limit 25, max 100). Never loads all rooms of a hotel.
    */
   static async getAvailabilityGrid(
-    startDateStr: string,
-    endDateStr: string,
+    startDateStr?: string,
+    endDateStr?: string,
     propertyId?: string,
-    buildingId?: string
+    buildingId?: string,
+    options?: {
+      categoryId?: string
+      floorId?: string
+      q?: string
+      page?: number
+      limit?: number
+    }
   ): Promise<AvailabilityGridDTO> {
-    const startObj = new Date(`${startDateStr}T00:00:00.000Z`)
-    const endObj = new Date(`${endDateStr}T00:00:00.000Z`)
+    const todayStr = getHotelTodayDate()
+    const resolvedStartStr = startDateStr || todayStr
+    let resolvedEndStr = endDateStr
 
-    const numDays = Math.min(
-      31,
-      Math.max(1, Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-    )
+    if (!resolvedEndStr) {
+      const sDate = new Date(`${resolvedStartStr}T00:00:00.000Z`)
+      const eDate = new Date(sDate.getTime() + 6 * 24 * 60 * 60 * 1000)
+      resolvedEndStr = eDate.toISOString().split("T")[0]!
+    }
+
+    const startObj = new Date(`${resolvedStartStr}T00:00:00.000Z`)
+    const endObj = new Date(`${resolvedEndStr}T00:00:00.000Z`)
+
+    const numDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    if (numDays > 31) {
+      throw new BadRequestError("Availability grid range cannot exceed 31 days")
+    }
+    if (numDays < 1) {
+      throw new BadRequestError("endDate must be on or after startDate")
+    }
 
     const dates: string[] = []
     for (let i = 0; i < numDays; i++) {
@@ -1181,40 +1202,93 @@ export class ReportsService {
 
     // 1. Determine scoped property
     let effectivePropertyId = propertyId
-    if (!effectivePropertyId) {
-      const firstProp = await prisma.property.findFirst({
-        select: { id: true },
-        orderBy: { name: "asc" },
+    let propRecord: { id: string; name: string } | null = null
+
+    if (effectivePropertyId) {
+      propRecord = await prisma.property.findUnique({
+        where: { id: effectivePropertyId },
+        select: { id: true, name: true },
       })
-      if (firstProp) {
-        effectivePropertyId = firstProp.id
+    } else {
+      propRecord = await prisma.property.findFirst({
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+      if (propRecord) {
+        effectivePropertyId = propRecord.id
       }
     }
 
+    // 2. Resolve default room category (first by name of selected hotel)
+    let resolvedCategoryId = options?.categoryId
+    let selectedCategoryObj: { id: string; name: string } | null = null
+
+    if (resolvedCategoryId === "all") {
+      resolvedCategoryId = undefined
+    } else if (!resolvedCategoryId && effectivePropertyId) {
+      const firstCat = await prisma.roomCategory.findFirst({
+        where: {
+          OR: [{ propertyId: effectivePropertyId }, { propertyId: null }],
+        },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+      if (firstCat) {
+        resolvedCategoryId = firstCat.id
+        selectedCategoryObj = firstCat
+      }
+    } else if (resolvedCategoryId) {
+      const cat = await prisma.roomCategory.findUnique({
+        where: { id: resolvedCategoryId },
+        select: { id: true, name: true },
+      })
+      if (cat) {
+        selectedCategoryObj = cat
+      }
+    }
+
+    // 3. Room Filters & Pagination
     const roomWhere: Prisma.RoomWhereInput = {}
     if (effectivePropertyId) {
       roomWhere.propertyId = effectivePropertyId
     }
+    if (resolvedCategoryId) {
+      roomWhere.roomCategoryId = resolvedCategoryId
+    }
     if (buildingId) {
       roomWhere.buildingId = buildingId
     }
+    if (options?.floorId) {
+      roomWhere.floorId = options.floorId
+    }
+    if (options?.q?.trim()) {
+      roomWhere.roomNo = { contains: options.q.trim(), mode: "insensitive" }
+    }
 
-    const physicalRooms = await prisma.room.findMany({
-      where: roomWhere,
-      include: {
-        building: true,
-        floor: true,
-        category: true,
-      },
-      orderBy: [
-        { building: { name: "asc" } },
-        { floor: { floorNo: "asc" } },
-        { roomNo: "asc" },
-      ],
-      take: 100, // Bound view to max 100 rooms for instant render and lightweight payload
-    })
+    const page = Math.max(1, options?.page || 1)
+    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const skip = (page - 1) * limit
 
-    // 2. Fetch overlapping allocations in window ONLY for the scoped rooms
+    const [totalRooms, physicalRooms] = await Promise.all([
+      prisma.room.count({ where: roomWhere }),
+      prisma.room.findMany({
+        where: roomWhere,
+        include: {
+          building: true,
+          floor: true,
+          category: true,
+        },
+        orderBy: [
+          { building: { name: "asc" } },
+          { floor: { floorNo: "asc" } },
+          { roomNo: "asc" },
+        ],
+        skip,
+        take: limit,
+      }),
+    ])
+
+    // 4. Fetch overlapping allocations ONLY for the paginated room IDs
     const nextDayAfterEnd = new Date(startObj.getTime() + numDays * 24 * 60 * 60 * 1000)
     const roomIds = physicalRooms.map((r) => r.id)
     const allocations =
@@ -1243,7 +1317,7 @@ export class ReportsService {
       allocMap.set(alloc.roomId, list)
     }
 
-    // 3. Assemble rooms matrix
+    // 5. Assemble room date matrix
     const rooms: AvailabilityGridRoomDTO[] = []
 
     for (const r of physicalRooms) {
@@ -1257,7 +1331,6 @@ export class ReportsService {
         const curDayStart = startObj.getTime() + i * 24 * 60 * 60 * 1000
         const dateStr = dates[i]!
 
-        // Find allocation covering this day: arrival <= curDayStart < departure
         const matchedAlloc = roomAllocs.find((a) => {
           const arr = a.arrivalDate.getTime()
           const effectiveDep = a.actualCheckoutDate ?? a.departureDate
@@ -1316,12 +1389,22 @@ export class ReportsService {
       })
     }
 
+    const totalPages = Math.max(1, Math.ceil(totalRooms / limit))
+
     return {
-      startDate: startDateStr,
-      endDate: endDateStr,
+      startDate: resolvedStartStr,
+      endDate: resolvedEndStr,
       dates,
       rooms,
-      totalRooms: physicalRooms.length,
+      totalRooms,
+      selectedProperty: propRecord ? { id: propRecord.id, name: propRecord.name } : undefined,
+      selectedCategory: selectedCategoryObj,
+      pagination: {
+        page,
+        limit,
+        total: totalRooms,
+        totalPages,
+      },
     }
   }
 

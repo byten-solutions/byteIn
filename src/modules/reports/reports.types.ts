@@ -249,6 +249,20 @@ export interface AvailabilityGridDTO {
   dates: string[] // List of YYYY-MM-DD dates in the window
   rooms: AvailabilityGridRoomDTO[]
   totalRooms: number
+  selectedProperty?: {
+    id: string
+    name: string
+  }
+  selectedCategory?: {
+    id: string
+    name: string
+  } | null
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }
 
 // ----------------------------------------------------------------------------

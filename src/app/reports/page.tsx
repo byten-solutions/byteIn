@@ -61,6 +61,7 @@ export default async function ReportsPage(props: {
           initialTab={initialTab}
           initialOpsSubTab={initialOpsSubTab}
           initialPropertyId={searchParams?.propertyId || session.propertyId || undefined}
+          userRole={session.role}
         />
       </div>
     </AppShell>

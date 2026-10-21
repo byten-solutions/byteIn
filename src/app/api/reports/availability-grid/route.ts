@@ -16,7 +16,12 @@ export async function GET(req: NextRequest) {
       startDate: searchParams.get("startDate") || undefined,
       endDate: searchParams.get("endDate") || undefined,
       propertyId: searchParams.get("propertyId") || undefined,
+      categoryId: searchParams.get("categoryId") || undefined,
       buildingId: searchParams.get("buildingId") || undefined,
+      floorId: searchParams.get("floorId") || undefined,
+      q: searchParams.get("q") || undefined,
+      page: searchParams.get("page") || undefined,
+      limit: searchParams.get("limit") || undefined,
     })
 
     const effectivePropertyId =
@@ -26,7 +31,14 @@ export async function GET(req: NextRequest) {
       query.startDate,
       query.endDate,
       effectivePropertyId,
-      query.buildingId
+      query.buildingId,
+      {
+        categoryId: query.categoryId,
+        floorId: query.floorId,
+        q: query.q,
+        page: query.page,
+        limit: query.limit,
+      }
     )
 
     return NextResponse.json({ success: true, data: report })
