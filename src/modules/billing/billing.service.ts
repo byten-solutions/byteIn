@@ -182,7 +182,7 @@ export class BillingService {
         paidAt: payment.paidAt.toISOString(),
         createdBy: payment.createdBy,
         creatorName: payment.creator
-          ? `${payment.creator.name} (${payment.creator.role})`
+          ? `${payment.creator.name} (${payment.creator.role?.name || "Staff"})`
           : undefined,
         createdAt: payment.createdAt.toISOString(),
       })),
@@ -1010,221 +1010,237 @@ export class BillingService {
     invoice: InvoiceDetailDTO;
     receipt: PaymentReceiptDTO;
   }> {
-    const result = await prisma.$transaction(async (tx) => {
-      // 0. Acquire row-level lock on invoice to serialize concurrent payments
-      await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
-
-      const invoice = await tx.invoice.findUnique({
-        where: { id: invoiceId },
+    // Fast-path: Check Idempotency Key before opening transaction lock (ADV-BIL-04)
+    if (input.idempotencyKey) {
+      const existingPayment = await prisma.payment.findUnique({
+        where: { idempotencyKey: input.idempotencyKey.trim() },
         include: {
-          reservation: {
+          creator: { select: { name: true, role: true } },
+          invoice: {
             include: {
-              customer: true,
+              reservation: { include: { customer: true } },
+              items: true,
+              payments: {
+                include: { creator: { select: { name: true, role: true } } },
+              },
             },
-          },
-          items: true,
-          payments: {
-            include: { creator: { select: { name: true, role: true } } },
           },
         },
       });
 
-      if (!invoice) {
-        throw new NotFoundError("Invoice not found");
+      if (existingPayment) {
+        if (propertyId && existingPayment.propertyId !== propertyId) {
+          throw new NotFoundError("Invoice not found");
+        }
+        const formattedInvoice = this.formatInvoiceDetail(existingPayment.invoice);
+        const customer = existingPayment.invoice.reservation?.customer;
+        const customerName = customer
+          ? `${customer.firstName} ${customer.lastName || ""}`.trim()
+          : "Guest";
+
+        const roleName = existingPayment.creator?.role?.name || "Staff";
+        const receipt: PaymentReceiptDTO = {
+          receiptNumber: `REC-${existingPayment.id.slice(-8).toUpperCase()}`,
+          paymentId: existingPayment.id,
+          invoiceNumber: existingPayment.invoice.invoiceNumber,
+          reservationNo: existingPayment.invoice.reservation?.reservationNo || "",
+          customerName,
+          customerEmail: customer?.email || null,
+          customerPhone: customer?.phone || null,
+          amountPaid: new Prisma.Decimal(existingPayment.amount).toFixed(2),
+          paymentMethod: existingPayment.paymentMethod,
+          referenceNumber: existingPayment.referenceNumber,
+          paidAt: existingPayment.paidAt.toISOString(),
+          recordedByName: existingPayment.creator
+            ? `${existingPayment.creator.name} (${roleName})`
+            : "Staff",
+          invoiceGrandTotal: formattedInvoice.grandTotal,
+          invoiceTotalPaid: formattedInvoice.totalPaid,
+          remainingBalance: formattedInvoice.balanceDue,
+          invoiceStatus: formattedInvoice.status,
+        };
+
+        return {
+          invoice: formattedInvoice,
+          receipt,
+        };
       }
+    }
 
-      if (propertyId && invoice.propertyId !== propertyId) {
-        throw new NotFoundError("Invoice not found");
-      }
+    const paymentAmount = new Prisma.Decimal(input.amount);
+    if (paymentAmount.lessThanOrEqualTo(0)) {
+      throw new BadRequestError("Payment amount must be greater than zero");
+    }
 
-      if (invoice.status === InvoiceStatus.VOID) {
-        throw new Error("Cannot record payment against a voided invoice");
-      }
+    const txResult = await prisma.$transaction(
+      async (tx) => {
+        // 0. Acquire row-level lock on invoice to serialize concurrent payments
+        await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${invoiceId} FOR UPDATE`;
 
-      const paymentAmount = new Prisma.Decimal(input.amount);
-      if (paymentAmount.lessThanOrEqualTo(0)) {
-        throw new Error("Payment amount must be greater than zero");
-      }
-
-      const grandTotal = new Prisma.Decimal(invoice.grandTotal);
-      const existingPaid = (invoice.payments || [])
-        .filter((p) => p.status === PaymentStatus.RECORDED)
-        .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
-
-      const remainingBalance = Prisma.Decimal.max(
-        new Prisma.Decimal(0),
-        grandTotal.sub(existingPaid)
-      );
-
-      if (remainingBalance.equals(0)) {
-        throw new Error("Invoice is already fully paid");
-      }
-
-      if (paymentAmount.greaterThan(remainingBalance)) {
-        throw new Error(
-          `Payment amount ($${paymentAmount.toFixed(2)}) exceeds remaining balance of $${remainingBalance.toFixed(2)}`
-        );
-      }
-
-      // Check Idempotency Key (ADV-BIL-04)
-      if (input.idempotencyKey) {
-        const existingPayment = await tx.payment.findUnique({
-          where: { idempotencyKey: input.idempotencyKey },
-          include: {
-            creator: { select: { name: true, role: true } },
-            invoice: {
-              include: {
-                reservation: { include: { customer: true } },
-                items: true,
-                payments: {
-                  include: { creator: { select: { name: true, role: true } } },
-                },
-              },
+        const invoice = await tx.invoice.findUnique({
+          where: { id: invoiceId },
+          select: {
+            id: true,
+            propertyId: true,
+            status: true,
+            grandTotal: true,
+            issuedAt: true,
+            invoiceNumber: true,
+            reservationId: true,
+            payments: {
+              where: { status: PaymentStatus.RECORDED },
+              select: { amount: true },
             },
           },
         });
 
-        if (existingPayment) {
-          const formattedInvoice = this.formatInvoiceDetail(existingPayment.invoice);
-          const customer = existingPayment.invoice.reservation?.customer;
-          const customerName = customer
-            ? `${customer.firstName} ${customer.lastName || ""}`.trim()
-            : "Guest";
-
-          const receipt: PaymentReceiptDTO = {
-            receiptNumber: `REC-${existingPayment.id.slice(-8).toUpperCase()}`,
-            paymentId: existingPayment.id,
-            invoiceNumber: existingPayment.invoice.invoiceNumber,
-            reservationNo: existingPayment.invoice.reservation?.reservationNo || "",
-            customerName,
-            customerEmail: customer?.email || null,
-            customerPhone: customer?.phone || null,
-            amountPaid: existingPayment.amount.toString(),
-            paymentMethod: existingPayment.paymentMethod,
-            referenceNumber: existingPayment.referenceNumber,
-            paidAt: existingPayment.paidAt.toISOString(),
-            recordedByName: existingPayment.creator
-              ? `${existingPayment.creator.name} (${existingPayment.creator.role?.name || "Staff"})`
-              : "Staff",
-            invoiceGrandTotal: formattedInvoice.grandTotal,
-            invoiceTotalPaid: formattedInvoice.totalPaid,
-            remainingBalance: formattedInvoice.balanceDue,
-            invoiceStatus: formattedInvoice.status,
-          };
-
-          return {
-            invoice: formattedInvoice,
-            receipt,
-          };
+        if (!invoice) {
+          throw new NotFoundError("Invoice not found");
         }
-      }
 
-      const now = input.paidAt ? new Date(input.paidAt) : new Date();
+        if (propertyId && invoice.propertyId !== propertyId) {
+          throw new NotFoundError("Invoice not found");
+        }
 
-      // 1. Create Payment record
-      const payment = await tx.payment.create({
-        data: {
-          invoiceId,
-          propertyId: invoice.propertyId,
-          amount: paymentAmount,
-          paymentMethod: input.paymentMethod.toUpperCase().trim(),
-          referenceNumber: input.referenceNumber?.trim() || null,
-          idempotencyKey: input.idempotencyKey?.trim() || null,
-          status: PaymentStatus.RECORDED,
-          paidAt: now,
-          createdBy: staffUserId,
-        },
-        include: {
-          creator: { select: { name: true, role: true } },
-        },
-      });
+        if (invoice.status === InvoiceStatus.VOID) {
+          throw new BadRequestError("Cannot record payment against a voided invoice");
+        }
 
-      // 2. Compute new status
-      const newTotalPaid = existingPaid.add(paymentAmount);
-      const newRemainingBalance = Prisma.Decimal.max(
-        new Prisma.Decimal(0),
-        grandTotal.sub(newTotalPaid)
-      );
+        const grandTotal = new Prisma.Decimal(invoice.grandTotal);
+        const existingPaid = (invoice.payments || []).reduce(
+          (sum, p) => sum.add(p.amount),
+          new Prisma.Decimal(0)
+        );
 
-      let newStatus: InvoiceStatus;
-      if (newTotalPaid.greaterThanOrEqualTo(grandTotal)) {
-        newStatus = InvoiceStatus.PAID;
-      } else {
-        newStatus = InvoiceStatus.PARTIALLY_PAID;
-      }
+        const remainingBalance = Prisma.Decimal.max(
+          new Prisma.Decimal(0),
+          grandTotal.sub(existingPaid)
+        );
 
-      // If invoice was DRAFT, auto-issue it upon receiving payment
-      const updatedInvoice = await tx.invoice.update({
-        where: { id: invoiceId },
-        data: {
-          status: newStatus,
-          issuedAt: invoice.issuedAt || now,
-        },
-        include: {
-          reservation: { include: { customer: true } },
-          items: true,
-          payments: {
-            include: { creator: { select: { name: true, role: true } } },
-          },
-        },
-      });
+        if (remainingBalance.equals(0)) {
+          throw new BadRequestError("Invoice is already fully paid");
+        }
 
-      // 3. Write Audit Log
-      await tx.auditLog.create({
-        data: {
-          userId: staffUserId,
-          entityType: "Payment",
-          entityId: payment.id,
-          action: "PAYMENT_RECORDED",
-          newData: {
+        if (paymentAmount.greaterThan(remainingBalance)) {
+          throw new BadRequestError(
+            `Payment amount ($${paymentAmount.toFixed(2)}) exceeds remaining balance of $${remainingBalance.toFixed(2)}`
+          );
+        }
+
+        // Secondary idempotency check inside transaction to prevent race conditions
+        if (input.idempotencyKey) {
+          const racePayment = await tx.payment.findUnique({
+            where: { idempotencyKey: input.idempotencyKey.trim() },
+            select: { id: true },
+          });
+          if (racePayment) {
+            return {
+              paymentId: racePayment.id,
+              propertyId: invoice.propertyId,
+            };
+          }
+        }
+
+        const now = input.paidAt ? new Date(input.paidAt) : new Date();
+
+        // 1. Create Payment record
+        const payment = await tx.payment.create({
+          data: {
             invoiceId,
-            invoiceNumber: invoice.invoiceNumber,
-            amount: paymentAmount.toString(),
-            paymentMethod: payment.paymentMethod,
-            newInvoiceStatus: newStatus,
-            newTotalPaid: newTotalPaid.toString(),
-            remainingBalance: newRemainingBalance.toString(),
+            propertyId: invoice.propertyId,
+            amount: paymentAmount,
+            paymentMethod: input.paymentMethod.toUpperCase().trim(),
+            referenceNumber: input.referenceNumber?.trim() || null,
+            idempotencyKey: input.idempotencyKey?.trim() || null,
+            status: PaymentStatus.RECORDED,
+            paidAt: now,
+            createdBy: staffUserId,
           },
-        },
-      });
+        });
 
-      const formattedInvoice = this.formatInvoiceDetail(updatedInvoice);
-      const customer = invoice.reservation?.customer;
-      const customerName = customer
-        ? `${customer.firstName} ${customer.lastName || ""}`.trim()
-        : "Guest";
+        // 2. Compute new status
+        const newTotalPaid = existingPaid.add(paymentAmount);
+        const newRemainingBalance = Prisma.Decimal.max(
+          new Prisma.Decimal(0),
+          grandTotal.sub(newTotalPaid)
+        );
 
-      const receipt: PaymentReceiptDTO = {
-        receiptNumber: `REC-${payment.id.slice(-8).toUpperCase()}`,
-        paymentId: payment.id,
-        invoiceNumber: invoice.invoiceNumber,
-        reservationNo: invoice.reservation?.reservationNo || "",
-        customerName,
-        customerEmail: customer?.email || null,
-        customerPhone: customer?.phone || null,
-        amountPaid: paymentAmount.toFixed(2),
-        paymentMethod: payment.paymentMethod,
-        referenceNumber: payment.referenceNumber,
-        paidAt: payment.paidAt.toISOString(),
-        recordedByName: payment.creator
-          ? `${payment.creator.name} (${payment.creator.role})`
-          : "Staff",
-        invoiceGrandTotal: grandTotal.toFixed(2),
-        invoiceTotalPaid: newTotalPaid.toFixed(2),
-        remainingBalance: newRemainingBalance.toFixed(2),
-        invoiceStatus: newStatus,
-      };
+        let newStatus: InvoiceStatus;
+        if (newTotalPaid.greaterThanOrEqualTo(grandTotal)) {
+          newStatus = InvoiceStatus.PAID;
+        } else {
+          newStatus = InvoiceStatus.PARTIALLY_PAID;
+        }
 
-      return {
-        invoice: formattedInvoice,
-        receipt,
-        propertyId: invoice.propertyId,
-      };
-    });
-    this.invalidateBillingCache(result.propertyId);
+        // If invoice was DRAFT, auto-issue it upon receiving payment
+        await tx.invoice.update({
+          where: { id: invoiceId },
+          data: {
+            status: newStatus,
+            issuedAt: invoice.issuedAt || now,
+          },
+        });
+
+        // 3. Write Audit Log
+        await tx.auditLog.create({
+          data: {
+            userId: staffUserId,
+            entityType: "Payment",
+            entityId: payment.id,
+            action: "PAYMENT_RECORDED",
+            newData: {
+              invoiceId,
+              invoiceNumber: invoice.invoiceNumber,
+              amount: paymentAmount.toString(),
+              paymentMethod: payment.paymentMethod,
+              newInvoiceStatus: newStatus,
+              newTotalPaid: newTotalPaid.toString(),
+              remainingBalance: newRemainingBalance.toString(),
+            },
+          },
+        });
+
+        return {
+          paymentId: payment.id,
+          propertyId: invoice.propertyId,
+        };
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      }
+    );
+
+    this.invalidateBillingCache(txResult.propertyId);
+
+    // After transaction commits, fetch fresh formatted invoice and receipt
+    const updatedInvoice = await this.getInvoiceById(invoiceId, propertyId);
+    const recordedPayment = updatedInvoice.payments.find(
+      (p) => p.id === txResult.paymentId
+    );
+
+    const receipt: PaymentReceiptDTO = {
+      receiptNumber: `REC-${txResult.paymentId.slice(-8).toUpperCase()}`,
+      paymentId: txResult.paymentId,
+      invoiceNumber: updatedInvoice.invoiceNumber,
+      reservationNo: updatedInvoice.reservationNo || "",
+      customerName: updatedInvoice.customerName,
+      customerEmail: updatedInvoice.customerEmail || null,
+      customerPhone: updatedInvoice.customerPhone || null,
+      amountPaid: recordedPayment ? recordedPayment.amount : paymentAmount.toFixed(2),
+      paymentMethod: recordedPayment ? recordedPayment.paymentMethod : input.paymentMethod.toUpperCase().trim(),
+      referenceNumber: recordedPayment ? recordedPayment.referenceNumber : input.referenceNumber?.trim() || null,
+      paidAt: recordedPayment ? recordedPayment.paidAt : new Date().toISOString(),
+      recordedByName: recordedPayment?.creatorName || "Staff",
+      invoiceGrandTotal: updatedInvoice.grandTotal,
+      invoiceTotalPaid: updatedInvoice.totalPaid,
+      remainingBalance: updatedInvoice.balanceDue,
+      invoiceStatus: updatedInvoice.status,
+    };
+
     return {
-      invoice: result.invoice,
-      receipt: result.receipt,
+      invoice: updatedInvoice,
+      receipt,
     };
   }
 
@@ -1249,130 +1265,136 @@ export class BillingService {
       throw new BadRequestError("Void reason must be at least 3 characters");
     }
 
-    const result = await prisma.$transaction(async (tx) => {
-      const payment = await tx.payment.findUnique({
-        where: { id: paymentId },
-        include: {
-          invoice: {
-            include: {
-              reservation: {
-                include: {
-                  customer: true,
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const payment = await tx.payment.findUnique({
+          where: { id: paymentId },
+          include: {
+            invoice: {
+              include: {
+                reservation: {
+                  include: {
+                    customer: true,
+                  },
                 },
               },
             },
           },
-        },
-      });
-
-      if (!payment) {
-        throw new NotFoundError("Payment not found");
-      }
-
-      if (propertyId && payment.propertyId !== propertyId) {
-        throw new NotFoundError("Payment not found");
-      }
-
-      if (invoiceId && payment.invoiceId !== invoiceId) {
-        throw new BadRequestError("Payment does not belong to the specified invoice");
-      }
-
-      if (payment.status === PaymentStatus.VOIDED) {
-        throw new BadRequestError("Payment is already voided");
-      }
-
-      // Invariant: Receptionists can only void same-business-day payments. Older payments require ADMIN or SUPER_ADMIN.
-      const hotelToday = getHotelTodayDate();
-      const paymentDate = getHotelTodayDate(payment.paidAt);
-      if (hotelToday !== paymentDate) {
-        const caller = await tx.user.findUnique({
-          where: { id: staffUserId },
-          include: { role: true },
         });
-        if (
-          caller?.role.name !== RoleName.ADMIN &&
-          caller?.role.name !== RoleName.SUPER_ADMIN
-        ) {
-          throw new ForbiddenError(
-            "Receptionists can only void same-business-day payments. Voiding older payments requires Administrator privileges."
-          );
+
+        if (!payment) {
+          throw new NotFoundError("Payment not found");
         }
-      }
 
-      await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${payment.invoiceId} FOR UPDATE`;
+        if (propertyId && payment.propertyId !== propertyId) {
+          throw new NotFoundError("Payment not found");
+        }
 
-      const now = new Date();
-      await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: PaymentStatus.VOIDED,
-          voidReason,
-          voidedAt: now,
-          voidedBy: staffUserId,
-        },
-      });
+        if (invoiceId && payment.invoiceId !== invoiceId) {
+          throw new BadRequestError("Payment does not belong to the specified invoice");
+        }
 
-      const remainingPayments = await tx.payment.findMany({
-        where: {
-          invoiceId: payment.invoiceId,
-          status: PaymentStatus.RECORDED,
-        },
-      });
+        if (payment.status === PaymentStatus.VOIDED) {
+          throw new BadRequestError("Payment is already voided");
+        }
 
-      const newTotalPaid = remainingPayments.reduce(
-        (sum, p) => sum.add(p.amount),
-        new Prisma.Decimal(0)
-      );
+        // Invariant: Receptionists can only void same-business-day payments. Older payments require ADMIN or SUPER_ADMIN.
+        const hotelToday = getHotelTodayDate();
+        const paymentDate = getHotelTodayDate(payment.paidAt);
+        if (hotelToday !== paymentDate) {
+          const caller = await tx.user.findUnique({
+            where: { id: staffUserId },
+            include: { role: true },
+          });
+          if (
+            caller?.role.name !== RoleName.ADMIN &&
+            caller?.role.name !== RoleName.SUPER_ADMIN
+          ) {
+            throw new ForbiddenError(
+              "Receptionists can only void same-business-day payments. Voiding older payments requires Administrator privileges."
+            );
+          }
+        }
 
-      const grandTotal = new Prisma.Decimal(payment.invoice.grandTotal);
+        await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${payment.invoiceId} FOR UPDATE`;
 
-      let newStatus: InvoiceStatus;
-      if (newTotalPaid.greaterThanOrEqualTo(grandTotal)) {
-        newStatus = InvoiceStatus.PAID;
-      } else if (newTotalPaid.greaterThan(0)) {
-        newStatus = InvoiceStatus.PARTIALLY_PAID;
-      } else {
-        newStatus = InvoiceStatus.ISSUED;
-      }
-
-      const updated = await tx.invoice.update({
-        where: { id: payment.invoiceId },
-        data: { status: newStatus },
-        include: {
-          reservation: { include: { customer: true } },
-          items: true,
-          payments: {
-            include: { creator: { select: { name: true, role: true } } },
-          },
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          userId: staffUserId,
-          entityType: "Payment",
-          entityId: paymentId,
-          action: "PAYMENT_VOIDED",
-          oldData: {
-            amount: payment.amount.toString(),
-            status: PaymentStatus.RECORDED,
-          },
-          newData: {
+        const now = new Date();
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: {
             status: PaymentStatus.VOIDED,
             voidReason,
-            voidedAt: now.toISOString(),
+            voidedAt: now,
             voidedBy: staffUserId,
-            newInvoiceStatus: newStatus,
-            newTotalPaid: newTotalPaid.toString(),
           },
-        },
-      });
+        });
 
-      return {
-        invoice: this.formatInvoiceDetail(updated),
-        propertyId: payment.propertyId,
-      };
-    });
+        const remainingPayments = await tx.payment.findMany({
+          where: {
+            invoiceId: payment.invoiceId,
+            status: PaymentStatus.RECORDED,
+          },
+        });
+
+        const newTotalPaid = remainingPayments.reduce(
+          (sum, p) => sum.add(p.amount),
+          new Prisma.Decimal(0)
+        );
+
+        const grandTotal = new Prisma.Decimal(payment.invoice.grandTotal);
+
+        let newStatus: InvoiceStatus;
+        if (newTotalPaid.greaterThanOrEqualTo(grandTotal)) {
+          newStatus = InvoiceStatus.PAID;
+        } else if (newTotalPaid.greaterThan(0)) {
+          newStatus = InvoiceStatus.PARTIALLY_PAID;
+        } else {
+          newStatus = InvoiceStatus.ISSUED;
+        }
+
+        const updated = await tx.invoice.update({
+          where: { id: payment.invoiceId },
+          data: { status: newStatus },
+          include: {
+            reservation: { include: { customer: true } },
+            items: true,
+            payments: {
+              include: { creator: { select: { name: true, role: true } } },
+            },
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: staffUserId,
+            entityType: "Payment",
+            entityId: paymentId,
+            action: "PAYMENT_VOIDED",
+            oldData: {
+              amount: payment.amount.toString(),
+              status: PaymentStatus.RECORDED,
+            },
+            newData: {
+              status: PaymentStatus.VOIDED,
+              voidReason,
+              voidedAt: now.toISOString(),
+              voidedBy: staffUserId,
+              newInvoiceStatus: newStatus,
+              newTotalPaid: newTotalPaid.toString(),
+            },
+          },
+        });
+
+        return {
+          invoice: this.formatInvoiceDetail(updated),
+          propertyId: payment.propertyId,
+        };
+      },
+      {
+        maxWait: 10000,
+        timeout: 20000,
+      }
+    );
     this.invalidateBillingCache(result.propertyId);
     return result.invoice;
   }

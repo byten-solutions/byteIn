@@ -777,123 +777,209 @@ export class ReportsService {
       typePredicate = Prisma.sql`rr.status = 'CONFIRMED' AND rr.arrival_date < ${dateStr}::date`
     }
 
-    const queryRows = await prisma.$queryRaw<
-      Array<{
-        allocationId: string
-        reservationId: string
-        reservationNo: string
-        customerId: string
-        guestName: string
-        guestPhone: string | null
-        guestEmail: string | null
-        roomId: string
-        roomNo: string
-        roomDisplayName: string | null
-        roomCategoryName: string
-        buildingName: string
-        floorNo: number
-        arrivalDate: string
-        departureDate: string
-        stayNights: number
-        bookedNightlyRate: string
-        allocationStatus: AllocationStatus
-        roomStatus: RoomStatus
-        invoiceId: string | null
-        invoiceNumber: string | null
-        invoiceTotalPaid: string | null
-        invoiceBalanceDue: string | null
-        specialRequests: string | null
-        fullCount: bigint | number
-      }>
-    >(Prisma.sql`
-      SELECT
-        rr.id AS "allocationId",
-        rr.reservation_id AS "reservationId",
-        res.reservation_no AS "reservationNo",
-        res.customer_id AS "customerId",
-        CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
-        cust.phone AS "guestPhone",
-        cust.email AS "guestEmail",
-        rr.room_id AS "roomId",
-        rm.room_no AS "roomNo",
-        rm.display_name AS "roomDisplayName",
-        rc.name AS "roomCategoryName",
-        bld.name AS "buildingName",
-        flr.floor_no AS "floorNo",
-        TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
-        TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
-        GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
-        rr.booked_nightly_rate::text AS "bookedNightlyRate",
-        rr.status AS "allocationStatus",
-        rm.status AS "roomStatus",
-        inv.id AS "invoiceId",
-        inv.invoice_number AS "invoiceNumber",
-        inv.total_paid::text AS "invoiceTotalPaid",
-        inv.balance_due::text AS "invoiceBalanceDue",
-        res.special_requests AS "specialRequests",
-        COUNT(*) OVER() AS "fullCount"
-      FROM reservation_rooms rr
-      JOIN rooms rm ON rm.id = rr.room_id
-      JOIN buildings bld ON bld.id = rm.building_id
-      JOIN floors flr ON flr.id = rm.floor_id
-      JOIN room_categories rc ON rc.id = rr.room_category_id
-      JOIN reservations res ON res.id = rr.reservation_id
-      JOIN customers cust ON cust.id = res.customer_id
-      LEFT JOIN LATERAL (
+    type QueryRowType = {
+      allocationId: string
+      reservationId: string
+      reservationNo: string
+      customerId: string
+      guestName: string
+      guestPhone: string | null
+      guestEmail: string | null
+      roomId: string
+      roomNo: string
+      roomDisplayName: string | null
+      roomCategoryName: string
+      buildingName: string
+      floorNo: number
+      arrivalDate: string
+      departureDate: string
+      stayNights: number
+      bookedNightlyRate: string
+      allocationStatus: AllocationStatus
+      roomStatus: RoomStatus
+      invoiceId?: string | null
+      invoiceNumber?: string | null
+      invoiceTotalPaid?: string | null
+      invoiceBalanceDue?: string | null
+      specialRequests: string | null
+      fullCount: bigint | number
+    }
+
+    let queryRows: QueryRowType[] = []
+    const invoiceMap = new Map<
+      string,
+      { id: string; invoiceNumber: string; totalPaid: string; balanceDue: string }
+    >()
+
+    if (params.sort === "balance") {
+      queryRows = await prisma.$queryRaw<QueryRowType[]>(Prisma.sql`
         SELECT
-          i.id,
-          i.invoice_number,
-          COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
-          GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
-        FROM invoices i
-        LEFT JOIN payments p ON p.invoice_id = i.id
-        WHERE i.reservation_id = res.id
-          AND i.status != 'VOID'
-        GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
-        ORDER BY i.created_at ASC
-        LIMIT 1
-      ) inv ON true
-      WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
-        AND ${typePredicate}
-        AND res.status != 'CANCELLED'
-        AND (
-          ${q}::text IS NULL OR
-          CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
-          res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
-          rm.room_no ILIKE ${'%' + (q || '') + '%'}
-        )
-      ORDER BY ${sortSql}
-      LIMIT ${limit} OFFSET ${offset}
-    `)
+          rr.id AS "allocationId",
+          rr.reservation_id AS "reservationId",
+          res.reservation_no AS "reservationNo",
+          res.customer_id AS "customerId",
+          CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
+          cust.phone AS "guestPhone",
+          cust.email AS "guestEmail",
+          rr.room_id AS "roomId",
+          rm.room_no AS "roomNo",
+          rm.display_name AS "roomDisplayName",
+          rc.name AS "roomCategoryName",
+          bld.name AS "buildingName",
+          flr.floor_no AS "floorNo",
+          TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
+          TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
+          GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
+          rr.booked_nightly_rate::text AS "bookedNightlyRate",
+          rr.status AS "allocationStatus",
+          rm.status AS "roomStatus",
+          inv.id AS "invoiceId",
+          inv.invoice_number AS "invoiceNumber",
+          inv.total_paid::text AS "invoiceTotalPaid",
+          inv.balance_due::text AS "invoiceBalanceDue",
+          res.special_requests AS "specialRequests",
+          COUNT(*) OVER() AS "fullCount"
+        FROM reservation_rooms rr
+        JOIN rooms rm ON rm.id = rr.room_id
+        JOIN buildings bld ON bld.id = rm.building_id
+        JOIN floors flr ON flr.id = rm.floor_id
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN reservations res ON res.id = rr.reservation_id
+        JOIN customers cust ON cust.id = res.customer_id
+        LEFT JOIN LATERAL (
+          SELECT
+            i.id,
+            i.invoice_number,
+            COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
+            GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
+          FROM invoices i
+          LEFT JOIN payments p ON p.invoice_id = i.id
+          WHERE i.reservation_id = res.id
+            AND i.status != 'VOID'
+          GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
+          ORDER BY i.created_at ASC
+          LIMIT 1
+        ) inv ON true
+        WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
+          AND ${typePredicate}
+          AND res.status != 'CANCELLED'
+          AND (
+            ${q}::text IS NULL OR
+            CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
+            res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
+            rm.room_no ILIKE ${'%' + (q || '') + '%'}
+          )
+        ORDER BY ${sortSql}
+        LIMIT ${limit} OFFSET ${offset}
+      `)
+    } else {
+      queryRows = await prisma.$queryRaw<QueryRowType[]>(Prisma.sql`
+        SELECT
+          rr.id AS "allocationId",
+          rr.reservation_id AS "reservationId",
+          res.reservation_no AS "reservationNo",
+          res.customer_id AS "customerId",
+          CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
+          cust.phone AS "guestPhone",
+          cust.email AS "guestEmail",
+          rr.room_id AS "roomId",
+          rm.room_no AS "roomNo",
+          rm.display_name AS "roomDisplayName",
+          rc.name AS "roomCategoryName",
+          bld.name AS "buildingName",
+          flr.floor_no AS "floorNo",
+          TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
+          TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
+          GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
+          rr.booked_nightly_rate::text AS "bookedNightlyRate",
+          rr.status AS "allocationStatus",
+          rm.status AS "roomStatus",
+          res.special_requests AS "specialRequests",
+          COUNT(*) OVER() AS "fullCount"
+        FROM reservation_rooms rr
+        JOIN rooms rm ON rm.id = rr.room_id
+        JOIN buildings bld ON bld.id = rm.building_id
+        JOIN floors flr ON flr.id = rm.floor_id
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN reservations res ON res.id = rr.reservation_id
+        JOIN customers cust ON cust.id = res.customer_id
+        WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
+          AND ${typePredicate}
+          AND res.status != 'CANCELLED'
+          AND (
+            ${q}::text IS NULL OR
+            CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
+            res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
+            rm.room_no ILIKE ${'%' + (q || '') + '%'}
+          )
+        ORDER BY ${sortSql}
+        LIMIT ${limit} OFFSET ${offset}
+      `)
+
+      const resIds = Array.from(new Set(queryRows.map((r) => r.reservationId)))
+      if (resIds.length > 0) {
+        const invoices = await prisma.$queryRaw<
+          Array<{
+            id: string
+            reservationId: string
+            invoiceNumber: string
+            totalPaid: string
+            balanceDue: string
+          }>
+        >(Prisma.sql`
+          SELECT
+            i.id,
+            i.reservation_id AS "reservationId",
+            i.invoice_number AS "invoiceNumber",
+            COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)::text AS "totalPaid",
+            GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0))::text AS "balanceDue"
+          FROM invoices i
+          LEFT JOIN payments p ON p.invoice_id = i.id
+          WHERE i.reservation_id IN (${Prisma.join(resIds)})
+            AND i.status != 'VOID'
+          GROUP BY i.id, i.reservation_id, i.invoice_number, i.grand_total, i.created_at
+          ORDER BY i.created_at ASC
+        `)
+
+        for (const inv of invoices) {
+          if (!invoiceMap.has(inv.reservationId)) {
+            invoiceMap.set(inv.reservationId, inv)
+          }
+        }
+      }
+    }
 
     const total = queryRows.length > 0 ? Number(queryRows[0]?.fullCount ?? 0) : 0
-    const rows: DailyOperationItemDTO[] = queryRows.map((r) => ({
-      allocationId: r.allocationId,
-      reservationId: r.reservationId,
-      reservationNo: r.reservationNo,
-      customerId: r.customerId,
-      guestName: r.guestName,
-      guestPhone: r.guestPhone,
-      guestEmail: r.guestEmail,
-      roomId: r.roomId,
-      roomNo: r.roomNo,
-      roomDisplayName: r.roomDisplayName,
-      roomCategoryName: r.roomCategoryName,
-      buildingName: r.buildingName,
-      floorNo: r.floorNo,
-      arrivalDate: r.arrivalDate,
-      departureDate: r.departureDate,
-      stayNights: r.stayNights,
-      bookedNightlyRate: r.bookedNightlyRate,
-      allocationStatus: r.allocationStatus,
-      roomStatus: r.roomStatus,
-      invoiceId: r.invoiceId,
-      invoiceNumber: r.invoiceNumber,
-      invoiceGrandTotal: null,
-      invoiceTotalPaid: r.invoiceTotalPaid,
-      invoiceBalanceDue: r.invoiceBalanceDue,
-      specialRequests: r.specialRequests,
-    }))
+    const rows: DailyOperationItemDTO[] = queryRows.map((r) => {
+      const inv = invoiceMap.get(r.reservationId)
+      return {
+        allocationId: r.allocationId,
+        reservationId: r.reservationId,
+        reservationNo: r.reservationNo,
+        customerId: r.customerId,
+        guestName: r.guestName,
+        guestPhone: r.guestPhone,
+        guestEmail: r.guestEmail,
+        roomId: r.roomId,
+        roomNo: r.roomNo,
+        roomDisplayName: r.roomDisplayName,
+        roomCategoryName: r.roomCategoryName,
+        buildingName: r.buildingName,
+        floorNo: r.floorNo,
+        arrivalDate: r.arrivalDate,
+        departureDate: r.departureDate,
+        stayNights: r.stayNights,
+        bookedNightlyRate: r.bookedNightlyRate,
+        allocationStatus: r.allocationStatus,
+        roomStatus: r.roomStatus,
+        invoiceId: r.invoiceId ?? inv?.id ?? null,
+        invoiceNumber: r.invoiceNumber ?? inv?.invoiceNumber ?? null,
+        invoiceGrandTotal: null,
+        invoiceTotalPaid: r.invoiceTotalPaid ?? inv?.totalPaid ?? null,
+        invoiceBalanceDue: r.invoiceBalanceDue ?? inv?.balanceDue ?? null,
+        specialRequests: r.specialRequests,
+      }
+    })
 
     const totalPages = Math.max(1, Math.ceil(total / limit))
 
