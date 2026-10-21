@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { requestMetricsStorage } from "./server-timing";
 
 // Safety check: Prevent automated tests from connecting to non-test databases
 const isRunningTests =
@@ -28,7 +29,7 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma =
+const rawPrisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log:
@@ -37,4 +38,31 @@ export const prisma =
         : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+export const prisma = (rawPrisma as unknown as PrismaClient).$extends({
+  query: {
+    $allOperations({ args, query }) {
+      const delay = parseInt(process.env.SIMULATE_DB_LATENCY_MS || "0", 10);
+      const metrics = requestMetricsStorage.getStore();
+      const start = performance.now();
+
+      const execute = () => {
+        const queryPromise = query(args);
+        if (metrics) {
+          metrics.queryCount++;
+          return queryPromise.then((result) => {
+            metrics.dbMs += performance.now() - start;
+            return result;
+          });
+        }
+        return queryPromise;
+      };
+
+      if (delay > 0) {
+        return new Promise((resolve) => setTimeout(resolve, delay)).then(execute);
+      }
+      return execute();
+    },
+  },
+}) as unknown as PrismaClient;
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = rawPrisma;

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth-guard";
+import { getSession, invalidateSessionUserCache } from "@/lib/auth-guard";
 import { deleteSessionCookie, SESSION_COOKIE_NAME } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession(req);
     if (session?.sub) {
+      invalidateSessionUserCache(session.sub);
       await prisma.user.update({
         where: { id: session.sub },
         data: { tokenVersion: { increment: 1 } },

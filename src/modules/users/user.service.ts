@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "@/lib/errors";
+import { invalidateSessionUserCache } from "@/lib/session-cache";
 import {
   CreateUserInput,
   UpdateUserInput,
@@ -569,6 +570,7 @@ export class UserService {
         },
       });
 
+      invalidateSessionUserCache(targetUserId);
       return this.toDTO(updated);
     });
   }
@@ -653,6 +655,7 @@ export class UserService {
       // Clear non-critical audit log references to allow clean deletion
       await tx.auditLog.deleteMany({ where: { userId: targetUserId } });
       await tx.user.delete({ where: { id: targetUserId } });
+      invalidateSessionUserCache(targetUserId);
     });
   }
 }
