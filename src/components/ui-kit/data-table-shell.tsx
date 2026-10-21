@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { ChevronLeftIcon, ChevronRightIcon, AlertCircleIcon } from "lucide-react"
+import { AlertCircleIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { PaginationFooter } from "./pagination-footer"
 
 export interface PaginationProps {
   page: number
@@ -12,6 +13,9 @@ export interface PaginationProps {
   totalCount: number
   limit: number
   onPageChange: (page: number) => void
+  onLimitChange?: (limit: number) => void
+  pageSizeOptions?: readonly number[]
+  syncUrl?: boolean
 }
 
 export interface DataTableShellProps {
@@ -90,13 +94,6 @@ export function DataTableShell({
     return <>{emptyState}</>
   }
 
-  const startRecord = pagination
-    ? Math.min((pagination.page - 1) * pagination.limit + 1, pagination.totalCount)
-    : 0
-  const endRecord = pagination
-    ? Math.min(pagination.page * pagination.limit, pagination.totalCount)
-    : 0
-
   return (
     <div className={cn("space-y-4", className)}>
       {/* Desktop view (md and up) */}
@@ -128,41 +125,19 @@ export function DataTableShell({
       )}
 
       {/* Pagination Footer */}
-      {pagination && pagination.totalPages > 1 && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 py-2 text-xs text-muted-foreground">
-          <div>
-            Showing <span className="font-mono tabular-nums font-semibold text-foreground">{startRecord}</span> to{" "}
-            <span className="font-mono tabular-nums font-semibold text-foreground">{endRecord}</span> of{" "}
-            <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.totalCount}</span> entries
-          </div>
-
-          <div className="flex items-center gap-1.5 self-end sm:self-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1"
-              disabled={pagination.page <= 1 || isLoading}
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
-            >
-              <ChevronLeftIcon className="size-3.5" />
-              Previous
-            </Button>
-            <div className="px-2 text-xs">
-              Page <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.page}</span> of{" "}
-              <span className="font-mono tabular-nums font-semibold text-foreground">{pagination.totalPages}</span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1"
-              disabled={pagination.page >= pagination.totalPages || isLoading}
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
-            >
-              Next
-              <ChevronRightIcon className="size-3.5" />
-            </Button>
-          </div>
-        </div>
+      {pagination && (
+        <PaginationFooter
+          page={pagination.page}
+          limit={pagination.limit}
+          total={pagination.totalCount}
+          totalPages={pagination.totalPages}
+          isLoading={isLoading}
+          onPageChange={pagination.onPageChange}
+          onLimitChange={pagination.onLimitChange}
+          pageSizeOptions={pagination.pageSizeOptions}
+          syncUrl={pagination.syncUrl ?? true}
+          className="border-t-0 px-1 pt-2"
+        />
       )}
     </div>
   )

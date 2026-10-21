@@ -12,7 +12,8 @@ export async function GET(req: NextRequest) {
     const effectivePropertyId = requireHotelContext(session, requestedPropertyId, {
       allowSuperAdminGlobal: true,
     });
-    const categories = await RoomCategoryService.getCategories(effectivePropertyId || undefined);
+    const search = req.nextUrl.searchParams.get("search") || undefined;
+    const categories = await RoomCategoryService.getCategories(effectivePropertyId || undefined, search);
     return NextResponse.json({ success: true, categories });
   } catch (error) {
     return handleApiError(error);

@@ -29,6 +29,7 @@ import {
   EmptyState,
   MoneyText,
 } from "@/components/ui-kit"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { formatDate, formatStayRange } from "@/lib/date-format"
 import { cn } from "@/lib/utils"
 
@@ -96,12 +97,13 @@ export function ReservationList({
   const [searchTerm, setSearchTerm] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string>("ALL")
   const [currentPage, setCurrentPage] = React.useState(initialPagination?.page || 1)
+  const [currentLimit, setCurrentLimit] = React.useState(initialPagination?.limit || DEFAULT_PAGE_SIZE)
   const [pagination, setPagination] = React.useState<ReservationPagination>(
     initialPagination || {
       total: initialReservations.length,
       page: 1,
-      limit: 20,
-      totalPages: Math.max(1, Math.ceil(initialReservations.length / 20)),
+      limit: DEFAULT_PAGE_SIZE,
+      totalPages: Math.max(1, Math.ceil(initialReservations.length / DEFAULT_PAGE_SIZE)),
     }
   )
   const [loading, setLoading] = React.useState(false)
@@ -111,9 +113,10 @@ export function ReservationList({
     searchTerm,
     statusFilter,
     currentPage,
+    currentLimit,
   })
 
-  const fetchReservations = React.useCallback(async () => {
+  const fetchReservations = React.useCallback(async (query = searchTerm, status = statusFilter, page = currentPage, limit = currentLimit) => {
     abortControllerRef.current?.abort()
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -122,10 +125,10 @@ export function ReservationList({
     setError(null)
     try {
       const params = new URLSearchParams()
-      if (searchTerm.trim()) params.set("search", searchTerm.trim())
-      if (statusFilter !== "ALL") params.set("status", statusFilter)
-      params.set("page", String(currentPage))
-      params.set("limit", "20")
+      if (query.trim()) params.set("search", query.trim())
+      if (status !== "ALL") params.set("status", status)
+      params.set("page", String(page))
+      params.set("limit", String(limit))
 
       const res = await fetch(`/api/reservations?${params.toString()}`, {
         signal: controller.signal,
@@ -217,27 +220,34 @@ export function ReservationList({
         setLoading(false)
       }
     }
-  }, [searchTerm, statusFilter, currentPage, router])
+  }, [searchTerm, statusFilter, currentPage, currentLimit, router])
 
   React.useEffect(() => {
     const prev = prevFiltersRef.current
-    const hasChanged =
+    const filtersChanged =
       prev.searchTerm !== searchTerm ||
-      prev.statusFilter !== statusFilter ||
-      prev.currentPage !== currentPage
+      prev.statusFilter !== statusFilter
+    const pageChanged = prev.currentPage !== currentPage
+    const limitChanged = prev.currentLimit !== currentLimit
 
-    if (!hasChanged) {
+    if (!filtersChanged && !pageChanged && !limitChanged) {
       return
     }
 
-    prevFiltersRef.current = { searchTerm, statusFilter, currentPage }
+    if ((filtersChanged || limitChanged) && currentPage !== 1) {
+      prevFiltersRef.current = { searchTerm, statusFilter, currentPage: 1, currentLimit }
+      setCurrentPage(1)
+      return
+    }
+
+    prevFiltersRef.current = { searchTerm, statusFilter, currentPage, currentLimit }
 
     const timer = setTimeout(() => {
-      fetchReservations()
+      fetchReservations(searchTerm, statusFilter, currentPage, currentLimit)
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [searchTerm, statusFilter, currentPage, fetchReservations])
+  }, [searchTerm, statusFilter, currentPage, currentLimit, fetchReservations])
 
   React.useEffect(() => {
     return () => {
@@ -357,8 +367,12 @@ export function ReservationList({
           page: currentPage,
           totalPages: pagination.totalPages,
           totalCount: pagination.total,
-          limit: pagination.limit,
+          limit: currentLimit,
           onPageChange: (p) => setCurrentPage(p),
+          onLimitChange: (l) => {
+            setCurrentLimit(l)
+            setCurrentPage(1)
+          },
         }}
         mobileView={
           <MobileCardList

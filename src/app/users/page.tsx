@@ -1,12 +1,22 @@
 import { redirect } from "next/navigation";
 import { RoleName } from "@prisma/client";
 import { getSession } from "@/lib/auth-guard";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 import { UserService } from "@/modules/users/user.service";
 import { AppShell } from "@/components/app-shell";
 import { UserManagement } from "./user-management";
 
-export default async function UsersPage() {
+export default async function UsersPage(props: {
+  searchParams?: Promise<{
+    propertyId?: string;
+    role?: string;
+    status?: string;
+    search?: string;
+    page?: string;
+    limit?: string;
+  }>;
+}) {
   const session = await getSession();
   if (!session) {
     redirect("/login");
@@ -23,8 +33,21 @@ export default async function UsersPage() {
     redirect("/");
   }
 
+  const searchParams = props.searchParams ? await props.searchParams : undefined;
+  const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1;
+  const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE;
+  const roleParam = searchParams?.role as RoleName | undefined;
+  const role = roleParam && Object.values(RoleName).includes(roleParam) ? roleParam : undefined;
+
   // Fetch users within caller's scope
-  const users = await UserService.listUsers(session);
+  const result = await UserService.listUsersPage(session, {
+    propertyId: searchParams?.propertyId,
+    role,
+    status: searchParams?.status,
+    search: searchParams?.search,
+    page: isNaN(page) ? 1 : page,
+    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+  });
 
   // Fetch assignable roles
   const allRoles = await prisma.role.findMany({
@@ -46,7 +69,7 @@ export default async function UsersPage() {
       ? [session.property]
       : [];
 
-  const serializedUsers = users.map((u) => ({
+  const serializedUsers = result.users.map((u) => ({
     id: u.id,
     name: u.name,
     email: u.email,
@@ -68,6 +91,12 @@ export default async function UsersPage() {
         <UserManagement
           session={session}
           initialUsers={serializedUsers}
+          initialPagination={{
+            page: result.page,
+            limit: result.limit,
+            total: result.total,
+            totalPages: result.totalPages,
+          }}
           roles={assignableRoles}
           properties={properties}
         />

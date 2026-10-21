@@ -59,9 +59,24 @@ export class RoomCategoryService {
     });
   }
 
-  static async getCategories(propertyId?: string) {
+  static async getCategories(propertyId?: string, search?: string) {
+    const where: Prisma.RoomCategoryWhereInput = {};
+    if (propertyId) {
+      where.OR = [{ propertyId }, { propertyId: null }];
+    }
+    if (search && search.trim()) {
+      const q = search.trim();
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { description: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
     return prisma.roomCategory.findMany({
-      where: propertyId ? { OR: [{ propertyId }, { propertyId: null }] } : undefined,
+      where: Object.keys(where).length > 0 ? where : undefined,
       include: {
         amenities: {
           include: { amenity: true },

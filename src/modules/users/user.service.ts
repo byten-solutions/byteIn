@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { RoleName } from "@prisma/client";
+import { RoleName, Prisma } from "@prisma/client";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { AuthService } from "@/modules/auth/auth.service";
 import type { SessionPayload } from "@/modules/auth/auth.types";
 import {
@@ -109,7 +110,7 @@ export class UserService {
         where.role = { name: { not: RoleName.SUPER_ADMIN } };
       } else if (actorSession.role === RoleName.SUPER_ADMIN) {
         if (filters?.propertyId) {
-          where.propertyId = filters.propertyId;
+          where.propertyId = filters.propertyId === "GLOBAL" ? null : filters.propertyId;
         }
         if (filters?.role) {
           where.role = { name: filters.role };
@@ -150,6 +151,87 @@ export class UserService {
     });
 
     return users.map((u) => this.toDTO(u));
+  }
+
+  /**
+   * Lists users with pagination and total count.
+   */
+  static async listUsersPage(
+    actorSession?: SessionPayload,
+    filters?: UserFilterOptions
+  ): Promise<{
+    users: SafeUserDTO[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, filters?.page || 1);
+    const limit = Math.min(100, Math.max(1, filters?.limit || DEFAULT_PAGE_SIZE));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {};
+
+    if (actorSession) {
+      if (actorSession.role === RoleName.ADMIN) {
+        if (actorSession.propertyId) {
+          where.propertyId = actorSession.propertyId;
+        }
+        where.role = { name: { not: RoleName.SUPER_ADMIN } };
+      } else if (actorSession.role === RoleName.SUPER_ADMIN) {
+        if (filters?.propertyId) {
+          where.propertyId = filters.propertyId === "GLOBAL" ? null : filters.propertyId;
+        }
+        if (filters?.role) {
+          where.role = { name: filters.role };
+        }
+      } else {
+        throw new ForbiddenError("Insufficient permissions to list users.");
+      }
+    } else {
+      if (filters?.propertyId) {
+        where.propertyId = filters.propertyId;
+      }
+      if (filters?.role) {
+        where.role = { name: filters.role };
+      }
+    }
+
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    if (filters?.search && filters.search.trim()) {
+      const q = filters.search.trim();
+      where.OR = [
+        { name: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        include: {
+          role: true,
+          property: {
+            select: { id: true, name: true, status: true },
+          },
+        },
+        orderBy: [{ role: { name: "asc" } }, { createdAt: "asc" }],
+        skip,
+        take: limit,
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    return {
+      users: users.map((u) => this.toDTO(u)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
   }
 
   /**

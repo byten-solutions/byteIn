@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { CategoryManager } from "./category-manager";
 
 export default async function CategoriesPage(props: {
-  searchParams?: Promise<{ propertyId?: string }>
+  searchParams?: Promise<{ propertyId?: string; search?: string }>
 }) {
   const session = await getSession();
   if (!session) {
@@ -19,7 +19,7 @@ export default async function CategoriesPage(props: {
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true });
 
   const [categories, amenities] = await Promise.all([
-    RoomCategoryService.getCategories(scope ?? undefined),
+    RoomCategoryService.getCategories(scope ?? undefined, searchParams?.search),
     AmenityService.getAmenities(),
   ]);
 

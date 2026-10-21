@@ -561,7 +561,7 @@ export class ReservationService {
    * Retrieves paginated list of reservations with primary customer, room allocations, and creator.
    */
   static async getReservations(options: ReservationFilterOptions = {}) {
-    const { search, status, propertyId } = options;
+    const { search, status, propertyId, cursor } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, DEFAULT_PAGE_SIZE);
 
     const hasSearch = Boolean(search && search.trim() !== "");
@@ -667,7 +667,14 @@ export class ReservationService {
       where.status = status;
     }
 
-    const isUnfiltered = !status;
+    if (cursor) {
+      const cursorDate = new Date(cursor);
+      if (!isNaN(cursorDate.getTime())) {
+        where.createdAt = { lt: cursorDate };
+      }
+    }
+
+    const isUnfiltered = !status && !cursor;
     const totalPromise =
       isUnfiltered && !propertyId
         ? ReservationService.getUnfilteredReservationCount()
@@ -677,7 +684,7 @@ export class ReservationService {
       prisma.reservation.findMany({
         where,
         orderBy: { createdAt: "desc" },
-        skip,
+        skip: cursor ? 0 : skip,
         take: limit,
         include: {
           customer: true,
@@ -720,6 +727,10 @@ export class ReservationService {
         page,
         limit,
         totalPages: Math.max(1, Math.ceil(total / limit)),
+        nextCursor:
+          reservations.length === limit
+            ? reservations[reservations.length - 1].createdAt.toISOString()
+            : undefined,
       },
     };
   }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { InvoiceItemType, InvoiceStatus } from "@prisma/client";
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "@/lib/pagination";
 
 export const createInvoiceSchema = z
   .object({
@@ -125,10 +126,11 @@ export const recordPaymentSchema = z.object({
 
 export const invoiceListQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
   search: z.string().optional(),
   status: z.nativeEnum(InvoiceStatus).optional(),
   reservationId: z.string().optional(),
   customerId: z.string().optional(),
   propertyId: z.string().optional(),
+  cursor: z.string().optional(),
 });

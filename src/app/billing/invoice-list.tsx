@@ -25,6 +25,7 @@ import {
   EmptyState,
   MoneyText,
 } from "@/components/ui-kit"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { formatDate } from "@/lib/date-format"
 import { cn } from "@/lib/utils"
 
@@ -47,6 +48,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string>("ALL")
   const [currentPage, setCurrentPage] = React.useState(initialData.page || 1)
+  const [currentLimit, setCurrentLimit] = React.useState(initialData.limit || DEFAULT_PAGE_SIZE)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const abortControllerRef = React.useRef<AbortController | null>(null)
@@ -54,10 +56,11 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
     search,
     statusFilter,
     currentPage,
+    currentLimit,
   })
 
   const fetchInvoices = React.useCallback(
-    async (searchTerm = search, status = statusFilter, page = currentPage) => {
+    async (searchTerm = search, status = statusFilter, page = currentPage, limit = currentLimit) => {
       abortControllerRef.current?.abort()
       const controller = new AbortController()
       abortControllerRef.current = controller
@@ -69,7 +72,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
         if (searchTerm.trim()) params.set("search", searchTerm.trim())
         if (status !== "ALL") params.set("status", status)
         params.set("page", String(page))
-        params.set("limit", String(data.limit || 25))
+        params.set("limit", String(limit))
 
         const res = await fetch(`/api/invoices?${params.toString()}`, {
           signal: controller.signal,
@@ -92,7 +95,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
         }
       }
     },
-    [search, statusFilter, currentPage, data.limit]
+    [search, statusFilter, currentPage, currentLimit]
   )
 
   React.useEffect(() => {
@@ -100,25 +103,26 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
     const filtersChanged =
       prev.search !== search || prev.statusFilter !== statusFilter
     const pageChanged = prev.currentPage !== currentPage
+    const limitChanged = prev.currentLimit !== currentLimit
 
-    if (!filtersChanged && !pageChanged) {
+    if (!filtersChanged && !pageChanged && !limitChanged) {
       return
     }
 
-    if (filtersChanged && currentPage !== 1) {
-      prevFiltersRef.current = { search, statusFilter, currentPage: 1 }
+    if ((filtersChanged || limitChanged) && currentPage !== 1) {
+      prevFiltersRef.current = { search, statusFilter, currentPage: 1, currentLimit }
       setCurrentPage(1)
       return
     }
 
-    prevFiltersRef.current = { search, statusFilter, currentPage }
+    prevFiltersRef.current = { search, statusFilter, currentPage, currentLimit }
 
     const timer = setTimeout(() => {
-      fetchInvoices(search, statusFilter, currentPage)
+      fetchInvoices(search, statusFilter, currentPage, currentLimit)
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [fetchInvoices, search, statusFilter, currentPage])
+  }, [fetchInvoices, search, statusFilter, currentPage, currentLimit])
 
   React.useEffect(() => {
     return () => {
@@ -216,8 +220,12 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
           page: data.page,
           totalPages: data.totalPages,
           totalCount: data.total,
-          limit: data.limit,
+          limit: currentLimit,
           onPageChange: (p) => setCurrentPage(p),
+          onLimitChange: (l) => {
+            setCurrentLimit(l)
+            setCurrentPage(1)
+          },
         }}
         mobileView={
           <MobileCardList

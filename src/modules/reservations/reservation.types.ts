@@ -37,6 +37,7 @@ export interface ReservationFilterOptions {
   propertyId?: string;
   page?: number;
   limit?: number;
+  cursor?: string;
 }
 
 export interface AvailableRoomResult {

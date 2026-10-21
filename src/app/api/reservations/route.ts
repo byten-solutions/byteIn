@@ -29,12 +29,15 @@ export async function GET(req: NextRequest) {
       limit: limitParam ?? undefined,
     });
 
+    const cursor = searchParams.get("cursor") || undefined;
+
     const result = await ReservationService.getReservations({
       search,
       status,
       propertyId: effectivePropertyId,
       page,
       limit,
+      cursor,
     });
 
     return NextResponse.json({ success: true, ...result });

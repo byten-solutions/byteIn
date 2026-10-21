@@ -97,6 +97,7 @@ export interface InvoiceListQuery {
   reservationId?: string;
   customerId?: string;
   propertyId?: string;
+  cursor?: string;
 }
 
 export interface InvoiceListResponse {
@@ -105,6 +106,7 @@ export interface InvoiceListResponse {
   page: number;
   limit: number;
   totalPages: number;
+  nextCursor?: string;
   summary: {
     totalInvoiced: string;
     totalCollected: string;

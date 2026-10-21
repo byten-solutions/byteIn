@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import {
   InvoiceStatus,
@@ -452,10 +453,17 @@ export class BillingService {
     query: InvoiceListQuery = {}
   ): Promise<InvoiceListResponse> {
     const page = Math.max(1, query.page || 1);
-    const limit = Math.min(100, Math.max(1, query.limit || 20));
-    const skip = (page - 1) * limit;
+    const limit = Math.min(100, Math.max(1, query.limit || DEFAULT_PAGE_SIZE));
+    const skip = query.cursor ? 0 : (page - 1) * limit;
 
     const where: Prisma.InvoiceWhereInput = {};
+
+    if (query.cursor) {
+      const cursorDate = new Date(query.cursor);
+      if (!isNaN(cursorDate.getTime())) {
+        where.createdAt = { lt: cursorDate };
+      }
+    }
 
     if (query.status) {
       where.status = query.status;
@@ -531,12 +539,16 @@ export class BillingService {
       this.getBillingSummary(query.propertyId),
     ]);
 
+    const nextCursor =
+      records.length === limit ? records[records.length - 1].createdAt.toISOString() : undefined;
+
     return {
       invoices: records.map((inv) => this.formatInvoiceDetail(inv)),
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit) || 1,
+      nextCursor,
       summary,
     };
   }

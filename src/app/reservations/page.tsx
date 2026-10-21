@@ -1,11 +1,19 @@
 import { redirect } from "next/navigation"
+import { ReservationStatus } from "@prisma/client"
 import { getSession, resolveScope } from "@/lib/auth-guard"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { ReservationService } from "@/modules/reservations/reservation.service"
 import { AppShell } from "@/components/app-shell"
 import { ReservationList } from "./reservation-list"
 
 export default async function ReservationsPage(props: {
-  searchParams?: Promise<{ propertyId?: string }>
+  searchParams?: Promise<{
+    propertyId?: string
+    page?: string
+    limit?: string
+    search?: string
+    status?: string
+  }>
 }) {
   const session = await getSession()
   if (!session) {
@@ -18,9 +26,19 @@ export default async function ReservationsPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
 
+  const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1
+  const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE
+  const statusParam = searchParams?.status
+  const status =
+    statusParam && Object.values(ReservationStatus).includes(statusParam as ReservationStatus)
+      ? (statusParam as ReservationStatus)
+      : undefined
+
   const result = await ReservationService.getReservations({
-    page: 1,
-    limit: 20,
+    page: isNaN(page) ? 1 : page,
+    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+    search: searchParams?.search,
+    status,
     propertyId: scope ?? undefined,
   })
 

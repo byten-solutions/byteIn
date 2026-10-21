@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -82,6 +82,57 @@ export function CategoryManager({
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const prevSearchRef = useRef(search);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchCategories = useCallback(async (q: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoading(true);
+    try {
+      const url = new URL("/api/room-categories", window.location.origin);
+      if (q.trim()) url.searchParams.set("search", q.trim());
+
+      const res = await fetch(url.toString(), { signal: controller.signal });
+      if (!res.ok) throw new Error("Failed to load categories");
+      const json = await res.json();
+      if (json.success && json.categories) {
+        setCategories(
+          json.categories.map((cat: CategoryItem & { basePrice: unknown }) => ({
+            ...cat,
+            basePrice: String(cat.basePrice),
+          }))
+        );
+      }
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setError("Failed to search categories");
+    } finally {
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (prevSearchRef.current === search) return;
+    prevSearchRef.current = search;
+
+    const timer = setTimeout(() => {
+      fetchCategories(search);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, fetchCategories]);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Dialog state for Category
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
@@ -250,10 +301,7 @@ export function CategoryManager({
     }
   };
 
-  const filteredCategories = categories.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    (c.description && c.description.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredCategories = categories;
 
   return (
     <div className="space-y-6">

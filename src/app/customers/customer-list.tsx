@@ -40,6 +40,7 @@ import {
   MobileCardList,
   EmptyState,
 } from "@/components/ui-kit"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { getIdProofOptions } from "@/lib/constants"
 import { formatDate } from "@/lib/date-format"
 
@@ -170,12 +171,13 @@ export function CustomerList({
   const [searchTerm, setSearchTerm] = React.useState("")
   const [filterTab, setFilterTab] = React.useState<FilterTab>("ALL")
   const [currentPage, setCurrentPage] = React.useState(initialPagination?.page || 1)
+  const [currentLimit, setCurrentLimit] = React.useState(initialPagination?.limit || DEFAULT_PAGE_SIZE)
   const [pagination, setPagination] = React.useState<CustomerPagination>(
     initialPagination || {
       total: initialCustomers.length,
       page: 1,
-      limit: 20,
-      totalPages: Math.max(1, Math.ceil(initialCustomers.length / 20)),
+      limit: DEFAULT_PAGE_SIZE,
+      totalPages: Math.max(1, Math.ceil(initialCustomers.length / DEFAULT_PAGE_SIZE)),
     }
   )
   const [loading, setLoading] = React.useState(false)
@@ -186,6 +188,7 @@ export function CustomerList({
   const prevFiltersRef = React.useRef({
     searchTerm,
     currentPage,
+    currentLimit,
   })
 
   // Register Guest Dialog State
@@ -206,7 +209,7 @@ export function CustomerList({
     remarks: "",
   })
 
-  const fetchCustomers = React.useCallback(async (query = searchTerm, page = currentPage) => {
+  const fetchCustomers = React.useCallback(async (query = searchTerm, page = currentPage, limit = currentLimit) => {
     abortControllerRef.current?.abort()
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -217,7 +220,7 @@ export function CustomerList({
       const params = new URLSearchParams()
       if (query.trim()) params.set("search", query.trim())
       params.set("page", String(page))
-      params.set("limit", "20")
+      params.set("limit", String(limit))
 
       const res = await fetch(`/api/customers?${params.toString()}`, {
         signal: controller.signal,
@@ -291,24 +294,32 @@ export function CustomerList({
         setLoading(false)
       }
     }
-  }, [searchTerm, currentPage])
+  }, [searchTerm, currentPage, currentLimit])
 
   React.useEffect(() => {
     const prev = prevFiltersRef.current
-    const hasChanged = prev.searchTerm !== searchTerm || prev.currentPage !== currentPage
+    const searchChanged = prev.searchTerm !== searchTerm
+    const pageChanged = prev.currentPage !== currentPage
+    const limitChanged = prev.currentLimit !== currentLimit
 
-    if (!hasChanged) {
+    if (!searchChanged && !pageChanged && !limitChanged) {
       return
     }
 
-    prevFiltersRef.current = { searchTerm, currentPage }
+    if ((searchChanged || limitChanged) && currentPage !== 1) {
+      prevFiltersRef.current = { searchTerm, currentPage: 1, currentLimit }
+      setCurrentPage(1)
+      return
+    }
+
+    prevFiltersRef.current = { searchTerm, currentPage, currentLimit }
 
     const timer = setTimeout(() => {
-      fetchCustomers(searchTerm, currentPage)
+      fetchCustomers(searchTerm, currentPage, currentLimit)
     }, 300)
 
     return () => clearTimeout(timer)
-  }, [fetchCustomers, searchTerm, currentPage])
+  }, [fetchCustomers, searchTerm, currentPage, currentLimit])
 
   React.useEffect(() => {
     return () => {
@@ -550,8 +561,12 @@ export function CustomerList({
           page: currentPage,
           totalPages: pagination.totalPages,
           totalCount: pagination.total,
-          limit: pagination.limit,
+          limit: currentLimit,
           onPageChange: (p) => setCurrentPage(p),
+          onLimitChange: (l) => {
+            setCurrentLimit(l)
+            setCurrentPage(1)
+          },
         }}
         mobileView={
           <MobileCardList

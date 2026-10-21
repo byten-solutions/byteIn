@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation"
 import { getSession, resolveScope } from "@/lib/auth-guard"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { CustomerService } from "@/modules/customers/customer.service"
 import { AppShell } from "@/components/app-shell"
 import { CustomerList } from "./customer-list"
 
 export default async function CustomersPage(props: {
-  searchParams?: Promise<{ propertyId?: string }>
+  searchParams?: Promise<{ propertyId?: string; page?: string; limit?: string; search?: string }>
 }) {
   const session = await getSession()
   if (!session) {
@@ -18,9 +19,13 @@ export default async function CustomersPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
 
+  const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1
+  const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE
+
   const result = await CustomerService.getCustomers({
-    page: 1,
-    limit: 20,
+    page: isNaN(page) ? 1 : page,
+    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+    search: searchParams?.search,
     propertyId: scope ?? undefined,
   })
 

@@ -27,6 +27,8 @@ export interface UserFilterOptions {
   role?: RoleName;
   status?: string;
   search?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface CreateUserInput {

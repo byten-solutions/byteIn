@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { PaginationFooter } from "@/components/ui-kit/pagination-footer";
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination";
 
 interface SerializedUser {
   id: string;
@@ -69,6 +71,12 @@ interface PropertyOption {
 interface UserManagementProps {
   session: SessionPayload;
   initialUsers: SerializedUser[];
+  initialPagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
   roles: RoleOption[];
   properties: PropertyOption[];
 }
@@ -76,6 +84,7 @@ interface UserManagementProps {
 export function UserManagement({
   session,
   initialUsers,
+  initialPagination,
   roles,
   properties,
 }: UserManagementProps) {
@@ -85,6 +94,24 @@ export function UserManagement({
   const [selectedHotelFilter, setSelectedHotelFilter] = useState<string>("ALL");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("ALL");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("ALL");
+
+  const [page, setPage] = useState(initialPagination?.page || 1);
+  const [limit, setLimit] = useState(initialPagination?.limit || DEFAULT_PAGE_SIZE);
+  const [total, setTotal] = useState(initialPagination?.total ?? initialUsers.length);
+  const [totalPages, setTotalPages] = useState(
+    initialPagination?.totalPages ?? Math.max(1, Math.ceil(initialUsers.length / DEFAULT_PAGE_SIZE))
+  );
+  const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  const prevFiltersRef = React.useRef({
+    search,
+    selectedHotelFilter,
+    selectedRoleFilter,
+    selectedStatusFilter,
+    page,
+    limit,
+  });
 
   const isSuperAdmin = session.role === RoleName.SUPER_ADMIN;
 
@@ -123,47 +150,106 @@ export function UserManagement({
   const [resetMustChangePw, setResetMustChangePw] = useState(true);
 
   // KPI Calculations
-  const totalUsers = users.length;
+  const totalUsers = total;
   const activeCount = users.filter((u) => u.status === "ACTIVE").length;
   const disabledCount = users.filter((u) => u.status === "DISABLED").length;
   const uniqueHotelsCount = useMemo(() => {
-    const hotelIds = new Set(users.map((u) => u.propertyId).filter(Boolean));
-    return hotelIds.size;
-  }, [users]);
+    return properties.length;
+  }, [properties]);
 
-  // Filtered Users
-  const filteredUsers = useMemo(() => {
-    return users.filter((user) => {
-      // Search filter
-      if (search.trim()) {
-        const q = search.toLowerCase().trim();
-        const matchesName = user.name.toLowerCase().includes(q);
-        const matchesEmail = user.email.toLowerCase().includes(q);
-        if (!matchesName && !matchesEmail) return false;
-      }
+  const fetchUsers = React.useCallback(
+    async (
+      q = search,
+      hotel = selectedHotelFilter,
+      role = selectedRoleFilter,
+      status = selectedStatusFilter,
+      p = page,
+      l = limit
+    ) => {
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-      // Hotel filter
-      if (selectedHotelFilter !== "ALL") {
-        if (selectedHotelFilter === "GLOBAL") {
-          if (user.propertyId !== null) return false;
-        } else if (user.propertyId !== selectedHotelFilter) {
-          return false;
+      setIsLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (q.trim()) params.set("search", q.trim());
+        if (hotel !== "ALL") params.set("propertyId", hotel);
+        if (role !== "ALL") params.set("role", role);
+        if (status !== "ALL") params.set("status", status);
+        params.set("page", String(p));
+        params.set("limit", String(l));
+
+        const res = await fetch(`/api/users?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error("Failed to load staff accounts");
+        const json = await res.json();
+        if (json.success) {
+          setUsers(json.data || json.users || []);
+          if (json.total !== undefined) setTotal(json.total);
+          if (json.totalPages !== undefined) setTotalPages(json.totalPages);
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        toast.error("Failed to load users");
+      } finally {
+        if (abortControllerRef.current === controller) {
+          setIsLoading(false);
         }
       }
+    },
+    [search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter, page, limit]
+  );
 
-      // Role filter
-      if (selectedRoleFilter !== "ALL" && user.role !== selectedRoleFilter) {
-        return false;
-      }
+  React.useEffect(() => {
+    const prev = prevFiltersRef.current;
+    const filtersChanged =
+      prev.search !== search ||
+      prev.selectedHotelFilter !== selectedHotelFilter ||
+      prev.selectedRoleFilter !== selectedRoleFilter ||
+      prev.selectedStatusFilter !== selectedStatusFilter;
+    const pageChanged = prev.page !== page;
+    const limitChanged = prev.limit !== limit;
 
-      // Status filter
-      if (selectedStatusFilter !== "ALL" && user.status !== selectedStatusFilter) {
-        return false;
-      }
+    if (!filtersChanged && !pageChanged && !limitChanged) {
+      return;
+    }
 
-      return true;
-    });
-  }, [users, search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter]);
+    if ((filtersChanged || limitChanged) && page !== 1) {
+      prevFiltersRef.current = {
+        search,
+        selectedHotelFilter,
+        selectedRoleFilter,
+        selectedStatusFilter,
+        page: 1,
+        limit,
+      };
+      setPage(1);
+      return;
+    }
+
+    prevFiltersRef.current = {
+      search,
+      selectedHotelFilter,
+      selectedRoleFilter,
+      selectedStatusFilter,
+      page,
+      limit,
+    };
+
+    const timer = setTimeout(() => {
+      fetchUsers(search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter, page, limit);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter, page, limit, fetchUsers]);
+
+  React.useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Open Create Dialog
   const handleOpenCreate = () => {
@@ -215,7 +301,7 @@ export function UserManagement({
 
       toast.success("User account created successfully.");
       setCreateDialogOpen(false);
-      setUsers((prev) => [json.data, ...prev]);
+      fetchUsers();
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create user");
@@ -380,7 +466,7 @@ export function UserManagement({
 
       toast.success(`User ${activeUser.name} deleted.`);
       setDeleteDialogOpen(false);
-      setUsers((prev) => prev.filter((u) => u.id !== activeUser.id));
+      fetchUsers();
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete user");
@@ -585,7 +671,7 @@ export function UserManagement({
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60 text-sm">
-              {filteredUsers.length === 0 ? (
+              {users.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center text-muted-foreground">
                     <Users className="size-8 mx-auto mb-2 text-muted-foreground/40" />
@@ -598,7 +684,7 @@ export function UserManagement({
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((user) => {
+                users.map((user) => {
                   const isUserSuperAdmin = user.role === RoleName.SUPER_ADMIN;
                   const isUserAdmin = user.role === RoleName.ADMIN;
                   const isSelf = user.id === session.sub;
@@ -786,6 +872,23 @@ export function UserManagement({
             </tbody>
           </table>
         </div>
+        <PaginationFooter
+          page={page}
+          limit={limit}
+          total={total}
+          totalPages={totalPages}
+          isLoading={isLoading}
+          onPageChange={(newPage) => {
+            setPage(newPage);
+            fetchUsers(search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter, newPage, limit);
+          }}
+          onLimitChange={(newLimit) => {
+            setLimit(newLimit);
+            setPage(1);
+            fetchUsers(search, selectedHotelFilter, selectedRoleFilter, selectedStatusFilter, 1, newLimit);
+          }}
+          syncUrl={true}
+        />
       </Card>
 
       {/* CREATE USER DIALOG */}
