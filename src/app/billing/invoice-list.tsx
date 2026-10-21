@@ -130,7 +130,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
     }
   }, [])
 
-  const totalOutstandingNum = parseFloat(data.summary.totalOutstanding || "0")
+  const totalOutstandingNum = parseFloat(data?.summary?.totalOutstanding || "0")
 
   return (
     <div className="space-y-8">
@@ -145,19 +145,19 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
         <div className="flex items-center gap-6 flex-wrap">
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Invoiced:</span>
-            <MoneyText value={data.summary.totalInvoiced} className="font-bold text-foreground text-sm font-mono tabular-nums" />
+            <MoneyText value={data?.summary?.totalInvoiced || "0.00"} className="font-bold text-foreground text-sm font-mono tabular-nums" />
           </div>
           <span className="text-muted-foreground/30">•</span>
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground">Collected:</span>
-            <MoneyText value={data.summary.totalCollected} className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono tabular-nums" />
+            <MoneyText value={data?.summary?.totalCollected || "0.00"} className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono tabular-nums" />
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">Outstanding:</span>
           <MoneyText
-            value={data.summary.totalOutstanding}
+            value={data?.summary?.totalOutstanding || "0.00"}
             className={cn(
               "text-sm font-bold font-mono tabular-nums",
               totalOutstandingNum > 0

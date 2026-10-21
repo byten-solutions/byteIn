@@ -40,7 +40,12 @@ export default async function ReservationDetailPage({
     notFound()
   }
 
-  const invoice = await BillingService.getInvoiceByReservationId(reservation.id)
+  let invoice = null
+  try {
+    invoice = await BillingService.getInvoiceByReservationId(reservation.id)
+  } catch (err) {
+    console.error("Failed to load invoice for reservation:", err)
+  }
   const guestFullName = `${reservation.customer.firstName} ${reservation.customer.lastName || ""}`.trim()
 
   const getNights = (arrival: Date, departure: Date) => {

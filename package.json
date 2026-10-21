@@ -4,8 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
@@ -15,7 +16,8 @@
     "validate": "npm run typecheck && npm run lint && npm test",
     "shots": "node scripts/capture-screenshots.mjs",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
-    "db:seed:realworld": "node --experimental-strip-types prisma/seed-realworld.ts"
+    "db:seed:realworld": "node --experimental-strip-types prisma/seed-realworld.ts",
+    "db:seed:compact": "node --experimental-strip-types prisma/seed-compact.ts"
   },
   "prisma": {
     "seed": "node --experimental-strip-types prisma/seed.ts"

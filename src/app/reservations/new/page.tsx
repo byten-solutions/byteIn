@@ -15,7 +15,12 @@ export default async function NewReservationPage(props: {
   const searchParams = props.searchParams ? await props.searchParams : undefined
   const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
 
-  const categories = await RoomCategoryService.getCategories(scope ?? undefined)
+  let categories: Awaited<ReturnType<typeof RoomCategoryService.getCategories>> = []
+  try {
+    categories = await RoomCategoryService.getCategories(scope ?? undefined)
+  } catch (err) {
+    console.error("Failed to load categories for new reservation:", err)
+  }
   const serializedCategories = categories.map((c) => ({
     id: c.id,
     name: c.name,

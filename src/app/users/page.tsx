@@ -40,34 +40,56 @@ export default async function UsersPage(props: {
   const role = roleParam && Object.values(RoleName).includes(roleParam) ? roleParam : undefined;
 
   // Fetch users within caller's scope
-  const result = await UserService.listUsersPage(session, {
-    propertyId: searchParams?.propertyId,
-    role,
-    status: searchParams?.status,
-    search: searchParams?.search,
+  let result: Awaited<ReturnType<typeof UserService.listUsersPage>> = {
+    users: [],
+    total: 0,
     page: isNaN(page) ? 1 : page,
     limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
-  });
+    totalPages: 1,
+  };
+
+  try {
+    result = await UserService.listUsersPage(session, {
+      propertyId: searchParams?.propertyId,
+      role,
+      status: searchParams?.status,
+      search: searchParams?.search,
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+    });
+  } catch (err) {
+    console.error("Failed to list users in UsersPage:", err);
+  }
 
   // Fetch assignable roles
-  const allRoles = await prisma.role.findMany({
-    orderBy: { name: "asc" },
-  });
+  let allRoles: Awaited<ReturnType<typeof prisma.role.findMany>> = [];
+  try {
+    allRoles = await prisma.role.findMany({
+      orderBy: { name: "asc" },
+    });
+  } catch (err) {
+    console.error("Failed to fetch roles:", err);
+  }
   const assignableRoles =
     session.role === RoleName.ADMIN
       ? allRoles.filter((r) => r.name === RoleName.RECEPTIONIST)
       : allRoles;
 
   // Fetch properties
-  const properties =
-    session.role === RoleName.SUPER_ADMIN
-      ? await prisma.property.findMany({
-          select: { id: true, name: true, status: true },
-          orderBy: { name: "asc" },
-        })
-      : session.property
-      ? [session.property]
-      : [];
+  let properties: { id: string; name: string; status: string }[] = [];
+  try {
+    properties =
+      session.role === RoleName.SUPER_ADMIN
+        ? await prisma.property.findMany({
+            select: { id: true, name: true, status: true },
+            orderBy: { name: "asc" },
+          })
+        : session.property
+        ? [{ id: session.property.id, name: session.property.name, status: "ACTIVE" }]
+        : [];
+  } catch (err) {
+    console.error("Failed to fetch properties:", err);
+  }
 
   const serializedUsers = result.users.map((u) => ({
     id: u.id,

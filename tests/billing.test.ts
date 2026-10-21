@@ -646,7 +646,9 @@ describe("Phase 6: Billing & Payments Tests", () => {
     it("should atomically provision an itemized draft invoice upon reservation creation when autoCreateInvoice is true", async () => {
       // Create new reservation with autoCreateInvoice = true (3 nights in Room 301 @ $150 = $450)
       const todayIso = getHotelTodayDate();
-      const pastArrival = new Date(Date.now() - 86400000 * 3).toISOString().slice(0, 10);
+      const pastArrivalDate = new Date(`${todayIso}T00:00:00.000Z`);
+      pastArrivalDate.setUTCDate(pastArrivalDate.getUTCDate() - 3);
+      const pastArrival = pastArrivalDate.toISOString().slice(0, 10);
       const res = await ReservationService.createReservation(
         {
           customerId: testCustomerId,
