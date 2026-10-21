@@ -511,7 +511,7 @@ export class CheckInOutService {
   /**
    * Retrieves today's arrivals (CONFIRMED allocations scheduled for today) in hotel operating timezone
    */
-  static async getDailyArrivals(targetDate?: Date, propertyId?: string) {
+  static async getDailyArrivals(targetDate?: Date, propertyId?: string, limit?: number) {
     const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
@@ -530,13 +530,14 @@ export class CheckInOutService {
         roomCategory: true,
       },
       orderBy: [{ room: { roomNo: "asc" } }],
+      ...(limit !== undefined ? { take: limit } : {}),
     });
   }
 
   /**
    * Retrieves today's departures (CHECKED_IN allocations scheduled for checkout today) in hotel operating timezone
    */
-  static async getDailyDepartures(targetDate?: Date, propertyId?: string) {
+  static async getDailyDepartures(targetDate?: Date, propertyId?: string, limit?: number) {
     const startOfDay = getHotelTodayDateUtc(targetDate);
 
     return prisma.reservationRoom.findMany({
@@ -555,6 +556,7 @@ export class CheckInOutService {
         roomCategory: true,
       },
       orderBy: [{ room: { roomNo: "asc" } }],
+      ...(limit !== undefined ? { take: limit } : {}),
     });
   }
 }

@@ -42,7 +42,9 @@ export default async function RoomsPage(props: {
   const [summary, categories, properties] = await Promise.all([
     RoomService.getRoomsSummary(effectivePropertyId),
     RoomCategoryService.getCategories(effectivePropertyId),
-    PropertyService.getProperties(),
+    session.role === RoleName.SUPER_ADMIN || !session.propertyId
+      ? PropertyService.getProperties()
+      : PropertyService.getPropertyById(session.propertyId).then((p) => (p ? [p] : [])),
   ]);
 
   // No default building or floor filters when opening rooms section!
@@ -61,7 +63,7 @@ export default async function RoomsPage(props: {
     status: initialStatus as RoomStatus | undefined,
     search: searchParams?.search,
     page: isNaN(page) ? 1 : page,
-    limit: 50,
+    limit: 25,
   });
 
   // Serialize Decimal objects for client component props

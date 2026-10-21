@@ -291,7 +291,7 @@ export function RoomManager({
         if (stat && stat !== "ALL") params.set("status", stat);
         if (q && q.trim()) params.set("search", q.trim());
         params.set("page", targetPage.toString());
-        params.set("limit", "50");
+        params.set("limit", "25");
 
         const res = await fetch(`/api/rooms?${params.toString()}`, {
           signal: controller.signal,
@@ -1068,10 +1068,11 @@ export function RoomManager({
       )}
 
       {/* Room Detail Slide-Over Side Panel */}
-      <Sheet
-        open={selectedRoomDetail !== null}
-        onOpenChange={(open) => !open && setSelectedRoomDetail(null)}
-      >
+      {selectedRoomDetail && (
+        <Sheet
+          open={selectedRoomDetail !== null}
+          onOpenChange={(open) => !open && setSelectedRoomDetail(null)}
+        >
         <SheetContent side="right" className="w-full sm:max-w-md p-6 overflow-y-auto">
           {selectedRoomDetail && (
             <>
@@ -1197,12 +1198,14 @@ export function RoomManager({
           )}
         </SheetContent>
       </Sheet>
+      )}
 
       {/* Operational Status Change Modal */}
-      <Dialog
-        open={statusModalRoom !== null}
-        onOpenChange={(open) => !open && setStatusModalRoom(null)}
-      >
+      {statusModalRoom && (
+        <Dialog
+          open={statusModalRoom !== null}
+          onOpenChange={(open) => !open && setStatusModalRoom(null)}
+        >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Update Room Status — Room {statusModalRoom?.roomNo}</DialogTitle>
@@ -1299,21 +1302,25 @@ export function RoomManager({
           )}
         </DialogContent>
       </Dialog>
+      )}
 
       {/* Delete Confirmation Dialog */}
-      <ConfirmDialog
-        open={roomToDelete !== null}
-        onOpenChange={(open) => !open && setRoomToDelete(null)}
-        title="Delete Room"
-        description={`Are you sure you want to delete Room ${roomToDelete?.roomNo}? This action cannot be undone.`}
-        confirmText="Delete Room"
-        variant="destructive"
-        isPending={isDeleting}
-        onConfirm={handleDeleteRoom}
-      />
+      {roomToDelete && (
+        <ConfirmDialog
+          open={roomToDelete !== null}
+          onOpenChange={(open) => !open && setRoomToDelete(null)}
+          title="Delete Room"
+          description={`Are you sure you want to delete Room ${roomToDelete?.roomNo}? This action cannot be undone.`}
+          confirmText="Delete Room"
+          variant="destructive"
+          isPending={isDeleting}
+          onConfirm={handleDeleteRoom}
+        />
+      )}
 
       {/* Add / Edit Room Modal */}
-      <Dialog open={isRoomModalOpen} onOpenChange={setIsRoomModalOpen}>
+      {isRoomModalOpen && (
+        <Dialog open={isRoomModalOpen} onOpenChange={setIsRoomModalOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
@@ -1494,6 +1501,7 @@ export function RoomManager({
           </form>
         </DialogContent>
       </Dialog>
+      )}
     </div>
   );
 }
