@@ -107,35 +107,117 @@ export const availabilityGridSchema = z
     }
   )
 
-export const collectionsReportSchema = z.object({
-  date: z
-    .string()
-    .trim()
-    .refine(isValidISODateString, {
-      message: "date must be a valid calendar date in YYYY-MM-DD format",
-    })
-    .optional(),
-  startDate: z
-    .string()
-    .trim()
-    .refine(isValidISODateString, {
-      message: "startDate must be a valid calendar date in YYYY-MM-DD format",
-    })
-    .optional(),
-  endDate: z
-    .string()
-    .trim()
-    .refine(isValidISODateString, {
-      message: "endDate must be a valid calendar date in YYYY-MM-DD format",
-    })
-    .optional(),
-  staffUserId: z.string().trim().min(1).optional(),
-  propertyId: z.string().trim().min(1).optional(),
-})
+export const collectionsReportSchema = z
+  .object({
+    date: z
+      .string()
+      .trim()
+      .refine(isValidISODateString, {
+        message: "date must be a valid calendar date in YYYY-MM-DD format",
+      })
+      .optional(),
+    startDate: z
+      .string()
+      .trim()
+      .refine(isValidISODateString, {
+        message: "startDate must be a valid calendar date in YYYY-MM-DD format",
+      })
+      .optional(),
+    endDate: z
+      .string()
+      .trim()
+      .refine(isValidISODateString, {
+        message: "endDate must be a valid calendar date in YYYY-MM-DD format",
+      })
+      .optional(),
+    staffUserId: z.string().trim().min(1).optional(),
+    propertyId: z.string().trim().min(1).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        return e >= s
+      }
+      return true
+    },
+    {
+      message: "endDate must be on or after startDate",
+      path: ["endDate"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
+        return diffDays <= 366
+      }
+      return true
+    },
+    {
+      message: "Date range cannot exceed 366 days",
+      path: ["endDate"],
+    }
+  )
 
 export const receivablesReportSchema = z.object({
   propertyId: z.string().trim().min(1).optional(),
   filter: z.enum(["all", "in_house", "future", "departed"]).optional().default("all"),
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 })
+
+export const discountsReportSchema = z
+  .object({
+    startDate: z
+      .string()
+      .trim()
+      .refine(isValidISODateString, {
+        message: "startDate must be a valid calendar date in YYYY-MM-DD format",
+      })
+      .optional(),
+    endDate: z
+      .string()
+      .trim()
+      .refine(isValidISODateString, {
+        message: "endDate must be a valid calendar date in YYYY-MM-DD format",
+      })
+      .optional(),
+    propertyId: z.string().trim().min(1).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        return e >= s
+      }
+      return true
+    },
+    {
+      message: "endDate must be on or after startDate",
+      path: ["endDate"],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
+        const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
+        const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
+        return diffDays <= 366
+      }
+      return true
+    },
+    {
+      message: "Date range cannot exceed 366 days",
+      path: ["endDate"],
+    }
+  )

@@ -36,6 +36,18 @@ export interface CategoryPerformanceDTO {
   revpar: string
 }
 
+export interface PropertyBreakdownDTO {
+  propertyId: string
+  propertyName: string
+  totalRooms?: number
+  occupiedRoomNights?: number
+  occupancyRate?: number
+  totalRevenue?: string
+  totalInvoiced?: string
+  totalCollected?: string
+  totalOutstanding?: string
+}
+
 export interface OccupancyReportDTO {
   startDate: string
   endDate: string
@@ -52,6 +64,7 @@ export interface OccupancyReportDTO {
   totalOtbRevenue?: string
   dailyBreakdown: DailyOccupancyDTO[]
   categoryBreakdown: CategoryPerformanceDTO[]
+  propertyBreakdown?: PropertyBreakdownDTO[]
 }
 
 // ----------------------------------------------------------------------------
@@ -93,6 +106,7 @@ export interface RevenueReportDTO {
   paymentMethodBreakdown: PaymentMethodBreakdownDTO[]
   chargeTypeBreakdown: ChargeTypeBreakdownDTO[]
   dailyBreakdown: DailyRevenueDTO[]
+  propertyBreakdown?: PropertyBreakdownDTO[]
 }
 
 // ----------------------------------------------------------------------------
@@ -250,6 +264,12 @@ export interface ShiftCollectionsReportDTO {
   methodBreakdown: PaymentMethodBreakdownDTO[]
   staffBreakdown: StaffCollectionBreakdownDTO[]
   transactions: PaymentTransactionDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -346,4 +366,10 @@ export interface DiscountsReportDTO {
   }
   invoiceDiscounts: InvoiceDiscountItemDTO[]
   rateOverrides: RateOverrideItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }

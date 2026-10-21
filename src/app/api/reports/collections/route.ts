@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
       endDate: searchParams.get("endDate") || undefined,
       staffUserId: searchParams.get("staffUserId") || undefined,
       propertyId: searchParams.get("propertyId") || undefined,
+      page: searchParams.get("page") || undefined,
+      limit: searchParams.get("limit") || undefined,
     })
 
     const effectivePropertyId =
@@ -28,7 +30,8 @@ export async function GET(req: NextRequest) {
       query.startDate,
       query.endDate,
       query.staffUserId,
-      effectivePropertyId
+      effectivePropertyId,
+      { page: query.page, limit: query.limit }
     )
 
     return NextResponse.json({ success: true, data: report })
