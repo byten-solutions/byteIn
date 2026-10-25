@@ -107,43 +107,42 @@ function renderStatValue(value: React.ReactNode) {
 function AnimatedStatValue({ value }: { value: React.ReactNode }) {
   const parsed = React.useMemo(() => parseStatNumber(value), [value])
   const [displayVal, setDisplayVal] = React.useState<number | null>(null)
-  const prevTargetRef = React.useRef<number | null>(null)
+  const currentValRef = React.useRef<number>(0)
 
   const target = parsed?.target
 
   React.useEffect(() => {
     if (target === undefined) return
 
-    // Accessibility check: skip animation if user prefers reduced motion
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-
-    if (prefersReducedMotion) {
-      prevTargetRef.current = target
-      return
-    }
-
-    const startVal = prevTargetRef.current ?? 0
+    // On initial mount/reload, currentValRef is 0 so animation counts up from 0 to target.
+    // If target updates while mounted, animate from the current animated number.
+    const startVal = currentValRef.current
     const endVal = target
-    prevTargetRef.current = endVal
 
-    const duration = 800 // 800ms snappy animation
+    const duration = 1000 // 1000ms smooth count-up
     let startTimestamp: number | null = null
     let rafId: number
 
     const step = (timestamp: number) => {
-      if (!startTimestamp) startTimestamp = timestamp
+      if (!startTimestamp) {
+        startTimestamp = timestamp
+        setDisplayVal(startVal)
+        rafId = requestAnimationFrame(step)
+        return
+      }
+
       const elapsed = timestamp - startTimestamp
       const progress = Math.min(1, elapsed / duration)
-      // Ease out expo: snappy deceleration curve
-      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress)
+      // Ease out cubic: visibly increments numbers cleanly
+      const eased = 1 - Math.pow(1 - progress, 3)
       const current = startVal + (endVal - startVal) * eased
 
+      currentValRef.current = current
       if (progress < 1) {
         setDisplayVal(current)
         rafId = requestAnimationFrame(step)
       } else {
+        currentValRef.current = endVal
         setDisplayVal(endVal)
       }
     }
@@ -152,7 +151,7 @@ function AnimatedStatValue({ value }: { value: React.ReactNode }) {
     return () => cancelAnimationFrame(rafId)
   }, [target])
 
-  // SSR or before mount / non-numeric fallback / reduced motion: render the static parsed value
+  // SSR before hydration or non-numeric fallback: render the static parsed value
   if (!parsed || displayVal === null) {
     return renderStatValue(value)
   }
