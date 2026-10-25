@@ -15,8 +15,8 @@ import {
   X,
   FileText,
   Eye,
-  Loader2,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useInfiniteList } from "@/lib/use-infinite-list";
 import { RoomStatus, RoleName } from "@prisma/client";
 import { toast } from "sonner";
@@ -166,6 +166,28 @@ const STATUS_FILTER_ITEMS: {
   },
 ];
 
+function RoomCardSkeleton() {
+  return (
+    <div className="flex flex-col justify-between rounded-lg border border-border/80 bg-card p-3 shadow-2xs h-32 animate-pulse">
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-5 w-14 rounded" />
+          <Skeleton className="size-4 rounded-full" />
+        </div>
+        <Skeleton className="h-3 w-20 rounded" />
+        <div className="flex items-center gap-2 pt-1">
+          <Skeleton className="size-2 rounded-full" />
+          <Skeleton className="h-3 w-14 rounded" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between pt-2 border-t border-border/40">
+        <Skeleton className="h-3 w-8 rounded" />
+        <Skeleton className="h-4 w-16 rounded" />
+      </div>
+    </div>
+  );
+}
+
 export function RoomManager({
   initialRooms,
   initialPagination,
@@ -215,10 +237,12 @@ export function RoomManager({
     }
   >({
     endpoint: "/api/rooms",
-    limit: 24,
+    limit: 48,
     initialItems: initialRooms,
     initialNextCursor: initialNextCursor ?? null,
     initialTotal: initialPagination?.total,
+    thresholdRatio: 0.75,
+    rootMargin: "800px",
     filters: {
       propertyId: propertyFilter,
       buildingId: buildingFilter,
@@ -938,20 +962,29 @@ export function RoomManager({
               ))}
             </div>
           ))}
+
+          {/* Skeleton cards for awaiting content */}
+          {isLoadingMore && (
+            <div className="space-y-2.5 pt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider animate-pulse">
+                  Loading more rooms...
+                </span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <RoomCardSkeleton key={`skeleton-${i}`} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Infinite Scroll Sentinel and Load More Trigger */}
       <div className="py-6 flex flex-col items-center justify-center gap-3">
-        {/* Sentinel element observed ~400px before end of scroll */}
-        <div ref={sentinelRef} className="h-2 w-full pointer-events-none" />
-
-        {isLoadingMore && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse">
-            <Loader2 className="size-4 animate-spin text-primary" />
-            <span>Loading more rooms...</span>
-          </div>
-        )}
+        {/* Sentinel element observed ~800px before end of scroll */}
+        <div ref={sentinelRef} className="h-4 w-full pointer-events-none" />
 
         {hasMore && !isLoadingMore && (
           <Button

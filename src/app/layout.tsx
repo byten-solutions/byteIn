@@ -18,6 +18,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
+      { url: "/logo.svg", type: "image/svg+xml" },
       { url: "/logo.png", type: "image/png" },
     ],
     shortcut: "/favicon.ico",
@@ -27,12 +28,16 @@ export const metadata: Metadata = {
 
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
+import { AppShell } from "@/components/app-shell"
+import { getSession } from "@/lib/auth-guard"
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await getSession()
+
   return (
     <html
       lang="en"
@@ -42,7 +47,9 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <TooltipProvider>
-            {children}
+            <AppShell session={session}>
+              {children}
+            </AppShell>
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>

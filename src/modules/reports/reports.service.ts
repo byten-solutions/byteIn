@@ -67,15 +67,9 @@ export class ReportsService {
     const todayUtcStr = getHotelTodayDateUtc().toISOString().split("T")[0]!
     const propertyFilterSql = propertyId ? Prisma.sql`AND rm.property_id = ${propertyId}` : Prisma.empty
 
-    // 1. Total physical rooms
-    const roomCountRows = await prisma.$queryRaw<Array<{ count: number }>>`
-      SELECT COUNT(*)::int as count FROM rooms rm WHERE 1=1 ${propertyFilterSql};
-    `
-    const totalRooms = roomCountRows[0]?.count ?? 0
-    const totalAvailableRoomNights = totalRooms * totalDays
-
-    // 2. Daily breakdown using CTE + lateral generate_series
+    // 1. Single consolidated query: Total physical rooms + daily breakdown via CTE
     const dayRows = await prisma.$queryRaw<Array<{
+      total_rooms: number
       day: Date
       day_of_week: string
       occupied_rooms: number
@@ -83,7 +77,10 @@ export class ReportsService {
       otb_rooms: number
       otb_revenue: Prisma.Decimal
     }>>`
-      WITH daily_alloc AS (
+      WITH total_rooms_cte AS (
+        SELECT COUNT(*)::int as count FROM rooms rm WHERE 1=1 ${propertyFilterSql}
+      ),
+      daily_alloc AS (
         SELECT
           d.dt::date as day,
           COUNT(DISTINCT rr.room_id) FILTER (WHERE (
@@ -109,6 +106,7 @@ export class ReportsService {
         GROUP BY d.dt::date
       )
       SELECT
+        (SELECT count FROM total_rooms_cte)::int as total_rooms,
         cal.dt::date as day,
         to_char(cal.dt::date, 'FMDay') as day_of_week,
         COALESCE(da.occupied_rooms, 0)::int as occupied_rooms,
@@ -119,6 +117,9 @@ export class ReportsService {
       LEFT JOIN daily_alloc da ON da.day = cal.dt::date
       ORDER BY cal.dt::date ASC;
     `
+
+    const totalRooms = dayRows[0]?.total_rooms ?? 0
+    const totalAvailableRoomNights = totalRooms * totalDays
 
     let totalOccupiedRoomNights = 0
     let totalRoomRevenueDec = new Prisma.Decimal(0)
@@ -316,134 +317,99 @@ export class ReportsService {
     const invJoinPropertySql = propertyId ? Prisma.sql`AND inv.property_id = ${propertyId}` : Prisma.empty
     const payPropertySql = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty
 
-    // 1. Invoices aggregate
-    const invAgg = await prisma.$queryRaw<Array<{
-      invoice_count: number
-      total_invoiced: Prisma.Decimal
-      tax_total: Prisma.Decimal
-      discount_total: Prisma.Decimal
+    // Consolidated single-query revenue report
+    const singleRows = await prisma.$queryRaw<Array<{
+      inv_agg: {
+        invoice_count: number
+        total_invoiced: number | string
+        tax_total: number | string
+        discount_total: number | string
+      } | null
+      pay_agg: {
+        payment_count: number
+        total_collected: number | string
+      } | null
+      total_outstanding: number | string
+      charge_breakdown: Array<{
+        item_type: string
+        count: number
+        amount: number | string
+      }> | null
+      method_breakdown: Array<{
+        method: string
+        count: number
+        amount: number | string
+      }> | null
+      daily_breakdown: Array<{
+        date: string
+        invoicedAmount: number | string
+        collectedAmount: number | string
+      }> | null
+      prop_breakdown: Array<{
+        property_id: string
+        property_name: string
+        total_invoiced: number | string
+        total_collected: number | string
+      }> | null
     }>>`
-      SELECT
-        COUNT(*)::int as invoice_count,
-        COALESCE(SUM(grand_total), 0) as total_invoiced,
-        COALESCE(SUM(tax_total), 0) as tax_total,
-        COALESCE(SUM(discount_total), 0) as discount_total
-      FROM invoices
-      WHERE created_at >= ${startObj} AND created_at <= ${endObj}
-        AND status <> 'VOID'
-        ${invPropertySql};
-    `
-    const totalInvoicedDec = new Prisma.Decimal(invAgg[0]?.total_invoiced ?? 0)
-    const taxTotalDec = new Prisma.Decimal(invAgg[0]?.tax_total ?? 0)
-    const discountTotalDec = new Prisma.Decimal(invAgg[0]?.discount_total ?? 0)
-    const invoiceCount = invAgg[0]?.invoice_count ?? 0
-
-    // 2. Payments aggregate
-    const payAgg = await prisma.$queryRaw<Array<{
-      payment_count: number
-      total_collected: Prisma.Decimal
-    }>>`
-      SELECT
-        COUNT(*)::int as payment_count,
-        COALESCE(SUM(amount), 0) as total_collected
-      FROM payments
-      WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-        AND status = 'RECORDED'
-        ${payPropertySql};
-    `
-    const totalCollectedDec = new Prisma.Decimal(payAgg[0]?.total_collected ?? 0)
-    const paymentCount = payAgg[0]?.payment_count ?? 0
-
-    // 3. Outstanding balance on invoices in period (via LATERAL join on unpaid candidate invoices)
-    const outAgg = await prisma.$queryRaw<Array<{ total_outstanding: Prisma.Decimal }>>`
-      SELECT COALESCE(SUM(
-        GREATEST(0, inv.grand_total - COALESCE(p.paid, 0))
-      ), 0) as total_outstanding
-      FROM invoices inv
-      LEFT JOIN LATERAL (
-        SELECT SUM(amount) as paid
+      WITH inv_summary AS (
+        SELECT
+          COUNT(*)::int as invoice_count,
+          COALESCE(SUM(grand_total), 0) as total_invoiced,
+          COALESCE(SUM(tax_total), 0) as tax_total,
+          COALESCE(SUM(discount_total), 0) as discount_total
+        FROM invoices
+        WHERE created_at >= ${startObj} AND created_at <= ${endObj}
+          AND status <> 'VOID'
+          ${invPropertySql}
+      ),
+      pay_summary AS (
+        SELECT
+          COUNT(*)::int as payment_count,
+          COALESCE(SUM(amount), 0) as total_collected
         FROM payments
-        WHERE invoice_id = inv.id AND status = 'RECORDED'
-      ) p ON true
-      WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
-        AND inv.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
-        ${invJoinPropertySql};
-    `
-    const totalOutstandingDec = new Prisma.Decimal(outAgg[0]?.total_outstanding ?? 0)
-
-    // 4. Charge types breakdown
-    const chargeRows = await prisma.$queryRaw<Array<{
-      item_type: string
-      count: number
-      amount: Prisma.Decimal
-    }>>`
-      SELECT
-        ii.item_type::text,
-        COUNT(*)::int as count,
-        COALESCE(SUM(ii.line_total), 0) as amount
-      FROM invoice_items ii
-      JOIN invoices inv ON inv.id = ii.invoice_id
-      WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
-        AND inv.status <> 'VOID'
-        ${invJoinPropertySql}
-      GROUP BY ii.item_type;
-    `
-    let roomChargesDec = new Prisma.Decimal(0)
-    let extraChargesDec = new Prisma.Decimal(0)
-    const chargeTypeBreakdown: ChargeTypeBreakdownDTO[] = []
-    const totalSubtotal = chargeRows.reduce((sum, r) => sum.add(new Prisma.Decimal(r.amount)), new Prisma.Decimal(0))
-
-    for (const r of chargeRows) {
-      const amt = new Prisma.Decimal(r.amount)
-      if (r.item_type === InvoiceItemType.ROOM_CHARGE) {
-        roomChargesDec = roomChargesDec.add(amt)
-      } else {
-        extraChargesDec = extraChargesDec.add(amt)
-      }
-      const pct = totalSubtotal.gt(0) ? amt.div(totalSubtotal).mul(100).toNumber() : 0
-      chargeTypeBreakdown.push({
-        itemType: r.item_type,
-        amount: amt.toFixed(2),
-        count: r.count,
-        percentage: Math.round(pct * 10) / 10,
-      })
-    }
-
-    // 5. Payment method breakdown
-    const methodRows = await prisma.$queryRaw<Array<{
-      payment_method: string
-      count: number
-      amount: Prisma.Decimal
-    }>>`
-      SELECT
-        payment_method::text,
-        COUNT(*)::int as count,
-        COALESCE(SUM(amount), 0) as amount
-      FROM payments
-      WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-        AND status = 'RECORDED'
-        ${payPropertySql}
-      GROUP BY payment_method;
-    `
-    const paymentMethodBreakdown: PaymentMethodBreakdownDTO[] = []
-    for (const m of methodRows) {
-      const amt = new Prisma.Decimal(m.amount)
-      const pct = totalCollectedDec.gt(0) ? amt.div(totalCollectedDec).mul(100).toNumber() : 0
-      paymentMethodBreakdown.push({
-        method: m.payment_method,
-        amount: amt.toFixed(2),
-        count: m.count,
-        percentage: Math.round(pct * 10) / 10,
-      })
-    }
-
-    // 6. Daily revenue breakdown
-    const dailyRows = await prisma.$queryRaw<Array<{
-      day_str: string
-      invoiced: Prisma.Decimal
-      collected: Prisma.Decimal
-    }>>`
-      WITH daily_inv AS (
+        WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
+          AND status = 'RECORDED'
+          ${payPropertySql}
+      ),
+      out_summary AS (
+        SELECT COALESCE(SUM(
+          GREATEST(0, inv.grand_total - COALESCE(p.paid, 0))
+        ), 0) as total_outstanding
+        FROM invoices inv
+        LEFT JOIN LATERAL (
+          SELECT SUM(amount) as paid
+          FROM payments
+          WHERE invoice_id = inv.id AND status = 'RECORDED'
+        ) p ON true
+        WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
+          AND inv.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+          ${invJoinPropertySql}
+      ),
+      charge_summary AS (
+        SELECT
+          ii.item_type::text as item_type,
+          COUNT(*)::int as count,
+          COALESCE(SUM(ii.line_total), 0) as amount
+        FROM invoice_items ii
+        JOIN invoices inv ON inv.id = ii.invoice_id
+        WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
+          AND inv.status <> 'VOID'
+          ${invJoinPropertySql}
+        GROUP BY ii.item_type
+      ),
+      method_summary AS (
+        SELECT
+          payment_method::text as method,
+          COUNT(*)::int as count,
+          COALESCE(SUM(amount), 0) as amount
+        FROM payments
+        WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
+          AND status = 'RECORDED'
+          ${payPropertySql}
+        GROUP BY payment_method
+      ),
+      daily_inv AS (
         SELECT
           to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day_key,
           SUM(grand_total) as invoiced
@@ -462,54 +428,105 @@ export class ReportsService {
           AND status = 'RECORDED'
           ${payPropertySql}
         GROUP BY 1
+      ),
+      daily_summary AS (
+        SELECT
+          to_char(d.dt::date, 'YYYY-MM-DD') as date,
+          COALESCE(di.invoiced, 0) as "invoicedAmount",
+          COALESCE(dp.collected, 0) as "collectedAmount"
+        FROM generate_series(${startDate}::date, ${endDate}::date, '1 day'::interval) d(dt)
+        LEFT JOIN daily_inv di ON di.day_key = to_char(d.dt::date, 'YYYY-MM-DD')
+        LEFT JOIN daily_pay dp ON dp.day_key = to_char(d.dt::date, 'YYYY-MM-DD')
+        ORDER BY d.dt::date ASC
       )
       SELECT
-        to_char(d.dt::date, 'YYYY-MM-DD') as day_str,
-        COALESCE(di.invoiced, 0) as invoiced,
-        COALESCE(dp.collected, 0) as collected
-      FROM generate_series(${startDate}::date, ${endDate}::date, '1 day'::interval) d(dt)
-      LEFT JOIN daily_inv di ON di.day_key = to_char(d.dt::date, 'YYYY-MM-DD')
-      LEFT JOIN daily_pay dp ON dp.day_key = to_char(d.dt::date, 'YYYY-MM-DD')
-      ORDER BY d.dt::date ASC;
+        (SELECT row_to_json(inv_summary) FROM inv_summary) as inv_agg,
+        (SELECT row_to_json(pay_summary) FROM pay_summary) as pay_agg,
+        (SELECT total_outstanding FROM out_summary) as total_outstanding,
+        COALESCE((SELECT json_agg(charge_summary) FROM charge_summary), '[]'::json) as charge_breakdown,
+        COALESCE((SELECT json_agg(method_summary) FROM method_summary), '[]'::json) as method_breakdown,
+        COALESCE((SELECT json_agg(daily_summary) FROM daily_summary), '[]'::json) as daily_breakdown
+        ${!propertyId ? Prisma.sql`, (
+          SELECT json_agg(prop_agg) FROM (
+            SELECT
+              p.id as property_id,
+              p.name as property_name,
+              COALESCE(inv.total_invoiced, 0) as total_invoiced,
+              COALESCE(pay.total_collected, 0) as total_collected
+            FROM properties p
+            LEFT JOIN (
+              SELECT property_id, SUM(grand_total) as total_invoiced
+              FROM invoices
+              WHERE created_at >= ${startObj} AND created_at <= ${endObj}
+                AND status <> 'VOID'
+              GROUP BY property_id
+            ) inv ON inv.property_id = p.id
+            LEFT JOIN (
+              SELECT property_id, SUM(amount) as total_collected
+              FROM payments
+              WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
+                AND status = 'RECORDED'
+              GROUP BY property_id
+            ) pay ON pay.property_id = p.id
+            ORDER BY p.name ASC
+          ) prop_agg
+        ) as prop_breakdown` : Prisma.sql`, NULL::json as prop_breakdown`};
     `
-    const dailyBreakdown: DailyRevenueDTO[] = dailyRows.map((dr) => ({
-      date: dr.day_str,
-      invoicedAmount: new Prisma.Decimal(dr.invoiced).toFixed(2),
-      collectedAmount: new Prisma.Decimal(dr.collected).toFixed(2),
+
+    const row = singleRows[0]
+    const totalInvoicedDec = new Prisma.Decimal(row?.inv_agg?.total_invoiced ?? 0)
+    const taxTotalDec = new Prisma.Decimal(row?.inv_agg?.tax_total ?? 0)
+    const discountTotalDec = new Prisma.Decimal(row?.inv_agg?.discount_total ?? 0)
+    const invoiceCount = row?.inv_agg?.invoice_count ?? 0
+
+    const totalCollectedDec = new Prisma.Decimal(row?.pay_agg?.total_collected ?? 0)
+    const paymentCount = row?.pay_agg?.payment_count ?? 0
+    const totalOutstandingDec = new Prisma.Decimal(row?.total_outstanding ?? 0)
+
+    let roomChargesDec = new Prisma.Decimal(0)
+    let extraChargesDec = new Prisma.Decimal(0)
+    const chargeTypeBreakdown: ChargeTypeBreakdownDTO[] = []
+    const chargeRows = row?.charge_breakdown || []
+    const totalSubtotal = chargeRows.reduce((sum, r) => sum.add(new Prisma.Decimal(r.amount)), new Prisma.Decimal(0))
+
+    for (const r of chargeRows) {
+      const amt = new Prisma.Decimal(r.amount)
+      if (r.item_type === InvoiceItemType.ROOM_CHARGE) {
+        roomChargesDec = roomChargesDec.add(amt)
+      } else {
+        extraChargesDec = extraChargesDec.add(amt)
+      }
+      const pct = totalSubtotal.gt(0) ? amt.div(totalSubtotal).mul(100).toNumber() : 0
+      chargeTypeBreakdown.push({
+        itemType: r.item_type,
+        amount: amt.toFixed(2),
+        count: r.count,
+        percentage: Math.round(pct * 10) / 10,
+      })
+    }
+
+    const methodRows = row?.method_breakdown || []
+    const paymentMethodBreakdown: PaymentMethodBreakdownDTO[] = []
+    for (const m of methodRows) {
+      const amt = new Prisma.Decimal(m.amount)
+      const pct = totalCollectedDec.gt(0) ? amt.div(totalCollectedDec).mul(100).toNumber() : 0
+      paymentMethodBreakdown.push({
+        method: m.method,
+        amount: amt.toFixed(2),
+        count: m.count,
+        percentage: Math.round(pct * 10) / 10,
+      })
+    }
+
+    const dailyBreakdown: DailyRevenueDTO[] = (row?.daily_breakdown || []).map((dr) => ({
+      date: dr.date,
+      invoicedAmount: new Prisma.Decimal(dr.invoicedAmount).toFixed(2),
+      collectedAmount: new Prisma.Decimal(dr.collectedAmount).toFixed(2),
     }))
 
-    // 7. Property breakdown if SUPER_ADMIN
     let propertyBreakdown: PropertyBreakdownDTO[] | undefined
-    if (!propertyId) {
-      const propRows = await prisma.$queryRaw<Array<{
-        property_id: string
-        property_name: string
-        total_invoiced: Prisma.Decimal
-        total_collected: Prisma.Decimal
-      }>>`
-        SELECT
-          p.id as property_id,
-          p.name as property_name,
-          COALESCE(inv.total_invoiced, 0) as total_invoiced,
-          COALESCE(pay.total_collected, 0) as total_collected
-        FROM properties p
-        LEFT JOIN (
-          SELECT property_id, SUM(grand_total) as total_invoiced
-          FROM invoices
-          WHERE created_at >= ${startObj} AND created_at <= ${endObj}
-            AND status <> 'VOID'
-          GROUP BY property_id
-        ) inv ON inv.property_id = p.id
-        LEFT JOIN (
-          SELECT property_id, SUM(amount) as total_collected
-          FROM payments
-          WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-            AND status = 'RECORDED'
-          GROUP BY property_id
-        ) pay ON pay.property_id = p.id
-        ORDER BY p.name ASC;
-      `
-      propertyBreakdown = propRows.map((pr) => ({
+    if (!propertyId && row?.prop_breakdown) {
+      propertyBreakdown = row.prop_breakdown.map((pr) => ({
         propertyId: pr.property_id,
         propertyName: pr.property_name,
         totalInvoiced: new Prisma.Decimal(pr.total_invoiced).toFixed(2),
@@ -777,123 +794,209 @@ export class ReportsService {
       typePredicate = Prisma.sql`rr.status = 'CONFIRMED' AND rr.arrival_date < ${dateStr}::date`
     }
 
-    const queryRows = await prisma.$queryRaw<
-      Array<{
-        allocationId: string
-        reservationId: string
-        reservationNo: string
-        customerId: string
-        guestName: string
-        guestPhone: string | null
-        guestEmail: string | null
-        roomId: string
-        roomNo: string
-        roomDisplayName: string | null
-        roomCategoryName: string
-        buildingName: string
-        floorNo: number
-        arrivalDate: string
-        departureDate: string
-        stayNights: number
-        bookedNightlyRate: string
-        allocationStatus: AllocationStatus
-        roomStatus: RoomStatus
-        invoiceId: string | null
-        invoiceNumber: string | null
-        invoiceTotalPaid: string | null
-        invoiceBalanceDue: string | null
-        specialRequests: string | null
-        fullCount: bigint | number
-      }>
-    >(Prisma.sql`
-      SELECT
-        rr.id AS "allocationId",
-        rr.reservation_id AS "reservationId",
-        res.reservation_no AS "reservationNo",
-        res.customer_id AS "customerId",
-        CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
-        cust.phone AS "guestPhone",
-        cust.email AS "guestEmail",
-        rr.room_id AS "roomId",
-        rm.room_no AS "roomNo",
-        rm.display_name AS "roomDisplayName",
-        rc.name AS "roomCategoryName",
-        bld.name AS "buildingName",
-        flr.floor_no AS "floorNo",
-        TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
-        TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
-        GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
-        rr.booked_nightly_rate::text AS "bookedNightlyRate",
-        rr.status AS "allocationStatus",
-        rm.status AS "roomStatus",
-        inv.id AS "invoiceId",
-        inv.invoice_number AS "invoiceNumber",
-        inv.total_paid::text AS "invoiceTotalPaid",
-        inv.balance_due::text AS "invoiceBalanceDue",
-        res.special_requests AS "specialRequests",
-        COUNT(*) OVER() AS "fullCount"
-      FROM reservation_rooms rr
-      JOIN rooms rm ON rm.id = rr.room_id
-      JOIN buildings bld ON bld.id = rm.building_id
-      JOIN floors flr ON flr.id = rm.floor_id
-      JOIN room_categories rc ON rc.id = rr.room_category_id
-      JOIN reservations res ON res.id = rr.reservation_id
-      JOIN customers cust ON cust.id = res.customer_id
-      LEFT JOIN LATERAL (
+    type QueryRowType = {
+      allocationId: string
+      reservationId: string
+      reservationNo: string
+      customerId: string
+      guestName: string
+      guestPhone: string | null
+      guestEmail: string | null
+      roomId: string
+      roomNo: string
+      roomDisplayName: string | null
+      roomCategoryName: string
+      buildingName: string
+      floorNo: number
+      arrivalDate: string
+      departureDate: string
+      stayNights: number
+      bookedNightlyRate: string
+      allocationStatus: AllocationStatus
+      roomStatus: RoomStatus
+      invoiceId?: string | null
+      invoiceNumber?: string | null
+      invoiceTotalPaid?: string | null
+      invoiceBalanceDue?: string | null
+      specialRequests: string | null
+      fullCount: bigint | number
+    }
+
+    let queryRows: QueryRowType[] = []
+    const invoiceMap = new Map<
+      string,
+      { id: string; invoiceNumber: string; totalPaid: string; balanceDue: string }
+    >()
+
+    if (params.sort === "balance") {
+      queryRows = await prisma.$queryRaw<QueryRowType[]>(Prisma.sql`
         SELECT
-          i.id,
-          i.invoice_number,
-          COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
-          GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
-        FROM invoices i
-        LEFT JOIN payments p ON p.invoice_id = i.id
-        WHERE i.reservation_id = res.id
-          AND i.status != 'VOID'
-        GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
-        ORDER BY i.created_at ASC
-        LIMIT 1
-      ) inv ON true
-      WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
-        AND ${typePredicate}
-        AND res.status != 'CANCELLED'
-        AND (
-          ${q}::text IS NULL OR
-          CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
-          res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
-          rm.room_no ILIKE ${'%' + (q || '') + '%'}
-        )
-      ORDER BY ${sortSql}
-      LIMIT ${limit} OFFSET ${offset}
-    `)
+          rr.id AS "allocationId",
+          rr.reservation_id AS "reservationId",
+          res.reservation_no AS "reservationNo",
+          res.customer_id AS "customerId",
+          CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
+          cust.phone AS "guestPhone",
+          cust.email AS "guestEmail",
+          rr.room_id AS "roomId",
+          rm.room_no AS "roomNo",
+          rm.display_name AS "roomDisplayName",
+          rc.name AS "roomCategoryName",
+          bld.name AS "buildingName",
+          flr.floor_no AS "floorNo",
+          TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
+          TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
+          GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
+          rr.booked_nightly_rate::text AS "bookedNightlyRate",
+          rr.status AS "allocationStatus",
+          rm.status AS "roomStatus",
+          inv.id AS "invoiceId",
+          inv.invoice_number AS "invoiceNumber",
+          inv.total_paid::text AS "invoiceTotalPaid",
+          inv.balance_due::text AS "invoiceBalanceDue",
+          res.special_requests AS "specialRequests",
+          COUNT(*) OVER() AS "fullCount"
+        FROM reservation_rooms rr
+        JOIN rooms rm ON rm.id = rr.room_id
+        JOIN buildings bld ON bld.id = rm.building_id
+        JOIN floors flr ON flr.id = rm.floor_id
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN reservations res ON res.id = rr.reservation_id
+        JOIN customers cust ON cust.id = res.customer_id
+        LEFT JOIN LATERAL (
+          SELECT
+            i.id,
+            i.invoice_number,
+            COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
+            GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
+          FROM invoices i
+          LEFT JOIN payments p ON p.invoice_id = i.id
+          WHERE i.reservation_id = res.id
+            AND i.status != 'VOID'
+          GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
+          ORDER BY i.created_at ASC
+          LIMIT 1
+        ) inv ON true
+        WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
+          AND ${typePredicate}
+          AND res.status != 'CANCELLED'
+          AND (
+            ${q}::text IS NULL OR
+            CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
+            res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
+            rm.room_no ILIKE ${'%' + (q || '') + '%'}
+          )
+        ORDER BY ${sortSql}
+        LIMIT ${limit} OFFSET ${offset}
+      `)
+    } else {
+      queryRows = await prisma.$queryRaw<QueryRowType[]>(Prisma.sql`
+        SELECT
+          rr.id AS "allocationId",
+          rr.reservation_id AS "reservationId",
+          res.reservation_no AS "reservationNo",
+          res.customer_id AS "customerId",
+          CONCAT(cust.first_name, ' ', cust.last_name) AS "guestName",
+          cust.phone AS "guestPhone",
+          cust.email AS "guestEmail",
+          rr.room_id AS "roomId",
+          rm.room_no AS "roomNo",
+          rm.display_name AS "roomDisplayName",
+          rc.name AS "roomCategoryName",
+          bld.name AS "buildingName",
+          flr.floor_no AS "floorNo",
+          TO_CHAR(rr.arrival_date, 'YYYY-MM-DD') AS "arrivalDate",
+          TO_CHAR(COALESCE(rr.actual_checkout_date, rr.departure_date), 'YYYY-MM-DD') AS "departureDate",
+          GREATEST(1, COALESCE(rr.actual_checkout_date, rr.departure_date) - rr.arrival_date)::int AS "stayNights",
+          rr.booked_nightly_rate::text AS "bookedNightlyRate",
+          rr.status AS "allocationStatus",
+          rm.status AS "roomStatus",
+          res.special_requests AS "specialRequests",
+          COUNT(*) OVER() AS "fullCount"
+        FROM reservation_rooms rr
+        JOIN rooms rm ON rm.id = rr.room_id
+        JOIN buildings bld ON bld.id = rm.building_id
+        JOIN floors flr ON flr.id = rm.floor_id
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN reservations res ON res.id = rr.reservation_id
+        JOIN customers cust ON cust.id = res.customer_id
+        WHERE (${params.propertyId ?? null}::text IS NULL OR rm.property_id = ${params.propertyId ?? null})
+          AND ${typePredicate}
+          AND res.status != 'CANCELLED'
+          AND (
+            ${q}::text IS NULL OR
+            CONCAT(cust.first_name, ' ', cust.last_name) ILIKE ${'%' + (q || '') + '%'} OR
+            res.reservation_no ILIKE ${'%' + (q || '') + '%'} OR
+            rm.room_no ILIKE ${'%' + (q || '') + '%'}
+          )
+        ORDER BY ${sortSql}
+        LIMIT ${limit} OFFSET ${offset}
+      `)
+
+      const resIds = Array.from(new Set(queryRows.map((r) => r.reservationId)))
+      if (resIds.length > 0) {
+        const invoices = await prisma.$queryRaw<
+          Array<{
+            id: string
+            reservationId: string
+            invoiceNumber: string
+            totalPaid: string
+            balanceDue: string
+          }>
+        >(Prisma.sql`
+          SELECT
+            i.id,
+            i.reservation_id AS "reservationId",
+            i.invoice_number AS "invoiceNumber",
+            COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)::text AS "totalPaid",
+            GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0))::text AS "balanceDue"
+          FROM invoices i
+          LEFT JOIN payments p ON p.invoice_id = i.id
+          WHERE i.reservation_id IN (${Prisma.join(resIds)})
+            AND i.status != 'VOID'
+          GROUP BY i.id, i.reservation_id, i.invoice_number, i.grand_total, i.created_at
+          ORDER BY i.created_at ASC
+        `)
+
+        for (const inv of invoices) {
+          if (!invoiceMap.has(inv.reservationId)) {
+            invoiceMap.set(inv.reservationId, inv)
+          }
+        }
+      }
+    }
 
     const total = queryRows.length > 0 ? Number(queryRows[0]?.fullCount ?? 0) : 0
-    const rows: DailyOperationItemDTO[] = queryRows.map((r) => ({
-      allocationId: r.allocationId,
-      reservationId: r.reservationId,
-      reservationNo: r.reservationNo,
-      customerId: r.customerId,
-      guestName: r.guestName,
-      guestPhone: r.guestPhone,
-      guestEmail: r.guestEmail,
-      roomId: r.roomId,
-      roomNo: r.roomNo,
-      roomDisplayName: r.roomDisplayName,
-      roomCategoryName: r.roomCategoryName,
-      buildingName: r.buildingName,
-      floorNo: r.floorNo,
-      arrivalDate: r.arrivalDate,
-      departureDate: r.departureDate,
-      stayNights: r.stayNights,
-      bookedNightlyRate: r.bookedNightlyRate,
-      allocationStatus: r.allocationStatus,
-      roomStatus: r.roomStatus,
-      invoiceId: r.invoiceId,
-      invoiceNumber: r.invoiceNumber,
-      invoiceGrandTotal: null,
-      invoiceTotalPaid: r.invoiceTotalPaid,
-      invoiceBalanceDue: r.invoiceBalanceDue,
-      specialRequests: r.specialRequests,
-    }))
+    const rows: DailyOperationItemDTO[] = queryRows.map((r) => {
+      const inv = invoiceMap.get(r.reservationId)
+      return {
+        allocationId: r.allocationId,
+        reservationId: r.reservationId,
+        reservationNo: r.reservationNo,
+        customerId: r.customerId,
+        guestName: r.guestName,
+        guestPhone: r.guestPhone,
+        guestEmail: r.guestEmail,
+        roomId: r.roomId,
+        roomNo: r.roomNo,
+        roomDisplayName: r.roomDisplayName,
+        roomCategoryName: r.roomCategoryName,
+        buildingName: r.buildingName,
+        floorNo: r.floorNo,
+        arrivalDate: r.arrivalDate,
+        departureDate: r.departureDate,
+        stayNights: r.stayNights,
+        bookedNightlyRate: r.bookedNightlyRate,
+        allocationStatus: r.allocationStatus,
+        roomStatus: r.roomStatus,
+        invoiceId: r.invoiceId ?? inv?.id ?? null,
+        invoiceNumber: r.invoiceNumber ?? inv?.invoiceNumber ?? null,
+        invoiceGrandTotal: null,
+        invoiceTotalPaid: r.invoiceTotalPaid ?? inv?.totalPaid ?? null,
+        invoiceBalanceDue: r.invoiceBalanceDue ?? inv?.balanceDue ?? null,
+        specialRequests: r.specialRequests,
+      }
+    })
 
     const totalPages = Math.max(1, Math.ceil(total / limit))
 
@@ -1200,32 +1303,25 @@ export class ReportsService {
       dates.push(d.toISOString().split("T")[0]!)
     }
 
-    // 1. Determine scoped property
+    // 1 & 2. Consolidated Room Inventory & Pagination Query (Resolves rooms, relations, and total count in 1 query)
     let effectivePropertyId = propertyId
-    let propRecord: { id: string; name: string } | null = null
+    let resolvedCategoryId = options?.categoryId === "all" ? undefined : options?.categoryId
+    const page = Math.max(1, options?.page || 1)
+    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const skip = (page - 1) * limit
+    const searchPattern = options?.q?.trim() ? `%${options.q.trim()}%` : null
 
-    if (effectivePropertyId) {
-      propRecord = await prisma.property.findUnique({
-        where: { id: effectivePropertyId },
-        select: { id: true, name: true },
-      })
-    } else {
-      propRecord = await prisma.property.findFirst({
+    if (!effectivePropertyId) {
+      const firstProp = await prisma.property.findFirst({
         orderBy: { name: "asc" },
         select: { id: true, name: true },
       })
-      if (propRecord) {
-        effectivePropertyId = propRecord.id
+      if (firstProp) {
+        effectivePropertyId = firstProp.id
       }
     }
 
-    // 2. Resolve default room category (first by name of selected hotel)
-    let resolvedCategoryId = options?.categoryId
-    let selectedCategoryObj: { id: string; name: string } | null = null
-
-    if (resolvedCategoryId === "all") {
-      resolvedCategoryId = undefined
-    } else if (!resolvedCategoryId && effectivePropertyId) {
+    if (!resolvedCategoryId && options?.categoryId !== "all" && effectivePropertyId) {
       const firstCat = await prisma.roomCategory.findFirst({
         where: {
           OR: [{ propertyId: effectivePropertyId }, { propertyId: null }],
@@ -1235,60 +1331,77 @@ export class ReportsService {
       })
       if (firstCat) {
         resolvedCategoryId = firstCat.id
-        selectedCategoryObj = firstCat
-      }
-    } else if (resolvedCategoryId) {
-      const cat = await prisma.roomCategory.findUnique({
-        where: { id: resolvedCategoryId },
-        select: { id: true, name: true },
-      })
-      if (cat) {
-        selectedCategoryObj = cat
       }
     }
 
-    // 3. Room Filters & Pagination
-    const roomWhere: Prisma.RoomWhereInput = {}
-    if (effectivePropertyId) {
-      roomWhere.propertyId = effectivePropertyId
-    }
-    if (resolvedCategoryId) {
-      roomWhere.roomCategoryId = resolvedCategoryId
-    }
-    if (buildingId) {
-      roomWhere.buildingId = buildingId
-    }
-    if (options?.floorId) {
-      roomWhere.floorId = options.floorId
-    }
-    if (options?.q?.trim()) {
-      roomWhere.roomNo = { contains: options.q.trim(), mode: "insensitive" }
-    }
+    // Query 1: Paginated rooms with relations, property name, and windowed total count
+    const roomRows = await prisma.$queryRaw<Array<{
+      id: string
+      roomNo: string
+      displayName: string | null
+      capacity: number
+      status: RoomStatus
+      priceOverride: Prisma.Decimal | null
+      buildingId: string
+      buildingName: string
+      floorId: string
+      floorNo: number
+      categoryId: string
+      categoryName: string
+      categoryBasePrice: Prisma.Decimal
+      propertyId: string
+      propertyName: string
+      fullCount: number
+    }>>`
+      SELECT
+        rm.id,
+        rm.room_no as "roomNo",
+        rm.display_name as "displayName",
+        rm.capacity,
+        rm.status,
+        rm.price_override as "priceOverride",
+        bld.id as "buildingId",
+        bld.name as "buildingName",
+        flr.id as "floorId",
+        flr.floor_no as "floorNo",
+        rc.id as "categoryId",
+        rc.name as "categoryName",
+        rc.base_price as "categoryBasePrice",
+        p.id as "propertyId",
+        p.name as "propertyName",
+        COUNT(*) OVER()::int as "fullCount"
+      FROM rooms rm
+      JOIN buildings bld ON bld.id = rm.building_id
+      JOIN floors flr ON flr.id = rm.floor_id
+      JOIN room_categories rc ON rc.id = rm.room_category_id
+      JOIN properties p ON p.id = rm.property_id
+      WHERE (${effectivePropertyId ?? null}::text IS NULL OR rm.property_id = ${effectivePropertyId ?? null})
+        AND (${resolvedCategoryId ?? null}::text IS NULL OR rm.room_category_id = ${resolvedCategoryId ?? null})
+        AND (${buildingId ?? null}::text IS NULL OR rm.building_id = ${buildingId ?? null})
+        AND (${options?.floorId ?? null}::text IS NULL OR rm.floor_id = ${options?.floorId ?? null})
+        AND (${searchPattern}::text IS NULL OR rm.room_no ILIKE ${searchPattern})
+      ORDER BY bld.name ASC, flr.floor_no ASC, rm.room_no ASC
+      LIMIT ${limit} OFFSET ${skip};
+    `
 
-    const page = Math.max(1, options?.page || 1)
-    const limit = Math.min(100, Math.max(1, options?.limit || 25))
-    const skip = (page - 1) * limit
+    const totalRooms = roomRows[0]?.fullCount ?? 0
+    const propName = roomRows[0]?.propertyName || null
+    const catName = roomRows[0]?.categoryName || null
 
-    const [totalRooms, physicalRooms] = await Promise.all([
-      prisma.room.count({ where: roomWhere }),
-      prisma.room.findMany({
-        where: roomWhere,
-        include: {
-          building: true,
-          floor: true,
-          category: true,
-        },
-        orderBy: [
-          { building: { name: "asc" } },
-          { floor: { floorNo: "asc" } },
-          { roomNo: "asc" },
-        ],
-        skip,
-        take: limit,
-      }),
-    ])
+    const physicalRooms = roomRows.map((r) => ({
+      id: r.id,
+      roomNo: r.roomNo,
+      displayName: r.displayName,
+      capacity: r.capacity,
+      status: r.status,
+      priceOverride: r.priceOverride ? new Prisma.Decimal(r.priceOverride) : null,
+      building: { id: r.buildingId, name: r.buildingName },
+      floor: { id: r.floorId, floorNo: r.floorNo },
+      category: { id: r.categoryId, name: r.categoryName, basePrice: new Prisma.Decimal(r.categoryBasePrice) },
+      propertyId: r.propertyId,
+    }))
 
-    // 4. Fetch overlapping allocations ONLY for the paginated room IDs
+    // Query 2: Fetch overlapping allocations ONLY for the paginated room IDs
     const nextDayAfterEnd = new Date(startObj.getTime() + numDays * 24 * 60 * 60 * 1000)
     const roomIds = physicalRooms.map((r) => r.id)
     const allocations =
@@ -1397,8 +1510,8 @@ export class ReportsService {
       dates,
       rooms,
       totalRooms,
-      selectedProperty: propRecord ? { id: propRecord.id, name: propRecord.name } : undefined,
-      selectedCategory: selectedCategoryObj,
+      selectedProperty: propName && effectivePropertyId ? { id: effectivePropertyId, name: propName } : undefined,
+      selectedCategory: resolvedCategoryId ? { id: resolvedCategoryId, name: catName || "" } : null,
       pagination: {
         page,
         limit,
@@ -1440,57 +1553,81 @@ export class ReportsService {
     const limit = Math.min(100, Math.max(1, options?.limit || 25))
     const offset = (page - 1) * limit
 
-    // 1. Overall totals and count
-    const totalsRows = await prisma.$queryRaw<Array<{
+    // 1. Consolidated Summary Query (Totals + Method Breakdown + Staff Breakdown via CTE)
+    const summaryRows = await prisma.$queryRaw<Array<{
       total_count: number
-      total_collected: Prisma.Decimal
+      total_collected: Prisma.Decimal | string
+      method_breakdown: Array<{
+        payment_method: string
+        count: number
+        amount: number | string
+      }> | null
+      staff_breakdown: Array<{
+        user_id: string
+        user_name: string
+        user_email: string
+        payment_method: string
+        method_amount: number | string
+        total_count: number
+      }> | null
     }>>`
-      SELECT
-        COUNT(*)::int as total_count,
-        COALESCE(SUM(
+      WITH base_filtered AS (
+        SELECT
+          p.id as payment_id,
+          p.amount,
+          p.payment_method,
+          CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END as effective_staff_id,
           CASE 
             WHEN p.status = 'RECORDED' THEN p.amount
             WHEN p.status = 'VOIDED' AND p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} THEN -p.amount
             ELSE p.amount
-          END
-        ), 0) as total_collected
-      FROM payments p
-      WHERE (
-        (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
-        OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
+          END as effective_amount
+        FROM payments p
+        WHERE (
+          (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
+          OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
+        )
+        ${propertyFilterSql}
+        ${staffFilterSql}
+      ),
+      totals AS (
+        SELECT
+          COUNT(*)::int as total_count,
+          COALESCE(SUM(effective_amount), 0) as total_collected
+        FROM base_filtered
+      ),
+      method_summary AS (
+        SELECT
+          payment_method::text as payment_method,
+          COUNT(*)::int as count,
+          COALESCE(SUM(effective_amount), 0) as amount
+        FROM base_filtered
+        GROUP BY payment_method
+      ),
+      staff_summary AS (
+        SELECT
+          u.id as user_id,
+          u.name as user_name,
+          u.email as user_email,
+          bf.payment_method::text as payment_method,
+          COALESCE(SUM(bf.effective_amount), 0) as method_amount,
+          COUNT(*)::int as total_count
+        FROM base_filtered bf
+        JOIN users u ON u.id = bf.effective_staff_id
+        GROUP BY u.id, u.name, u.email, bf.payment_method
       )
-      ${propertyFilterSql}
-      ${staffFilterSql};
+      SELECT
+        (SELECT total_count FROM totals) as total_count,
+        (SELECT total_collected FROM totals) as total_collected,
+        COALESCE((SELECT json_agg(method_summary) FROM method_summary), '[]'::json) as method_breakdown,
+        COALESCE((SELECT json_agg(staff_summary) FROM staff_summary), '[]'::json) as staff_breakdown;
     `
-    const totalTransactions = totalsRows[0]?.total_count ?? 0
-    const totalCollectedDec = new Prisma.Decimal(totalsRows[0]?.total_collected ?? 0)
 
-    // 2. Method breakdown
-    const methodRows = await prisma.$queryRaw<Array<{
-      payment_method: string
-      count: number
-      amount: Prisma.Decimal
-    }>>`
-      SELECT
-        p.payment_method::text,
-        COUNT(*)::int as count,
-        COALESCE(SUM(
-          CASE 
-            WHEN p.status = 'RECORDED' THEN p.amount
-            WHEN p.status = 'VOIDED' AND p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} THEN -p.amount
-            ELSE p.amount
-          END
-        ), 0) as amount
-      FROM payments p
-      WHERE (
-        (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
-        OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
-      )
-      ${propertyFilterSql}
-      ${staffFilterSql}
-      GROUP BY p.payment_method;
-    `
-    const methodBreakdown: PaymentMethodBreakdownDTO[] = methodRows.map((m) => {
+    const sumRow = summaryRows[0]
+    const totalTransactions = sumRow?.total_count ?? 0
+    const totalCollectedDec = new Prisma.Decimal(sumRow?.total_collected ?? 0)
+
+    const methodBreakdown: PaymentMethodBreakdownDTO[] = (sumRow?.method_breakdown || []).map((m) => {
       const amt = new Prisma.Decimal(m.amount)
       const pct = totalCollectedDec.gt(0) ? amt.div(totalCollectedDec).mul(100).toNumber() : 0
       return {
@@ -1501,38 +1638,6 @@ export class ReportsService {
       }
     })
 
-    // 3. Staff breakdown
-    const staffRows = await prisma.$queryRaw<Array<{
-      user_id: string
-      user_name: string
-      user_email: string
-      payment_method: string
-      method_amount: Prisma.Decimal
-      total_count: number
-    }>>`
-      SELECT
-        u.id as user_id,
-        u.name as user_name,
-        u.email as user_email,
-        p.payment_method::text,
-        COALESCE(SUM(
-          CASE 
-            WHEN p.status = 'RECORDED' THEN p.amount
-            WHEN p.status = 'VOIDED' AND p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} THEN -p.amount
-            ELSE p.amount
-          END
-        ), 0) as method_amount,
-        COUNT(*)::int as total_count
-      FROM payments p
-      JOIN users u ON u.id = CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END
-      WHERE (
-        (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
-        OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
-      )
-      ${propertyFilterSql}
-      ${staffFilterSql}
-      GROUP BY u.id, u.name, u.email, p.payment_method;
-    `
     const staffMap = new Map<string, {
       userId: string
       userName: string
@@ -1542,7 +1647,7 @@ export class ReportsService {
       methods: Record<string, string>
     }>()
 
-    for (const sr of staffRows) {
+    for (const sr of sumRow?.staff_breakdown || []) {
       let entry = staffMap.get(sr.user_id)
       if (!entry) {
         entry = {
@@ -1940,123 +2045,165 @@ export class ReportsService {
     const limit = Math.min(100, Math.max(1, options?.limit || 25))
     const offset = (page - 1) * limit
 
-    // 1. Full scoped totals in SQL
-    const invTotalRows = await prisma.$queryRaw<Array<{
-      count: number
-      total_discount: Prisma.Decimal
+    // 1. Consolidated totals query in SQL
+    const totalRows = await prisma.$queryRaw<Array<{
+      inv_count: number
+      inv_total_discount: Prisma.Decimal | string
+      rate_count: number
+      rate_total_variance: Prisma.Decimal | string
     }>>`
+      WITH inv_disc AS (
+        SELECT
+          COUNT(*)::int as count,
+          COALESCE(SUM(
+            CASE 
+              WHEN inv.discount_total > 0 THEN inv.discount_total
+              ELSE COALESCE((
+                SELECT SUM(ABS(ii.line_total))
+                FROM invoice_items ii
+                WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT'
+              ), 0)
+            END
+          ), 0) as total_discount
+        FROM invoices inv
+        WHERE inv.status <> 'VOID'
+          ${invPropertySql}
+          ${invDateSql}
+          AND (
+            inv.discount_total > 0
+            OR EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT')
+          )
+      ),
+      rate_disc AS (
+        SELECT
+          COUNT(*)::int as count,
+          COALESCE(SUM(
+            (rc.base_price - rr.booked_nightly_rate) * 
+            GREATEST(1, rr.departure_date - rr.arrival_date)
+          ), 0) as total_variance
+        FROM reservation_rooms rr
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN rooms rm ON rm.id = rr.room_id
+        WHERE rr.status <> 'CANCELLED'
+          ${rrPropertySql}
+          ${rrDateSql}
+          AND rr.booked_nightly_rate < rc.base_price
+      )
       SELECT
-        COUNT(*)::int as count,
-        COALESCE(SUM(
-          CASE 
-            WHEN inv.discount_total > 0 THEN inv.discount_total
-            ELSE COALESCE((
-              SELECT SUM(ABS(ii.line_total))
-              FROM invoice_items ii
-              WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT'
-            ), 0)
-          END
-        ), 0) as total_discount
-      FROM invoices inv
-      WHERE inv.status <> 'VOID'
-        ${invPropertySql}
-        ${invDateSql}
-        AND (
-          inv.discount_total > 0
-          OR EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT')
-        );
+        (SELECT count FROM inv_disc)::int as inv_count,
+        (SELECT total_discount FROM inv_disc) as inv_total_discount,
+        (SELECT count FROM rate_disc)::int as rate_count,
+        (SELECT total_variance FROM rate_disc) as rate_total_variance;
     `
-    const discountedInvoicesCount = invTotalRows[0]?.count ?? 0
-    const totalInvoiceDiscountsDec = new Prisma.Decimal(invTotalRows[0]?.total_discount ?? 0)
-
-    const rateOverrideTotalRows = await prisma.$queryRaw<Array<{
-      count: number
-      total_variance: Prisma.Decimal
-    }>>`
-      SELECT
-        COUNT(*)::int as count,
-        COALESCE(SUM(
-          (rc.base_price - rr.booked_nightly_rate) * 
-          GREATEST(1, rr.departure_date - rr.arrival_date)
-        ), 0) as total_variance
-      FROM reservation_rooms rr
-      JOIN room_categories rc ON rc.id = rr.room_category_id
-      JOIN rooms rm ON rm.id = rr.room_id
-      WHERE rr.status <> 'CANCELLED'
-        ${rrPropertySql}
-        ${rrDateSql}
-        AND rr.booked_nightly_rate < rc.base_price;
-    `
-    const rateOverridesCount = rateOverrideTotalRows[0]?.count ?? 0
-    const totalRateOverrideDiscountsDec = new Prisma.Decimal(rateOverrideTotalRows[0]?.total_variance ?? 0)
+    const tot = totalRows[0]
+    const discountedInvoicesCount = tot?.inv_count ?? 0
+    const totalInvoiceDiscountsDec = new Prisma.Decimal(tot?.inv_total_discount ?? 0)
+    const rateOverridesCount = tot?.rate_count ?? 0
+    const totalRateOverrideDiscountsDec = new Prisma.Decimal(tot?.rate_total_variance ?? 0)
     const totalConcessionDec = totalInvoiceDiscountsDec.add(totalRateOverrideDiscountsDec)
 
-    // 2. Paginated invoice discounts
-    const invPageRows = await prisma.$queryRaw<Array<{
-      invoice_id: string
-      invoice_number: string
-      reservation_id: string
-      reservation_no: string
-      first_name: string
-      last_name: string | null
-      discount_total: Prisma.Decimal
-      created_at: Date
+    // 2. Paginated invoice discounts (with inline items via JSON) & rate overrides in a single consolidated page query
+    const pageRows = await prisma.$queryRaw<Array<{
+      inv_rows: Array<{
+        invoice_id: string
+        invoice_number: string
+        reservation_id: string
+        reservation_no: string
+        first_name: string
+        last_name: string | null
+        discount_total: Prisma.Decimal | number | string
+        created_at: Date | string
+        items: Array<{
+          description: string
+          unitPrice: number | string
+          lineTotal: number | string
+        }> | null
+      }>
+      rate_rows: Array<{
+        allocation_id: string
+        reservation_id: string
+        reservation_no: string
+        room_no: string
+        category_name: string
+        base_price: Prisma.Decimal | number | string
+        booked_rate: Prisma.Decimal | number | string
+        rate_variance: Prisma.Decimal | number | string
+        nights: number
+        total_variance: Prisma.Decimal | number | string
+        arrival_date: Date | string
+        departure_date: Date | string
+      }>
     }>>`
+      WITH inv_page AS (
+        SELECT
+          inv.id as invoice_id,
+          inv.invoice_number,
+          inv.reservation_id,
+          r.reservation_no,
+          c.first_name,
+          c.last_name,
+          inv.discount_total,
+          inv.created_at,
+          (
+            SELECT COALESCE(json_agg(json_build_object(
+              'description', ii.description,
+              'unitPrice', ii.unit_price,
+              'lineTotal', ii.line_total
+            )), '[]'::json)
+            FROM invoice_items ii
+            WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT'
+          ) as items
+        FROM invoices inv
+        JOIN reservations r ON r.id = inv.reservation_id
+        JOIN customers c ON c.id = r.customer_id
+        WHERE inv.status <> 'VOID'
+          ${invPropertySql}
+          ${invDateSql}
+          AND (
+            inv.discount_total > 0
+            OR EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT')
+          )
+        ORDER BY inv.created_at DESC, inv.id DESC
+        LIMIT ${limit} OFFSET ${offset}
+      ),
+      rate_page AS (
+        SELECT
+          rr.id as allocation_id,
+          rr.reservation_id,
+          r.reservation_no,
+          rm.room_no,
+          rc.name as category_name,
+          rc.base_price,
+          rr.booked_nightly_rate as booked_rate,
+          (rc.base_price - rr.booked_nightly_rate) as rate_variance,
+          GREATEST(1, rr.departure_date - rr.arrival_date)::int as nights,
+          ((rc.base_price - rr.booked_nightly_rate) * GREATEST(1, rr.departure_date - rr.arrival_date)) as total_variance,
+          rr.arrival_date,
+          rr.departure_date
+        FROM reservation_rooms rr
+        JOIN rooms rm ON rm.id = rr.room_id
+        JOIN room_categories rc ON rc.id = rr.room_category_id
+        JOIN reservations r ON r.id = rr.reservation_id
+        WHERE rr.status <> 'CANCELLED'
+          ${rrPropertySql}
+          ${rrDateSql}
+          AND rr.booked_nightly_rate < rc.base_price
+        ORDER BY rr.created_at DESC, rr.id DESC
+        LIMIT ${limit} OFFSET ${offset}
+      )
       SELECT
-        inv.id as invoice_id,
-        inv.invoice_number,
-        inv.reservation_id,
-        r.reservation_no,
-        c.first_name,
-        c.last_name,
-        inv.discount_total,
-        inv.created_at
-      FROM invoices inv
-      JOIN reservations r ON r.id = inv.reservation_id
-      JOIN customers c ON c.id = r.customer_id
-      WHERE inv.status <> 'VOID'
-        ${invPropertySql}
-        ${invDateSql}
-        AND (
-          inv.discount_total > 0
-          OR EXISTS (SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = inv.id AND ii.item_type = 'DISCOUNT')
-        )
-      ORDER BY inv.created_at DESC, inv.id DESC
-      LIMIT ${limit} OFFSET ${offset};
+        COALESCE((SELECT json_agg(inv_page.*) FROM inv_page), '[]'::json) as inv_rows,
+        COALESCE((SELECT json_agg(rate_page.*) FROM rate_page), '[]'::json) as rate_rows;
     `
-
-    // Fetch items for the page of invoices only
-    const invoiceIds = invPageRows.map((r) => r.invoice_id)
-    const itemsByInvoice = new Map<string, Array<{ description: string; unitPrice: string; lineTotal: string }>>()
-    if (invoiceIds.length > 0) {
-      const items = await prisma.invoiceItem.findMany({
-        where: {
-          invoiceId: { in: invoiceIds },
-          itemType: InvoiceItemType.DISCOUNT,
-        },
-        select: {
-          invoiceId: true,
-          description: true,
-          unitPrice: true,
-          lineTotal: true,
-        },
-      })
-      for (const item of items) {
-        let list = itemsByInvoice.get(item.invoiceId)
-        if (!list) {
-          list = []
-          itemsByInvoice.set(item.invoiceId, list)
-        }
-        list.push({
-          description: item.description,
-          unitPrice: item.unitPrice.toFixed(2),
-          lineTotal: item.lineTotal.toFixed(2),
-        })
-      }
-    }
+    const invPageRows = pageRows[0]?.inv_rows ?? []
+    const ratePageRows = pageRows[0]?.rate_rows ?? []
 
     const invoiceDiscounts: InvoiceDiscountItemDTO[] = invPageRows.map((inv) => {
-      const discItems = itemsByInvoice.get(inv.invoice_id) || []
+      const discItems = (inv.items || []).map((item) => ({
+        description: item.description,
+        unitPrice: new Prisma.Decimal(item.unitPrice).toFixed(2),
+        lineTotal: new Prisma.Decimal(item.lineTotal).toFixed(2),
+      }))
       let invDiscDec = new Prisma.Decimal(inv.discount_total)
       if (invDiscDec.isZero() && discItems.length > 0) {
         invDiscDec = discItems.reduce((sum, item) => sum.add(new Prisma.Decimal(item.lineTotal).abs()), new Prisma.Decimal(0))
@@ -2069,49 +2216,16 @@ export class ReportsService {
         customerName: `${inv.first_name} ${inv.last_name || ""}`.trim(),
         discountTotal: invDiscDec.toFixed(2),
         items: discItems,
-        createdAt: inv.created_at instanceof Date ? inv.created_at.toISOString() : String(inv.created_at),
+        createdAt:
+          inv.created_at instanceof Date
+            ? inv.created_at.toISOString()
+            : new Date(
+                typeof inv.created_at === "string" && !inv.created_at.includes("Z")
+                  ? `${inv.created_at}Z`
+                  : inv.created_at
+              ).toISOString(),
       }
     })
-
-    // 3. Paginated rate overrides
-    const ratePageRows = await prisma.$queryRaw<Array<{
-      allocation_id: string
-      reservation_id: string
-      reservation_no: string
-      room_no: string
-      category_name: string
-      base_price: Prisma.Decimal
-      booked_rate: Prisma.Decimal
-      rate_variance: Prisma.Decimal
-      nights: number
-      total_variance: Prisma.Decimal
-      arrival_date: Date
-      departure_date: Date
-    }>>`
-      SELECT
-        rr.id as allocation_id,
-        rr.reservation_id,
-        r.reservation_no,
-        rm.room_no,
-        rc.name as category_name,
-        rc.base_price,
-        rr.booked_nightly_rate as booked_rate,
-        (rc.base_price - rr.booked_nightly_rate) as rate_variance,
-        GREATEST(1, rr.departure_date - rr.arrival_date)::int as nights,
-        ((rc.base_price - rr.booked_nightly_rate) * GREATEST(1, rr.departure_date - rr.arrival_date)) as total_variance,
-        rr.arrival_date,
-        rr.departure_date
-      FROM reservation_rooms rr
-      JOIN rooms rm ON rm.id = rr.room_id
-      JOIN room_categories rc ON rc.id = rr.room_category_id
-      JOIN reservations r ON r.id = rr.reservation_id
-      WHERE rr.status <> 'CANCELLED'
-        ${rrPropertySql}
-        ${rrDateSql}
-        AND rr.booked_nightly_rate < rc.base_price
-      ORDER BY rr.created_at DESC, rr.id DESC
-      LIMIT ${limit} OFFSET ${offset};
-    `
 
     const rateOverrides: RateOverrideItemDTO[] = ratePageRows.map((r) => ({
       reservationId: r.reservation_id,

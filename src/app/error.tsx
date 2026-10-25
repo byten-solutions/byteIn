@@ -30,10 +30,16 @@ export default function GlobalError({
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Button
-            onClick={() => reset()}
+            onClick={() => {
+              try {
+                reset()
+              } catch {
+                window.location.reload()
+              }
+            }}
             variant="default"
             size="sm"
-            className="h-9 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold"
+            className="h-9 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold cursor-pointer"
           >
             <RefreshCw className="size-3.5" />
             <span>Try again</span>

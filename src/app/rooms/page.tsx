@@ -78,7 +78,7 @@ export default async function RoomsPage(props: {
     rooms: [],
     total: 0,
     page: isNaN(page) ? 1 : page,
-    limit: 24,
+    limit: 48,
     totalPages: 1,
     nextCursor: null,
   };
@@ -92,7 +92,7 @@ export default async function RoomsPage(props: {
       status: initialStatus as RoomStatus | undefined,
       search: searchParams?.search,
       page: isNaN(page) ? 1 : page,
-      limit: 24,
+      limit: 48,
     });
   } catch (err) {
     console.error("Failed to load rooms page in RoomsPage:", err);

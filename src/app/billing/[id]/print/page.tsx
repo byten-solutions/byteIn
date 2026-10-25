@@ -30,6 +30,14 @@ export default async function PrintInvoicePage({ params }: PrintInvoicePageProps
   try {
     invoice = await BillingService.getInvoiceById(id)
   } catch {
+    try {
+      invoice = await BillingService.getInvoiceByReservationId(id)
+    } catch {
+      invoice = null
+    }
+  }
+
+  if (!invoice) {
     notFound()
   }
 

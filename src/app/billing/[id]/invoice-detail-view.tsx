@@ -273,15 +273,22 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
               </Button>
             )}
 
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 text-xs gap-1.5"
-              onClick={() => window.open(`/billing/${invoice.id}/print`, "_blank")}
+            <a
+              href={`/billing/${invoice.id}/print`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex"
             >
-              <Printer className="size-4" />
-              <span>Print</span>
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 text-xs gap-1.5 cursor-pointer"
+              >
+                <Printer className="size-4" />
+                <span>Print</span>
+              </Button>
+            </a>
           </div>
         </div>
       </div>

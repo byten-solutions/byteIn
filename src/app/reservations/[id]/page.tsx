@@ -32,7 +32,13 @@ export default async function ReservationDetailPage({
   }
 
   const { id } = await params
-  const scope = resolveScope(session, null, { allowSuperAdminGlobal: true })
+  let scope: string | null = null
+  try {
+    scope = resolveScope(session, null, { allowSuperAdminGlobal: true })
+  } catch {
+    scope = session.propertyId || null
+  }
+
   let reservation
   try {
     reservation = await ReservationService.getReservationById(id, scope ?? undefined)
@@ -40,44 +46,59 @@ export default async function ReservationDetailPage({
     notFound()
   }
 
+  if (!reservation) {
+    notFound()
+  }
+
   let invoice = null
   try {
     invoice = await BillingService.getInvoiceByReservationId(reservation.id)
-  } catch (err) {
-    console.error("Failed to load invoice for reservation:", err)
-  }
-  const guestFullName = `${reservation.customer.firstName} ${reservation.customer.lastName || ""}`.trim()
-
-  const getNights = (arrival: Date, departure: Date) => {
-    return Math.max(
-      1,
-      Math.round((departure.getTime() - arrival.getTime()) / (1000 * 60 * 60 * 24))
-    )
+  } catch {
+    invoice = null
   }
 
-  const totalNights = reservation.rooms.reduce(
+  const guestFullName = `${reservation.customer?.firstName || "Guest"} ${reservation.customer?.lastName || ""}`.trim()
+
+  const getNights = (arrival: Date | string, departure: Date | string) => {
+    try {
+      const arr = arrival instanceof Date ? arrival : new Date(arrival)
+      const dep = departure instanceof Date ? departure : new Date(departure)
+      return Math.max(
+        1,
+        Math.round((dep.getTime() - arr.getTime()) / (1000 * 60 * 60 * 24))
+      )
+    } catch {
+      return 1
+    }
+  }
+
+  const rooms = reservation.rooms || []
+  const totalNights = rooms.reduce(
     (sum, r) => sum + getNights(r.arrivalDate, r.departureDate),
     0
   )
 
-  const totalBookingValue = reservation.rooms.reduce(
+  const totalBookingValue = rooms.reduce(
     (sum, r) =>
       sum +
-      getNights(r.arrivalDate, r.departureDate) * parseFloat(r.bookedNightlyRate.toString()),
+      getNights(r.arrivalDate, r.departureDate) * parseFloat((r.bookedNightlyRate ?? 0).toString()),
     0
   )
 
-  // Calculate stay dates range
-  const arrivalDates = reservation.rooms.map((r) => r.arrivalDate.getTime()).sort()
-  const departureDates = reservation.rooms.map((r) => r.departureDate.getTime()).sort()
-  const earliestArrival = new Date(arrivalDates[0]!)
-  const latestDeparture = new Date(departureDates[departureDates.length - 1]!)
+  // Calculate stay dates range safely with numeric sorting
+  const arrivalDates = rooms
+    .map((r) => (r.arrivalDate instanceof Date ? r.arrivalDate.getTime() : new Date(r.arrivalDate).getTime()))
+    .filter((t) => !isNaN(t))
+    .sort((a, b) => a - b)
+  const departureDates = rooms
+    .map((r) => (r.departureDate instanceof Date ? r.departureDate.getTime() : new Date(r.departureDate).getTime()))
+    .filter((t) => !isNaN(t))
+    .sort((a, b) => a - b)
+  const earliestArrival = arrivalDates.length > 0 ? new Date(arrivalDates[0]!) : new Date()
+  const latestDeparture =
+    departureDates.length > 0 ? new Date(departureDates[departureDates.length - 1]!) : new Date()
 
   const stayRangeStr = formatStayRange(earliestArrival, latestDeparture)
-
-  // Contextual primary button selection
-  const nextConfirmedRoom = reservation.rooms.find((r) => r.status === "CONFIRMED")
-  const nextCheckedInRoom = reservation.rooms.find((r) => r.status === "CHECKED_IN")
 
   return (
     <AppShell session={session}>
@@ -126,20 +147,11 @@ export default async function ReservationDetailPage({
             </div>
           </div>
 
-          {/* Contextual Header Actions */}
+          {/* Header Actions */}
           <div className="shrink-0 self-start lg:self-center">
             <ReservationHeaderActions
               invoiceId={invoice?.id}
-              nextConfirmedRoom={
-                nextConfirmedRoom
-                  ? { id: nextConfirmedRoom.id, roomNo: nextConfirmedRoom.room.roomNo }
-                  : null
-              }
-              nextCheckedInRoom={
-                nextCheckedInRoom
-                  ? { id: nextCheckedInRoom.id, roomNo: nextCheckedInRoom.room.roomNo }
-                  : null
-              }
+              reservationId={reservation.id}
             />
           </div>
         </div>
@@ -162,11 +174,15 @@ export default async function ReservationDetailPage({
               </div>
 
               <div className="divide-y divide-border/60">
-                {reservation.rooms.map((allocation) => {
-                  const arrStr = allocation.arrivalDate.toISOString().split("T")[0]!
-                  const depStr = allocation.departureDate.toISOString().split("T")[0]!
+                {rooms.map((allocation) => {
+                  const arrStr = allocation.arrivalDate
+                    ? (allocation.arrivalDate instanceof Date ? allocation.arrivalDate : new Date(allocation.arrivalDate)).toISOString().split("T")[0]!
+                    : ""
+                  const depStr = allocation.departureDate
+                    ? (allocation.departureDate instanceof Date ? allocation.departureDate : new Date(allocation.departureDate)).toISOString().split("T")[0]!
+                    : ""
                   const nights = getNights(allocation.arrivalDate, allocation.departureDate)
-                  const nightlyRate = parseFloat(allocation.bookedNightlyRate.toString())
+                  const nightlyRate = parseFloat((allocation.bookedNightlyRate ?? 0).toString())
                   const roomSubtotal = nights * nightlyRate
 
                   return (
@@ -175,33 +191,33 @@ export default async function ReservationDetailPage({
                         allocation={{
                           id: allocation.id,
                           roomId: allocation.roomId,
-                          roomNo: allocation.room.roomNo,
-                          roomStatus: allocation.room.status,
-                          categoryName: allocation.roomCategory.name,
-                          displayName: allocation.room.displayName,
-                          buildingName: allocation.room.building.name,
-                          floorNo: allocation.room.floor.floorNo,
+                          roomNo: allocation.room?.roomNo || "—",
+                          roomStatus: allocation.room?.status || "VACANT_CLEAN",
+                          categoryName: allocation.roomCategory?.name || "Standard Room",
+                          displayName: allocation.room?.displayName || null,
+                          buildingName: allocation.room?.building?.name || "Main Building",
+                          floorNo: allocation.room?.floor?.floorNo ?? 1,
                           arrivalDate: arrStr,
                           departureDate: depStr,
                           nights,
                           adults: allocation.adults,
                           children: allocation.children,
-                          bookedNightlyRate: allocation.bookedNightlyRate.toString(),
+                          bookedNightlyRate: (allocation.bookedNightlyRate ?? 0).toString(),
                           roomSubtotal,
                           status: allocation.status,
                           checkedInAt: allocation.checkedInAt
-                            ? allocation.checkedInAt.toISOString()
+                            ? (allocation.checkedInAt instanceof Date ? allocation.checkedInAt : new Date(allocation.checkedInAt)).toISOString()
                             : null,
                           checkedOutAt: allocation.checkedOutAt
-                            ? allocation.checkedOutAt.toISOString()
+                            ? (allocation.checkedOutAt instanceof Date ? allocation.checkedOutAt : new Date(allocation.checkedOutAt)).toISOString()
                             : null,
                         }}
                         customer={{
-                          id: reservation.customer.id,
-                          firstName: reservation.customer.firstName,
-                          lastName: reservation.customer.lastName,
-                          idProofType: reservation.customer.idProofType,
-                          idProofNumber: reservation.customer.idProofNumber,
+                          id: reservation.customer?.id || "",
+                          firstName: reservation.customer?.firstName || "Guest",
+                          lastName: reservation.customer?.lastName || null,
+                          idProofType: reservation.customer?.idProofType || null,
+                          idProofNumber: reservation.customer?.idProofNumber || null,
                         }}
                         invoice={invoice}
                         estimatedTotal={totalBookingValue}
@@ -301,15 +317,15 @@ export default async function ReservationDetailPage({
               <div className="space-y-1 text-muted-foreground">
                 <div className="flex justify-between">
                   <span>Staff:</span>
-                  <span className="font-medium text-foreground">{reservation.creator.name}</span>
+                  <span className="font-medium text-foreground">{reservation.creator?.name || "Front Desk Staff"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Role:</span>
-                  <span className="text-foreground">{reservation.creator.role.name}</span>
+                  <span className="text-foreground">{reservation.creator?.role?.name || "Staff"}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Created:</span>
-                  <span className="text-foreground">{formatDate(reservation.createdAt)}</span>
+                  <span className="text-foreground">{reservation.createdAt ? formatDate(reservation.createdAt) : "—"}</span>
                 </div>
               </div>
             </div>

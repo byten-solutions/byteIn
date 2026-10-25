@@ -5,7 +5,7 @@ import * as React from "react";
 export interface UseInfiniteListOptions<T, F extends Record<string, unknown> = Record<string, unknown>> {
   /** API endpoint to fetch chunks from (e.g. "/api/rooms") */
   endpoint: string;
-  /** Chunk size (default 24) */
+  /** Chunk size (default 48) */
   limit?: number;
   /** Initial items hydrated by SSR */
   initialItems?: T[];
@@ -17,8 +17,10 @@ export interface UseInfiniteListOptions<T, F extends Record<string, unknown> = R
   filters?: F;
   /** Extraction helper for custom API responses */
   transformResponse?: (json: unknown) => { items: T[]; nextCursor: string | null; total?: number };
-  /** IntersectionObserver rootMargin (default "400px") */
+  /** IntersectionObserver rootMargin (default "800px") */
   rootMargin?: string;
+  /** Scroll position ratio to pre-trigger loading (default 0.75 for 75%) */
+  thresholdRatio?: number;
   /** Callback on error */
   onError?: (error: Error) => void;
 }
@@ -36,7 +38,21 @@ export interface UseInfiniteListResult<T> {
   sentinelRef: (node: HTMLElement | null) => void;
 }
 
-export const DEFAULT_CHUNK_SIZE = 24;
+export const DEFAULT_CHUNK_SIZE = 48;
+
+function getScrollParent(element: HTMLElement | null): HTMLElement | Window {
+  if (!element || typeof window === "undefined") return window;
+  let parent = element.parentElement;
+  while (parent && parent !== document.body && parent !== document.documentElement) {
+    const style = window.getComputedStyle(parent);
+    const overflowY = style.overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+  return window;
+}
 
 export function useInfiniteList<T, F extends Record<string, unknown> = Record<string, unknown>>({
   endpoint,
@@ -46,7 +62,8 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
   initialTotal = 0,
   filters = {} as F,
   transformResponse,
-  rootMargin = "400px",
+  rootMargin = "800px",
+  thresholdRatio = 0.75,
   onError,
 }: UseInfiniteListOptions<T, F>): UseInfiniteListResult<T> {
   const [items, setItems] = React.useState<T[]>(initialItems);
@@ -59,11 +76,13 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
   const [isLoadingMore, setIsLoadingMore] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const isLoadingMoreRef = React.useRef<boolean>(false);
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const isFirstRender = React.useRef<boolean>(true);
   const prevFiltersJson = React.useRef<string>(JSON.stringify(filters));
   const observerRef = React.useRef<IntersectionObserver | null>(null);
   const sentinelNodeRef = React.useRef<HTMLElement | null>(null);
+  const cleanupScrollRef = React.useRef<(() => void) | null>(null);
 
   // Helper to extract items, nextCursor, and total from response
   const parseResponse = React.useCallback(
@@ -106,8 +125,9 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
 
   // Load next chunk
   const loadMore = React.useCallback(async () => {
-    if (isLoading || isLoadingMore || !hasMore) return;
+    if (isLoading || isLoadingMoreRef.current || !hasMore) return;
 
+    isLoadingMoreRef.current = true;
     setIsLoadingMore(true);
     setError(null);
 
@@ -140,7 +160,18 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
       const json: unknown = await res.json();
       const parsed = parseResponse(json);
 
-      setItems((prev) => [...prev, ...parsed.items]);
+      setItems((prev) => {
+        const existingIds = new Set(
+          prev
+            .map((item) => (typeof item === "object" && item !== null && "id" in item ? (item as { id: unknown }).id : null))
+            .filter(Boolean)
+        );
+        const newItems = parsed.items.filter((item) => {
+          const id = typeof item === "object" && item !== null && "id" in item ? (item as { id: unknown }).id : null;
+          return !id || !existingIds.has(id);
+        });
+        return [...prev, ...newItems];
+      });
       setNextCursor(parsed.nextCursor);
       setHasMore(Boolean(parsed.nextCursor && parsed.items.length > 0));
       if (parsed.total !== undefined) {
@@ -155,10 +186,11 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
       onError?.(errObj);
     } finally {
       if (abortControllerRef.current === controller) {
+        isLoadingMoreRef.current = false;
         setIsLoadingMore(false);
       }
     }
-  }, [endpoint, limit, nextCursor, hasMore, isLoading, isLoadingMore, filters, parseResponse, onError]);
+  }, [endpoint, limit, nextCursor, hasMore, isLoading, filters, parseResponse, onError]);
 
   // Fetch initial chunk (resets list)
   const fetchInitial = React.useCallback(async () => {
@@ -240,6 +272,9 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
       if (observerRef.current) {
         observerRef.current.disconnect();
       }
+      if (cleanupScrollRef.current) {
+        cleanupScrollRef.current();
+      }
     };
   }, []);
 
@@ -252,25 +287,87 @@ export function useInfiniteList<T, F extends Record<string, unknown> = Record<st
         observerRef.current.disconnect();
         observerRef.current = null;
       }
+      if (cleanupScrollRef.current) {
+        cleanupScrollRef.current();
+        cleanupScrollRef.current = null;
+      }
 
       if (!node) return;
 
+      const scrollParent = getScrollParent(node);
+      const isCustomContainer = scrollParent instanceof HTMLElement;
+      const observerRoot = isCustomContainer ? scrollParent : null;
+
+      // 1. IntersectionObserver with generous rootMargin
       if (typeof IntersectionObserver !== "undefined") {
         const observer = new IntersectionObserver(
           (entries) => {
             const first = entries[0];
-            if (first && first.isIntersecting && hasMore && !isLoading && !isLoadingMore) {
+            if (first && first.isIntersecting && hasMore && !isLoading && !isLoadingMoreRef.current) {
               loadMore();
             }
           },
-          { rootMargin }
+          { root: observerRoot, rootMargin }
         );
 
         observer.observe(node);
         observerRef.current = observer;
       }
+
+      // 2. Pre-fetch scroll listener at thresholdRatio (e.g. 75%)
+      let rafId: number | null = null;
+      const checkScroll = () => {
+        if (!hasMore || isLoading || isLoadingMoreRef.current) return;
+
+        let scrollTop = 0;
+        let scrollHeight = 0;
+        let clientHeight = 0;
+
+        if (isCustomContainer) {
+          scrollTop = scrollParent.scrollTop;
+          scrollHeight = scrollParent.scrollHeight;
+          clientHeight = scrollParent.clientHeight;
+        } else {
+          scrollTop = window.scrollY || document.documentElement.scrollTop;
+          scrollHeight = document.documentElement.scrollHeight;
+          clientHeight = window.innerHeight;
+        }
+
+        if (scrollHeight <= clientHeight) return;
+
+        // When user reaches ~75% of the scrollable content, pre-load the next chunk
+        const scrollProgress = (scrollTop + clientHeight) / scrollHeight;
+        if (scrollProgress >= thresholdRatio) {
+          loadMore();
+        }
+      };
+
+      const onScroll = () => {
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          checkScroll();
+        });
+      };
+
+      const scrollTarget = isCustomContainer ? scrollParent : window;
+      scrollTarget.addEventListener("scroll", onScroll, { passive: true });
+      if (isCustomContainer) {
+        window.addEventListener("scroll", onScroll, { passive: true });
+      }
+
+      cleanupScrollRef.current = () => {
+        scrollTarget.removeEventListener("scroll", onScroll);
+        if (isCustomContainer) {
+          window.removeEventListener("scroll", onScroll);
+        }
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      };
     },
-    [hasMore, isLoading, isLoadingMore, loadMore, rootMargin]
+    [hasMore, isLoading, loadMore, rootMargin, thresholdRatio]
   );
 
   const reset = React.useCallback(() => {

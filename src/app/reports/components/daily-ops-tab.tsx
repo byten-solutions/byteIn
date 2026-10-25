@@ -7,8 +7,6 @@ import {
   Clock,
   BedDouble,
   AlertCircle,
-  Phone,
-  Mail,
   ExternalLink,
   Search,
   Printer,
@@ -19,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatCard, StatusBadge, PaginationFooter } from "@/components/ui-kit"
-import { formatMoney } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 import type {
   DailyOperationsCountsDTO,
@@ -340,7 +337,7 @@ export function DailyOpsTab({
 
         {/* 3. Shift Operations Table */}
         {isListLoading && !listData && !printData ? (
-          <TableSkeleton rows={5} cols={7} />
+          <TableSkeleton rows={5} cols={5} />
         ) : listError && !listData && !printData ? (
           <div className="p-4">
             <ReportSectionError
@@ -356,117 +353,67 @@ export function DailyOpsTab({
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-xs font-medium text-muted-foreground">
                     <th className="px-4 py-3">Room</th>
-                    <th className="px-4 py-3">Guest & Contact</th>
+                    <th className="px-4 py-3">Guest</th>
                     <th className="px-4 py-3">Dates & Stay</th>
-                    <th className="px-4 py-3">Nightly Rate</th>
                     <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Invoice & Balance</th>
                     <th className="px-4 py-3 text-right print:hidden">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border text-xs">
                   {rows.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                      <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
                         No records found for this operational filter on {opsDate}.
                       </td>
                     </tr>
                   ) : (
-                    rows.map((item) => {
-                      const hasBalance =
-                        item.invoiceBalanceDue && parseFloat(item.invoiceBalanceDue) > 0
-                      return (
-                        <tr key={item.allocationId} className="hover:bg-muted/30">
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-foreground">
-                              Room {item.roomNo}
-                            </div>
+                    rows.map((item) => (
+                      <tr key={item.allocationId} className="hover:bg-muted/30">
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-foreground">
+                            Room {item.roomNo}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {item.roomCategoryName}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-foreground">
+                            {item.guestName}
+                          </div>
+                          {item.guestPhone && (
                             <div className="text-[11px] text-muted-foreground">
-                              {item.roomCategoryName} • {item.buildingName} F{item.floorNo}
+                              {item.guestPhone}
                             </div>
-                          </td>
+                          )}
+                        </td>
 
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-foreground">
-                              {item.guestName}
-                            </div>
-                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              {item.guestPhone && (
-                                <span className="inline-flex items-center gap-1">
-                                  <Phone className="size-3" /> {item.guestPhone}
-                                </span>
-                              )}
-                              {item.guestEmail && (
-                                <span className="inline-flex items-center gap-1">
-                                  <Mail className="size-3" /> {item.guestEmail}
-                                </span>
-                              )}
-                            </div>
-                          </td>
+                        <td className="px-4 py-3">
+                          <div className="text-xs">
+                            <span className="font-medium">{item.arrivalDate}</span> →{" "}
+                            <span className="font-medium">{item.departureDate}</span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {item.stayNights} night{item.stayNights > 1 ? "s" : ""}
+                          </div>
+                        </td>
 
-                          <td className="px-4 py-3">
-                            <div className="text-xs">
-                              <span className="font-medium">{item.arrivalDate}</span> →{" "}
-                              <span className="font-medium">{item.departureDate}</span>
-                            </div>
-                            <div className="text-[11px] text-muted-foreground">
-                              {item.stayNights} night{item.stayNights > 1 ? "s" : ""}
-                            </div>
-                          </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={item.allocationStatus} />
+                        </td>
 
-                          <td className="px-4 py-3 font-medium">
-                            {formatMoney(parseFloat(item.bookedNightlyRate) || 0)}
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <StatusBadge status={item.allocationStatus} />
-                          </td>
-
-                          <td className="px-4 py-3">
-                            {item.invoiceNumber ? (
-                              <div>
-                                <div className="text-[11px] font-mono font-medium">
-                                  {item.invoiceNumber}
-                                </div>
-                                <div className="text-[11px]">
-                                  {hasBalance ? (
-                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                      Balance: {formatMoney(parseFloat(item.invoiceBalanceDue!) || 0)}
-                                    </span>
-                                  ) : (
-                                    <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                                      Fully Paid
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-[11px] text-muted-foreground">No Invoice</span>
-                            )}
-                          </td>
-
-                          <td className="px-4 py-3 text-right print:hidden">
-                            <div className="flex items-center justify-end gap-2">
-                              {item.invoiceId && hasBalance && (
-                                <Link
-                                  href={`/billing/${item.invoiceId}`}
-                                  className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-[11px] font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400"
-                                >
-                                  Collect
-                                </Link>
-                              )}
-                              <Link
-                                href={`/reservations/${item.reservationId}`}
-                                className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1 text-[11px] font-medium hover:bg-muted/80"
-                              >
-                                View
-                                <ExternalLink className="size-3" />
-                              </Link>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
+                        <td className="px-4 py-3 text-right print:hidden">
+                          <Link
+                            href={`/reservations/${item.reservationId}`}
+                            className="inline-flex items-center gap-1 rounded-md bg-muted px-2.5 py-1 text-xs font-medium hover:bg-muted/80 transition-colors"
+                          >
+                            View
+                            <ExternalLink className="size-3" />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>

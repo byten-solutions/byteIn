@@ -3,6 +3,15 @@ import { AuthService } from "@/modules/auth/auth.service";
 import { RoleName, type SessionPayload } from "@/modules/auth/auth.types";
 import { getSessionCookie } from "./session";
 
+import {
+  getCachedSessionUser,
+  setCachedSessionUser,
+  invalidateSessionUserCache,
+  type CachedUserRecord,
+} from "./session-cache";
+
+export { invalidateSessionUserCache };
+
 export class AuthError extends Error {
   statusCode: number;
   mustChangePassword?: boolean;
@@ -13,6 +22,30 @@ export class AuthError extends Error {
     this.statusCode = statusCode;
     this.mustChangePassword = mustChangePassword;
   }
+}
+
+async function fetchSessionUser(userId: string): Promise<CachedUserRecord | null> {
+  const cached = getCachedSessionUser(userId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      role: true,
+      property: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+        },
+      },
+    },
+  });
+
+  setCachedSessionUser(userId, user);
+  return user;
 }
 
 /**
@@ -36,19 +69,7 @@ export async function getSession(
   if (!payload) return null;
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: {
-        role: true,
-        property: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-          },
-        },
-      },
-    });
+    const user = await fetchSessionUser(payload.sub);
 
     if (!user || user.status !== "ACTIVE") {
       return null;
@@ -135,19 +156,7 @@ export async function requireAuth(
     throw new AuthError("Authentication required", 401);
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: payload.sub },
-    include: {
-      role: true,
-      property: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-        },
-      },
-    },
-  });
+  const user = await fetchSessionUser(payload.sub);
 
   if (!user) {
     throw new AuthError("User account not found or deleted", 401);

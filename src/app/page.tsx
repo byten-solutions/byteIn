@@ -189,11 +189,10 @@ export default async function Page() {
                               )}
                             </div>
                             <span
-                              className={`text-[10px] font-mono uppercase font-semibold px-2 py-0.5 rounded-full border ${
-                                prop.status === "ACTIVE"
-                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
-                                  : "bg-muted text-muted-foreground border-border"
-                              }`}
+                              className={`text-[10px] font-mono uppercase font-semibold px-2 py-0.5 rounded-full border ${prop.status === "ACTIVE"
+                                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20"
+                                : "bg-muted text-muted-foreground border-border"
+                                }`}
                             >
                               {prop.status}
                             </span>
@@ -293,14 +292,11 @@ export default async function Page() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-                    {hotelName} Reception Dispatch
+                    {hotelName}
                   </h1>
-                  <span className="font-mono text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
-                    Live Shift
-                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Front Desk Console • Operator: <span className="font-medium text-foreground">{session.name}</span> ({session.role})
+                  Front Desk Console • Operator: <span className="font-medium text-foreground">{session.name}</span>
                 </p>
               </div>
 
