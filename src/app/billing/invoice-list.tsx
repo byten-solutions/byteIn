@@ -175,6 +175,7 @@ export function InvoiceList({ initialData }: InvoiceListProps) {
           <Input
             placeholder="Search invoice #, guest, or phone..."
             className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
+            maxLength={100}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

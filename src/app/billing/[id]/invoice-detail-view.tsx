@@ -549,6 +549,7 @@ export function InvoiceDetailView({ initialInvoice }: InvoiceDetailViewProps) {
             <Textarea
               id="void-reason"
               placeholder="e.g. Guest paid via alternate method / card chargeback / manager reversal"
+              maxLength={500}
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value)}
               className="min-h-[80px] text-xs"

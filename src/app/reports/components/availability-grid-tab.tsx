@@ -391,6 +391,7 @@ export function AvailabilityGridTab({
               type="search"
               aria-label="Search room number"
               placeholder="Search room no..."
+              maxLength={50}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-8 pl-8 text-xs"

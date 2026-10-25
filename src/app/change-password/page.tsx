@@ -133,6 +133,7 @@ export default function ChangePasswordPage() {
                 id="currentPassword"
                 type="password"
                 required
+                maxLength={128}
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 disabled={loading || success}
@@ -145,6 +146,7 @@ export default function ChangePasswordPage() {
                 id="newPassword"
                 type="password"
                 required
+                maxLength={128}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 disabled={loading || success}
@@ -157,6 +159,7 @@ export default function ChangePasswordPage() {
                 id="confirmPassword"
                 type="password"
                 required
+                maxLength={128}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={loading || success}

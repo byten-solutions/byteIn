@@ -835,6 +835,7 @@ export function NewReservationForm({
                           <Input
                             placeholder="Search guest by name, phone, or email..."
                             className="pl-9 h-10 text-xs sm:text-sm bg-card"
+                            maxLength={100}
                             value={customerSearchQuery}
                             onChange={(e) => {
                               setCustomerSearchQuery(e.target.value)
@@ -899,6 +900,7 @@ export function NewReservationForm({
                         <Input
                           placeholder="e.g. John"
                           className="h-10 text-xs sm:text-sm"
+                          maxLength={100}
                           value={newCustomer.firstName}
                           onChange={(e) =>
                             setNewCustomer((prev) => ({ ...prev, firstName: e.target.value }))
@@ -911,6 +913,7 @@ export function NewReservationForm({
                         <Input
                           placeholder="e.g. Doe"
                           className="h-10 text-xs sm:text-sm"
+                          maxLength={100}
                           value={newCustomer.lastName}
                           onChange={(e) =>
                             setNewCustomer((prev) => ({ ...prev, lastName: e.target.value }))
@@ -923,6 +926,7 @@ export function NewReservationForm({
                         <Input
                           placeholder="+91 98765 43210"
                           className="h-10 text-xs sm:text-sm font-mono"
+                          maxLength={50}
                           value={newCustomer.phone}
                           onChange={(e) =>
                             setNewCustomer((prev) => ({ ...prev, phone: e.target.value }))
@@ -936,6 +940,7 @@ export function NewReservationForm({
                           type="email"
                           placeholder="e.g. guest@example.com"
                           className="h-10 text-xs sm:text-sm"
+                          maxLength={254}
                           value={newCustomer.email}
                           onChange={(e) =>
                             setNewCustomer((prev) => ({ ...prev, email: e.target.value }))
@@ -962,6 +967,7 @@ export function NewReservationForm({
                             <Input
                               placeholder="e.g. Indian"
                               className="h-10 text-xs"
+                              maxLength={100}
                               value={newCustomer.nationality}
                               onChange={(e) =>
                                 setNewCustomer((prev) => ({ ...prev, nationality: e.target.value }))
@@ -991,6 +997,7 @@ export function NewReservationForm({
                             <Input
                               placeholder="e.g. Pass No or National ID"
                               className="h-10 text-xs font-mono"
+                              maxLength={100}
                               value={newCustomer.idProofNumber}
                               onChange={(e) =>
                                 setNewCustomer((prev) => ({ ...prev, idProofNumber: e.target.value }))
@@ -1003,6 +1010,7 @@ export function NewReservationForm({
                             <Input
                               placeholder="City, State"
                               className="h-10 text-xs"
+                              maxLength={255}
                               value={newCustomer.address}
                               onChange={(e) =>
                                 setNewCustomer((prev) => ({ ...prev, address: e.target.value }))
@@ -1015,6 +1023,7 @@ export function NewReservationForm({
                             <Input
                               placeholder="Preferences, VIP status, etc."
                               className="h-10 text-xs"
+                              maxLength={500}
                               value={newCustomer.remarks}
                               onChange={(e) =>
                                 setNewCustomer((prev) => ({ ...prev, remarks: e.target.value }))
@@ -1182,6 +1191,7 @@ export function NewReservationForm({
                                 <Input
                                   placeholder="e.g. Configured room price override / Management concession"
                                   className="h-8 text-xs border-amber-500/40 focus:border-amber-500"
+                                  maxLength={255}
                                   value={alloc.rateOverrideReason || ""}
                                   onChange={(e) =>
                                     handleUpdateAllocation(idx, "rateOverrideReason", e.target.value)

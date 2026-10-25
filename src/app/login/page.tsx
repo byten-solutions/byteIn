@@ -177,6 +177,7 @@ export default function LoginPage() {
                 type="email"
                 autoComplete="email"
                 placeholder="reception@byteinn.local"
+                maxLength={254}
                 value={email}
                 onChange={(e) => handleEmailChange(e.target.value)}
                 onBlur={() => handleBlur("email")}
@@ -206,6 +207,7 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   placeholder="••••••••"
+                  maxLength={128}
                   value={password}
                   onChange={(e) => handlePasswordChange(e.target.value)}
                   onBlur={() => handleBlur("password")}

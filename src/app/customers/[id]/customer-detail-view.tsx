@@ -282,6 +282,7 @@ export function CustomerDetailView({
                       <Label className="text-xs font-medium">First Name *</Label>
                       <Input
                         className="h-9 text-xs sm:text-sm"
+                        maxLength={100}
                         value={formData.firstName}
                         onChange={(e) => setFormData((prev) => ({ ...prev, firstName: e.target.value }))}
                         required
@@ -292,6 +293,7 @@ export function CustomerDetailView({
                       <Label className="text-xs font-medium">Last Name</Label>
                       <Input
                         className="h-9 text-xs sm:text-sm"
+                        maxLength={100}
                         value={formData.lastName}
                         onChange={(e) => setFormData((prev) => ({ ...prev, lastName: e.target.value }))}
                       />
@@ -302,6 +304,7 @@ export function CustomerDetailView({
                       <Input
                         placeholder="+91 98765 43210"
                         className="h-9 text-xs sm:text-sm font-mono"
+                        maxLength={50}
                         value={formData.phone}
                         onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
                       />
@@ -313,6 +316,7 @@ export function CustomerDetailView({
                         type="email"
                         placeholder="e.g. guest@example.com"
                         className="h-9 text-xs sm:text-sm"
+                        maxLength={254}
                         value={formData.email}
                         onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                       />
@@ -331,6 +335,7 @@ export function CustomerDetailView({
                       <Input
                         placeholder="e.g. Indian"
                         className="h-9 text-xs sm:text-sm"
+                        maxLength={100}
                         value={formData.nationality}
                         onChange={(e) => setFormData((prev) => ({ ...prev, nationality: e.target.value }))}
                       />
@@ -376,6 +381,7 @@ export function CustomerDetailView({
                           <Input
                             placeholder="Enter new ID (stored as •••• 1234)"
                             className="h-9 text-xs font-mono flex-1"
+                            maxLength={100}
                             value={formData.idProofNumber}
                             onChange={(e) => setFormData((prev) => ({ ...prev, idProofNumber: e.target.value }))}
                             autoFocus={isReplacingId}
@@ -403,6 +409,7 @@ export function CustomerDetailView({
                       <Input
                         placeholder="City, State"
                         className="h-9 text-xs sm:text-sm"
+                        maxLength={255}
                         value={formData.address}
                         onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                       />
@@ -420,6 +427,7 @@ export function CustomerDetailView({
                     <Textarea
                       rows={3}
                       className="text-xs sm:text-sm resize-none"
+                      maxLength={500}
                       placeholder="Guest preferences, room requests, notes..."
                       value={formData.remarks}
                       onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}

@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
@@ -33,6 +35,40 @@ function getStatValueFontSize(value: React.ReactNode): string {
   return "text-sm sm:text-base"
 }
 
+interface ParsedStatNumber {
+  prefix: string
+  target: number
+  decimals: number
+  suffix: string
+  hasComma: boolean
+}
+
+function parseStatNumber(value: React.ReactNode): ParsedStatNumber | null {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return null
+  }
+  const str = String(value).trim()
+  if (!str) return null
+
+  // Match optional prefix, optional sign, integer with optional commas, optional decimal, optional suffix
+  const match = str.match(/^([^\d\s-]*[-+]?[^\d\s]*)\s*([\d,]+)(?:\.(\d+))?(.*)$/)
+  if (!match) return null
+
+  const [, prefix, intPart, decPart, suffix] = match
+  const cleanedInt = intPart.replace(/,/g, "")
+  const numStr = decPart !== undefined ? `${cleanedInt}.${decPart}` : cleanedInt
+  const target = parseFloat(numStr)
+  if (isNaN(target)) return null
+
+  return {
+    prefix: prefix || "",
+    target,
+    decimals: decPart ? decPart.length : 0,
+    suffix: suffix || "",
+    hasComma: intPart.includes(","),
+  }
+}
+
 function renderStatValue(value: React.ReactNode) {
   if (typeof value !== "string" && typeof value !== "number") {
     return value
@@ -40,7 +76,7 @@ function renderStatValue(value: React.ReactNode) {
 
   const str = String(value).trim()
   // Match prefix (currency symbols, +/- signs), digits with grouping commas, and decimal fraction
-  const match = str.match(/^([^\d\s]*)\s*([\d,]+)(\.\d+)?(.*)$/)
+  const match = str.match(/^([^\d\s-]*[-+]?[^\d\s]*)\s*([\d,]+)(?:\.(\d+))?(.*)$/)
   if (!match) {
     return str
   }
@@ -62,6 +98,89 @@ function renderStatValue(value: React.ReactNode) {
       {suffix && (
         <span className="text-[0.82em] font-semibold text-muted-foreground/80 ml-0.5 select-all">
           {suffix}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function AnimatedStatValue({ value }: { value: React.ReactNode }) {
+  const parsed = React.useMemo(() => parseStatNumber(value), [value])
+  const [displayVal, setDisplayVal] = React.useState<number | null>(null)
+  const prevTargetRef = React.useRef<number | null>(null)
+
+  const target = parsed?.target
+
+  React.useEffect(() => {
+    if (target === undefined) return
+
+    // Accessibility check: skip animation if user prefers reduced motion
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+    if (prefersReducedMotion) {
+      prevTargetRef.current = target
+      return
+    }
+
+    const startVal = prevTargetRef.current ?? 0
+    const endVal = target
+    prevTargetRef.current = endVal
+
+    const duration = 800 // 800ms snappy animation
+    let startTimestamp: number | null = null
+    let rafId: number
+
+    const step = (timestamp: number) => {
+      if (!startTimestamp) startTimestamp = timestamp
+      const elapsed = timestamp - startTimestamp
+      const progress = Math.min(1, elapsed / duration)
+      // Ease out expo: snappy deceleration curve
+      const eased = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress)
+      const current = startVal + (endVal - startVal) * eased
+
+      if (progress < 1) {
+        setDisplayVal(current)
+        rafId = requestAnimationFrame(step)
+      } else {
+        setDisplayVal(endVal)
+      }
+    }
+
+    rafId = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(rafId)
+  }, [target])
+
+  // SSR or before mount / non-numeric fallback / reduced motion: render the static parsed value
+  if (!parsed || displayVal === null) {
+    return renderStatValue(value)
+  }
+
+  // Format animated number
+  const fixed = displayVal.toFixed(parsed.decimals)
+  const [rawInt, rawDec] = fixed.split(".")
+  const intDisplay = parsed.hasComma
+    ? Number(rawInt).toLocaleString("en-US")
+    : rawInt
+  const decDisplay = parsed.decimals > 0 && rawDec ? `.${rawDec}` : null
+
+  return (
+    <span className="inline-flex items-baseline font-mono tabular-nums tracking-tight min-w-0 select-all">
+      {parsed.prefix && (
+        <span className="text-[0.82em] font-semibold text-muted-foreground/80 mr-0.5 select-all">
+          {parsed.prefix}
+        </span>
+      )}
+      <span className="font-bold select-all">{intDisplay}</span>
+      {decDisplay && (
+        <span className="text-[0.76em] font-semibold text-muted-foreground/85 tracking-normal ml-0.5 select-all">
+          {decDisplay}
+        </span>
+      )}
+      {parsed.suffix && (
+        <span className="text-[0.82em] font-semibold text-muted-foreground/80 ml-0.5 select-all">
+          {parsed.suffix}
         </span>
       )}
     </span>
@@ -114,7 +233,7 @@ export function StatCard({
           )}
           title={typeof value === "string" || typeof value === "number" ? String(value) : undefined}
         >
-          {renderStatValue(value)}
+          <AnimatedStatValue value={value} />
         </div>
         {subtext && (
           <div

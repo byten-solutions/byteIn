@@ -304,6 +304,7 @@ export function ReservationList({
           <Input
             placeholder="Search reservation #, guest name, phone..."
             className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)

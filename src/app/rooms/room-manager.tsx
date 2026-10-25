@@ -671,6 +671,7 @@ export function RoomManager({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 text-xs h-9"
+            maxLength={100}
           />
         </div>
 
@@ -1231,6 +1232,7 @@ export function RoomManager({
                 <Textarea
                   id="statusNotes"
                   rows={2}
+                  maxLength={500}
                   placeholder="e.g. Cleaned by staff, Plumbing inspection needed..."
                   value={statusNotes}
                   onChange={(e) => setStatusNotes(e.target.value)}
@@ -1349,6 +1351,7 @@ export function RoomManager({
                     id="roomNo"
                     required
                     placeholder="e.g. 101"
+                    maxLength={50}
                     value={formRoomNo}
                     onChange={(e) => setFormRoomNo(e.target.value)}
                     disabled={loading}
@@ -1416,6 +1419,7 @@ export function RoomManager({
                   <Input
                     id="displayName"
                     placeholder="e.g. Executive Corner Suite"
+                    maxLength={100}
                     value={formDisplayName}
                     onChange={(e) => setFormDisplayName(e.target.value)}
                     disabled={loading}
@@ -1428,6 +1432,7 @@ export function RoomManager({
                   <Textarea
                     id="roomNotes"
                     rows={2}
+                    maxLength={500}
                     placeholder="View, quiet room, accessibility features..."
                     value={formNotes}
                     onChange={(e) => setFormNotes(e.target.value)}

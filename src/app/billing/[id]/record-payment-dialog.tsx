@@ -171,6 +171,7 @@ export function RecordPaymentDialog({
             <Input
               placeholder="e.g. TXN-98421, Last 4 digits, Cheque no..."
               className="h-10 text-xs sm:text-sm font-mono"
+              maxLength={100}
               value={referenceNumber}
               onChange={(e) => setReferenceNumber(e.target.value)}
             />

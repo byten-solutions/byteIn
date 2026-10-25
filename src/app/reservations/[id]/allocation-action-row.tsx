@@ -341,6 +341,7 @@ export function AllocationActionRow({
                     <Input
                       placeholder="e.g. Passport or ID Number"
                       className="h-9 text-xs font-mono"
+                      maxLength={100}
                       value={idNumber}
                       onChange={(e) => setIdNumber(e.target.value)}
                     />
@@ -356,6 +357,7 @@ export function AllocationActionRow({
                 placeholder="Key card issued, luggage notes, special arrangements..."
                 rows={2}
                 className="text-xs"
+                maxLength={500}
                 value={checkInNotes}
                 onChange={(e) => setCheckInNotes(e.target.value)}
               />
@@ -503,6 +505,7 @@ export function AllocationActionRow({
                 placeholder="Keys returned, minibar consumed, inspection notes..."
                 rows={2}
                 className="text-xs"
+                maxLength={500}
                 value={checkOutNotes}
                 onChange={(e) => setCheckOutNotes(e.target.value)}
               />

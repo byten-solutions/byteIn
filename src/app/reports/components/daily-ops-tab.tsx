@@ -184,6 +184,7 @@ export function DailyOpsTab({
             <Input
               type="text"
               placeholder="Filter guest, res #, room..."
+              maxLength={100}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="h-8 pl-8 pr-7 text-xs"

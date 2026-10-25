@@ -585,6 +585,7 @@ export function UserManagement({
             <Input
               type="text"
               placeholder="Search by staff name or email..."
+              maxLength={100}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 h-9"
@@ -906,6 +907,7 @@ export function UserManagement({
               <Input
                 id="name"
                 required
+                maxLength={100}
                 value={createName}
                 onChange={(e) => setCreateName(e.target.value)}
                 placeholder="e.g. Maria Santos"
@@ -918,6 +920,7 @@ export function UserManagement({
                 id="email"
                 type="email"
                 required
+                maxLength={254}
                 value={createEmail}
                 onChange={(e) => setCreateEmail(e.target.value)}
                 placeholder="reception@byteinn.local"
@@ -930,6 +933,7 @@ export function UserManagement({
                 id="password"
                 type="text"
                 required
+                maxLength={128}
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
                 placeholder="Min 8 chars, 1 uppercase, 1 number, 1 special"
@@ -1055,6 +1059,7 @@ export function UserManagement({
               <Input
                 id="editName"
                 required
+                maxLength={100}
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
               />
@@ -1066,6 +1071,7 @@ export function UserManagement({
                 id="editEmail"
                 type="email"
                 required
+                maxLength={254}
                 value={editEmail}
                 onChange={(e) => setEditEmail(e.target.value)}
               />
@@ -1172,6 +1178,7 @@ export function UserManagement({
                 id="resetPassword"
                 type="text"
                 required
+                maxLength={128}
                 value={resetNewPassword}
                 onChange={(e) => setResetNewPassword(e.target.value)}
                 placeholder="e.g. TempPass@2026"

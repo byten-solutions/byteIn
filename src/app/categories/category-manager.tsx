@@ -354,6 +354,7 @@ export function CategoryManager({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 text-xs h-9"
+            maxLength={100}
           />
         </div>
 
@@ -553,6 +554,7 @@ export function CategoryManager({
                     id="catName"
                     required
                     placeholder="e.g. Deluxe Double Room"
+                    maxLength={100}
                     value={categoryName}
                     onChange={(e) => setCategoryName(e.target.value)}
                     disabled={loading}
@@ -565,6 +567,7 @@ export function CategoryManager({
                   <Textarea
                     id="catDesc"
                     rows={2}
+                    maxLength={255}
                     placeholder="Features, bed configurations, view description..."
                     value={categoryDescription}
                     onChange={(e) => setCategoryDescription(e.target.value)}
@@ -684,6 +687,7 @@ export function CategoryManager({
                 id="amenityName"
                 required
                 placeholder="e.g. Free High-Speed Wi-Fi"
+                maxLength={100}
                 value={amenityName}
                 onChange={(e) => setAmenityName(e.target.value)}
                 disabled={loading}
@@ -696,6 +700,7 @@ export function CategoryManager({
               <Input
                 id="amenityDesc"
                 placeholder="Optional description"
+                maxLength={255}
                 value={amenityDescription}
                 onChange={(e) => setAmenityDescription(e.target.value)}
                 disabled={loading}

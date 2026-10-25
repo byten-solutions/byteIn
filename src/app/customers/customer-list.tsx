@@ -502,6 +502,7 @@ export function CustomerList({
           <Input
             placeholder="Search by name, phone, email, or ID..."
             className="pl-9 h-9 text-xs sm:text-sm bg-card border-border/80 shadow-2xs"
+            maxLength={100}
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value)
@@ -792,6 +793,7 @@ export function CustomerList({
                 <Input
                   placeholder="e.g. Jane"
                   className="h-10 text-xs sm:text-sm"
+                  maxLength={100}
                   value={formData.firstName}
                   onChange={(e) => setFormData((prev) => ({ ...prev, firstName: e.target.value }))}
                   required
@@ -804,6 +806,7 @@ export function CustomerList({
                 <Input
                   placeholder="e.g. Smith"
                   className="h-10 text-xs sm:text-sm"
+                  maxLength={100}
                   value={formData.lastName}
                   onChange={(e) => setFormData((prev) => ({ ...prev, lastName: e.target.value }))}
                 />
@@ -816,6 +819,7 @@ export function CustomerList({
                 <Input
                   placeholder="+91 98765 43210"
                   className="h-10 text-xs sm:text-sm font-mono"
+                  maxLength={50}
                   value={formData.phone}
                   onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
                 />
@@ -827,6 +831,7 @@ export function CustomerList({
                   type="email"
                   placeholder="e.g. jane@example.com"
                   className="h-10 text-xs sm:text-sm"
+                  maxLength={254}
                   value={formData.email}
                   onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                 />
@@ -851,6 +856,7 @@ export function CustomerList({
                     <Input
                       placeholder="e.g. Indian"
                       className="h-9 text-xs"
+                      maxLength={100}
                       value={formData.nationality}
                       onChange={(e) => setFormData((prev) => ({ ...prev, nationality: e.target.value }))}
                     />
@@ -877,6 +883,7 @@ export function CustomerList({
                       <Input
                         placeholder="e.g. Pass No or National ID"
                         className="h-9 text-xs font-mono"
+                        maxLength={100}
                         value={formData.idProofNumber}
                         onChange={(e) => setFormData((prev) => ({ ...prev, idProofNumber: e.target.value }))}
                       />
@@ -888,6 +895,7 @@ export function CustomerList({
                     <Input
                       placeholder="City, State"
                       className="h-9 text-xs"
+                      maxLength={255}
                       value={formData.address}
                       onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                     />
@@ -898,6 +906,7 @@ export function CustomerList({
                     <Input
                       placeholder="VIP, quiet room requested..."
                       className="h-9 text-xs"
+                      maxLength={500}
                       value={formData.remarks}
                       onChange={(e) => setFormData((prev) => ({ ...prev, remarks: e.target.value }))}
                     />

@@ -200,6 +200,7 @@ export function AddItemDialog({
                   : "e.g. Minibar, Room Service, Laundry..."
               }
               className="h-10 text-xs sm:text-sm"
+              maxLength={255}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
@@ -214,6 +215,7 @@ export function AddItemDialog({
               <Input
                 placeholder="e.g. Corporate agreement promo / General Manager approval"
                 className="h-10 text-xs sm:text-sm border-amber-500/40 focus:border-amber-500"
+                maxLength={255}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 required
