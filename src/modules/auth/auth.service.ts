@@ -12,6 +12,7 @@ import {
   type SafePropertySummary,
 } from "./auth.types";
 import { BadRequestError, ForbiddenError, NotFoundError } from "@/lib/errors";
+import { invalidateSessionUserCache } from "@/lib/session-cache";
 
 export const MIN_SESSION_SECRET_LENGTH = 32;
 
@@ -305,6 +306,7 @@ export class AuthService {
 
     // 3. Hash new password & atomically update user with incremented tokenVersion
     const newHash = await this.hashPassword(newPass);
+    invalidateSessionUserCache(user.id);
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {

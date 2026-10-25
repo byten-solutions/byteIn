@@ -57,8 +57,13 @@ export default async function PrintReceiptPage({ params }: PrintReceiptPageProps
     invoiceStatus: invoice.status,
   }
 
-  const properties = await PropertyService.getProperties()
-  const property = properties[0] || null
+  let property = null
+  try {
+    const properties = await PropertyService.getProperties()
+    property = properties[0] || null
+  } catch (err) {
+    console.error("Failed to fetch property details for print receipt:", err)
+  }
 
   const propertyName = property?.name || "byteInn Hotel & Suites"
   const propertyAddress = [property?.address, property?.city, property?.state, property?.country]

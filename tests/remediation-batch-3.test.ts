@@ -496,11 +496,10 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
     it("preserves past shift collections unchanged and attributes voids to the shift where the void occurred", async () => {
       const today = getHotelTodayDateUtc();
-      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-      const yesterdayIso = yesterday.toISOString().split("T")[0]!;
-      const todayIso = today.toISOString().split("T")[0]!;
+      const pastShift = new Date(today.getTime() - 48 * 60 * 60 * 1000);
+      const pastShiftIso = pastShift.toISOString().split("T")[0]!;
 
-      // 1. Create a reservation and an invoice with a payment recorded yesterday (Shift 1)
+      // 1. Create a reservation and an invoice with a payment recorded in past shift (Shift 1)
       const resv = await prisma.reservation.create({
         data: {
           propertyId: testPropertyId,
@@ -528,7 +527,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               paymentMethod: "CASH",
               referenceNumber: "CASH-SHIFT-01",
               status: PaymentStatus.RECORDED,
-              paidAt: yesterday,
+              paidAt: pastShift,
               createdBy: receptionistUserId,
             },
           },
@@ -538,9 +537,9 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       const payment = inv.payments[0]!;
 
-      // 2. Query yesterday's shift collection report BEFORE the void
-      const reportYesterdayBefore = await ReportsService.getShiftCollections(yesterdayIso);
-      const yesterdayTotalBefore = Number(reportYesterdayBefore.totalCollected);
+      // 2. Query past shift collection report BEFORE the void
+      const reportPastBefore = await ReportsService.getShiftCollections(pastShiftIso);
+      const pastTotalBefore = Number(reportPastBefore.totalCollected);
 
       // 3. Admin voids the payment TODAY (Shift 2)
       await BillingService.voidPayment(
@@ -550,18 +549,19 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
         "Customer check-out refund approved by manager"
       );
 
-      // 4. Query yesterday's shift report AFTER the void:
+      // 4. Query past shift report AFTER the void:
       // Invariant: Past shift collections MUST remain unchanged!
-      const reportYesterdayAfter = await ReportsService.getShiftCollections(yesterdayIso);
+      const reportPastAfter = await ReportsService.getShiftCollections(pastShiftIso);
       assert.equal(
-        Number(reportYesterdayAfter.totalCollected),
-        yesterdayTotalBefore,
-        "Yesterday shift collection total MUST NOT change when payment is voided in a later shift"
+        Number(reportPastAfter.totalCollected),
+        pastTotalBefore,
+        "Past shift collection total MUST NOT change when payment is voided in a later shift"
       );
 
       // 5. Query today's shift report:
       // The void MUST be attributed to today's shift where it happened!
-      const reportToday = await ReportsService.getShiftCollections(todayIso);
+      const voidDateIso = new Date().toISOString().split("T")[0]!;
+      const reportToday = await ReportsService.getShiftCollections(voidDateIso);
       const voidTx = reportToday.transactions.find(
         (t) => t.paymentId === payment.id && Number(t.amount) < 0
       );

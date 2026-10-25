@@ -27,13 +27,27 @@ export default async function CustomersPage(props: {
       ? tabParam
       : undefined
 
-  const result = await CustomerService.getCustomers({
-    page: isNaN(page) ? 1 : page,
-    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
-    search: searchParams?.search,
-    tab,
-    propertyId: scope ?? undefined,
-  })
+  let result: Awaited<ReturnType<typeof CustomerService.getCustomers>> = {
+    customers: [],
+    pagination: {
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      total: 0,
+      totalPages: 1,
+    },
+  }
+
+  try {
+    result = await CustomerService.getCustomers({
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      search: searchParams?.search,
+      tab,
+      propertyId: scope ?? undefined,
+    })
+  } catch (err) {
+    console.error("Failed to load customers in CustomersPage:", err)
+  }
 
   const serializedCustomers = result.customers.map((c) => ({
     id: c.id,

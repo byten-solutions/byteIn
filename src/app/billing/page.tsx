@@ -3,6 +3,7 @@ import { getSession, resolveScope } from "@/lib/auth-guard"
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { BillingService } from "@/modules/billing/billing.service"
 import { AppShell } from "@/components/app-shell"
+import type { InvoiceListResponse } from "@/modules/billing/billing.types"
 import { InvoiceList } from "./invoice-list"
 
 export default async function BillingPage(props: {
@@ -22,12 +23,29 @@ export default async function BillingPage(props: {
   const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1
   const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE
 
-  const initialData = await BillingService.getInvoices({
-    page: isNaN(page) ? 1 : page,
-    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
-    search: searchParams?.search,
-    propertyId: scope ?? undefined,
-  })
+  let initialData: InvoiceListResponse
+  try {
+    initialData = await BillingService.getInvoices({
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      search: searchParams?.search,
+      propertyId: scope ?? undefined,
+    })
+  } catch (err) {
+    console.error("Failed to load initial invoices in BillingPage:", err)
+    initialData = {
+      invoices: [],
+      total: 0,
+      page: 1,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      totalPages: 1,
+      summary: {
+        totalInvoiced: "0.00",
+        totalCollected: "0.00",
+        totalOutstanding: "0.00",
+      },
+    }
+  }
 
   return (
     <AppShell session={session}>

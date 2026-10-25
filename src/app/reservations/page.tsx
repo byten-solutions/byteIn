@@ -34,13 +34,27 @@ export default async function ReservationsPage(props: {
       ? (statusParam as ReservationStatus)
       : undefined
 
-  const result = await ReservationService.getReservations({
-    page: isNaN(page) ? 1 : page,
-    limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
-    search: searchParams?.search,
-    status,
-    propertyId: scope ?? undefined,
-  })
+  let result: Awaited<ReturnType<typeof ReservationService.getReservations>> = {
+    reservations: [],
+    pagination: {
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      total: 0,
+      totalPages: 1,
+    },
+  }
+
+  try {
+    result = await ReservationService.getReservations({
+      page: isNaN(page) ? 1 : page,
+      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+      search: searchParams?.search,
+      status,
+      propertyId: scope ?? undefined,
+    })
+  } catch (err) {
+    console.error("Failed to load reservations in ReservationsPage:", err)
+  }
 
   // Serialize Decimal objects and Date objects for client component
   const serializedReservations = result.reservations.map((r) => ({
