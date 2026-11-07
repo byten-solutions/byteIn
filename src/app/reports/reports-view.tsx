@@ -101,9 +101,6 @@ export function ReportsView({
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             PMS Operations & Analytics
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Daily front desk operations, room tape chart, shift collections, and financial performance.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -124,15 +121,15 @@ export function ReportsView({
         </div>
       </div>
 
-      {/* Primary Tab Navigation */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2 print:hidden">
+      {/* Primary Tab Navigation — Underline Hierarchy */}
+      <div className="flex items-center gap-6 border-b border-border print:hidden overflow-x-auto">
         <button
           onClick={() => handleTabSelect("daily_ops")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
             activeTab === "daily_ops"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "border-primary text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
           )}
         >
           <CalendarCheck className="size-4" />
@@ -142,10 +139,10 @@ export function ReportsView({
         <button
           onClick={() => handleTabSelect("availability_grid")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
             activeTab === "availability_grid"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "border-primary text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
           )}
         >
           <CalendarDays className="size-4" />
@@ -155,10 +152,10 @@ export function ReportsView({
         <button
           onClick={() => handleTabSelect("financial")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
             activeTab === "financial"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "border-primary text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
           )}
         >
           <Wallet className="size-4" />
@@ -168,10 +165,10 @@ export function ReportsView({
         <button
           onClick={() => handleTabSelect("performance")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
             activeTab === "performance"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "border-primary text-foreground font-semibold"
+              : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
           )}
         >
           <TrendingUp className="size-4" />

@@ -164,7 +164,7 @@ export function CollectionsSection({ date, onDateChange, propertyId, refreshTrig
       {/* Breakdowns Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* By Payment Method */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Shift Collections by Method</h3>
             <span className="text-xs text-muted-foreground font-mono">
@@ -228,7 +228,7 @@ export function CollectionsSection({ date, onDateChange, propertyId, refreshTrig
         </div>
 
         {/* By Front Desk Staff */}
-        <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Collections by Staff User</h3>
             <span className="text-xs text-muted-foreground">Shift Accountability</span>
@@ -263,12 +263,9 @@ export function CollectionsSection({ date, onDateChange, propertyId, refreshTrig
 
       {/* Paginated Transactions Table */}
       {data.transactions && data.transactions.length > 0 && (
-        <div className="rounded-xl border border-border bg-card space-y-4 p-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="flex items-center justify-between border-b border-border pb-2">
-            <div>
-              <h3 className="font-semibold text-foreground">Shift Transactions Log</h3>
-              <p className="text-xs text-muted-foreground">Itemized payments collected during this shift</p>
-            </div>
+            <h3 className="font-semibold text-foreground">Shift Transactions Log</h3>
             {data.pagination && (
               <span className="text-xs text-muted-foreground">
                 Total: {data.pagination.total} transaction{data.pagination.total === 1 ? "" : "s"}

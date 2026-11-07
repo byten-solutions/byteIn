@@ -93,56 +93,19 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
         </span>
       </div>
 
-      {/* Receivables & Aging Report Shell */}
-      <div className="rounded-xl border border-border bg-card space-y-4 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
-          <h3 className="font-semibold text-foreground">Outstanding Balances & Aging</h3>
-
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setFilter("all")
-                setPage(1)
-              }}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                filter === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-              )}
-            >
-              All ({data.totalInvoices})
-            </button>
-            <button
-              onClick={() => {
-                setFilter("in_house")
-                setPage(1)
-              }}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                filter === "in_house" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-              )}
-            >
-              In-House ({data.inHouseCount})
-            </button>
-            <button
-              onClick={() => {
-                setFilter("departed")
-                setPage(1)
-              }}
-              className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
-                filter === "departed" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-              )}
-            >
-              Departed ({data.departedCount})
-            </button>
-          </div>
+      {/* Card 1: Aging Distribution & Summary */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between border-b border-border pb-2">
+          <h3 className="font-semibold text-foreground">Folio Aging Distribution</h3>
+          <span className="font-mono text-xs text-muted-foreground">
+            Total: {formatMoney(totalAging)}
+          </span>
         </div>
 
         {/* Aging Distribution Horizontal Stacked Bar */}
         <div className="space-y-1.5 pb-1">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Aging Distribution</span>
+            <span className="font-medium text-foreground">Aging Spread</span>
             <span className="font-mono text-[11px] text-muted-foreground/70">
               {formatMoney(totalAging)} across all aging buckets
             </span>
@@ -222,6 +185,62 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
             <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 font-mono tabular-nums">
               {formatMoney(b60Plus)}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Card 2: Receivables Ledger Table */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
+          <h3 className="font-semibold text-foreground">Outstanding Folios</h3>
+
+          {/* Filter Tabs — Secondary Segmented Pill Style */}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("all")
+                setPage(1)
+              }}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
+                filter === "all"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              All ({data.totalInvoices})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("in_house")
+                setPage(1)
+              }}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
+                filter === "in_house"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              In-House ({data.inHouseCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("departed")
+                setPage(1)
+              }}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
+                filter === "departed"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Departed ({data.departedCount})
+            </button>
           </div>
         </div>
 

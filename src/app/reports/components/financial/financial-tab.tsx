@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Wallet, Receipt, Tag } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CollectionsSection } from "./collections-section"
 import { ReceivablesSection } from "./receivables-section"
@@ -38,19 +37,18 @@ export function FinancialTab({
 
   return (
     <div className="space-y-6">
-      {/* Financial Sub-Tab Navigation */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2 print:hidden">
+      {/* Financial Sub-Tab Navigation — Secondary Segmented Pill */}
+      <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1 print:hidden">
         <button
           type="button"
           onClick={() => handleSubTabSelect("collections")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
             activeSubTab === "collections"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
-          <Wallet className="size-4" />
           Collections
         </button>
 
@@ -58,13 +56,12 @@ export function FinancialTab({
           type="button"
           onClick={() => handleSubTabSelect("receivables")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
             activeSubTab === "receivables"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
-          <Receipt className="size-4" />
           Receivables
         </button>
 
@@ -72,13 +69,12 @@ export function FinancialTab({
           type="button"
           onClick={() => handleSubTabSelect("discounts")}
           className={cn(
-            "flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
             activeSubTab === "discounts"
-              ? "bg-primary text-primary-foreground shadow-xs"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
           )}
         >
-          <Tag className="size-4" />
           Discounts
         </button>
       </div>

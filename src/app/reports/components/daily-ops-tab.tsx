@@ -257,75 +257,109 @@ export function DailyOpsTab({
       ) : null}
 
       {/* 2. Operations Sub-Tabs Navigation */}
-      <div className="rounded-xl border border-border bg-card">
+      <div className="rounded-xl border border-border bg-card shadow-xs">
         <div className="flex flex-wrap items-center gap-2 border-b border-border p-3 print:hidden">
-          <button
-            onClick={() => handleSubTabChange("arrivals")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              activeSubTab === "arrivals"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            )}
-          >
-            Today&apos;s Arrivals
-            {countsData && (
-              <span className="rounded-full bg-primary-foreground/20 px-1.5 py-0.2 text-[10px] font-semibold">
-                {countsData.arrivals}
-              </span>
-            )}
-          </button>
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1">
+            <button
+              type="button"
+              onClick={() => handleSubTabChange("arrivals")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                activeSubTab === "arrivals"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Today&apos;s Arrivals
+              {countsData && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-semibold font-mono",
+                    activeSubTab === "arrivals"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted-foreground/15 text-muted-foreground"
+                  )}
+                >
+                  {countsData.arrivals}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => handleSubTabChange("departures")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              activeSubTab === "departures"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            )}
-          >
-            Today&apos;s Departures
-            {countsData && (
-              <span className="rounded-full bg-primary-foreground/20 px-1.5 py-0.2 text-[10px] font-semibold">
-                {countsData.departures}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => handleSubTabChange("departures")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                activeSubTab === "departures"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Today&apos;s Departures
+              {countsData && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-semibold font-mono",
+                    activeSubTab === "departures"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted-foreground/15 text-muted-foreground"
+                  )}
+                >
+                  {countsData.departures}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => handleSubTabChange("in-house")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              activeSubTab === "in-house"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            )}
-          >
-            In-House Guests
-            {countsData && (
-              <span className="rounded-full bg-primary-foreground/20 px-1.5 py-0.2 text-[10px] font-semibold">
-                {countsData.inHouse}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => handleSubTabChange("in-house")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                activeSubTab === "in-house"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              In-House Guests
+              {countsData && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-semibold font-mono",
+                    activeSubTab === "in-house"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted-foreground/15 text-muted-foreground"
+                  )}
+                >
+                  {countsData.inHouse}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => handleSubTabChange("overdue")}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              activeSubTab === "overdue"
-                ? "bg-amber-600 text-white"
-                : "text-muted-foreground hover:bg-muted"
-            )}
-          >
-            Overdue / No-Shows
-            {countsData && (
-              <span className="rounded-full bg-white/20 px-1.5 py-0.2 text-[10px] font-semibold">
-                {countsData.overdue}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => handleSubTabChange("overdue")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+                activeSubTab === "overdue"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              Overdue / No-Shows
+              {countsData && (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.2 text-[10px] font-semibold font-mono",
+                    activeSubTab === "overdue"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted-foreground/15 text-muted-foreground"
+                  )}
+                >
+                  {countsData.overdue}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Print cap notice */}

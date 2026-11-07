@@ -99,35 +99,38 @@ export function DiscountsSection({
       </div>
 
       {/* Itemized Concessions Shell */}
-      <div className="rounded-xl border border-border bg-card space-y-4 p-4">
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
           <h3 className="font-semibold text-foreground">Discounts & Concessions Breakdown</h3>
 
-          <div className="flex items-center gap-2">
+          {/* Sub-tabs — Secondary Segmented Pill Style */}
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1">
             <button
+              type="button"
               onClick={() => {
                 setActiveSubTab("invoices")
                 setPage(1)
               }}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
                 activeSubTab === "invoices"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               Invoice Discounts ({summary.discountedInvoicesCount})
             </button>
             <button
+              type="button"
               onClick={() => {
                 setActiveSubTab("overrides")
                 setPage(1)
               }}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
                 activeSubTab === "overrides"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
+                  ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               Rate Overrides ({summary.rateOverridesCount})
