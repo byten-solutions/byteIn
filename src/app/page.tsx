@@ -28,6 +28,15 @@ import {
   StatusBadge,
   EmptyState,
 } from "@/components/ui-kit"
+import { formatMoney } from "@/lib/currency"
+import {
+  RoomInventoryDonut,
+  OccupancyHorizonSection,
+  OccupancyHorizonSkeleton,
+  ShiftProgressGauges,
+  PlatformCapacityBar,
+  PropertyMiniCapacityBar,
+} from "@/components/dashboard"
 
 export default async function Page() {
   const session = await getSession()
@@ -127,12 +136,15 @@ export default async function Page() {
               />
               <StatCard
                 label="Platform Revenue"
-                value={`$${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                value={formatMoney(totalRevenue)}
                 subtext={`${totalConfirmedRes} active confirmed bookings`}
                 indicatorColor="bg-amber-500"
                 href="/reports"
               />
             </div>
+
+            {/* Global Portfolio Capacity Visualization */}
+            <PlatformCapacityBar properties={properties} totalRooms={totalRooms} />
 
             {/* Hotel Portfolio Section */}
             <div className="space-y-4">
@@ -204,6 +216,13 @@ export default async function Page() {
                               {prop.city ? `, ${prop.city}` : ""}
                             </p>
                           )}
+
+                          {/* Mini Capacity Bar */}
+                          <PropertyMiniCapacityBar
+                            cleanRooms={cleanRooms}
+                            occupiedRooms={occupiedRooms}
+                            totalRooms={prop._count.rooms}
+                          />
 
                           {/* Quick stat counters */}
                           <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/60 text-center">
@@ -348,33 +367,17 @@ export default async function Page() {
               />
             </div>
 
-            {/* Operational Shift Strip */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/80 bg-card p-3 sm:px-4 sm:py-3 text-xs shadow-2xs">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="size-2 rounded-full bg-primary shrink-0" />
-                  <span className="font-semibold text-foreground font-mono tabular-nums">
-                    {counts.total > 0 ? Math.round((counts.occupied / counts.total) * 100) : 0}%
-                  </span>
-                  <span>Occupancy</span>
-                </div>
-                <span className="hidden sm:inline text-border">|</span>
-                <div className="text-muted-foreground">
-                  Turnover Pressure:{" "}
-                  <span className="font-mono tabular-nums font-semibold text-foreground">
-                    {counts.dirty}
-                  </span>{" "}
-                  dirty room{counts.dirty === 1 ? "" : "s"} awaiting turnover
-                </div>
+            {/* Operational Middle Grid: 7-Day Occupancy Horizon (2/3) + Room Inventory Donut (1/3) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <Suspense fallback={<OccupancyHorizonSkeleton />}>
+                  <OccupancyHorizonSection propertyId={session.propertyId || undefined} />
+                </Suspense>
               </div>
 
-              <Link
-                href="/reservations"
-                className="inline-flex items-center gap-1 font-semibold text-primary hover:underline self-end sm:self-auto text-xs"
-              >
-                <span>{counts.confirmedReservations} Confirmed Bookings</span>
-                <ChevronRight className="size-3.5" />
-              </Link>
+              <div className="lg:col-span-1">
+                <RoomInventoryDonut counts={counts} />
+              </div>
             </div>
 
             {/* Daily Operations: Arrivals & Departures Matrices */}
@@ -484,6 +487,9 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
 
   return (
     <div className="space-y-4 pt-2">
+      {/* Shift Operational Turnout Gauges */}
+      <ShiftProgressGauges counts={opsCounts} />
+
       {/* 4 Daily Operations Counts */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link
@@ -581,30 +587,38 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
                   href={`/reservations/${alloc.reservationId}`}
                   className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                 >
-                  <div className="space-y-1 min-w-0 pr-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
-                        title={`Room ${alloc.room.roomNo}`}
-                      >
-                        Room {alloc.room.roomNo}
-                      </span>
-                      <span
-                        className="text-muted-foreground truncate text-[11px] min-w-0"
-                        title={alloc.roomCategory.name}
-                      >
-                        • {alloc.roomCategory.name}
-                      </span>
+                  <div className="flex items-center gap-3 min-w-0 pr-3">
+                    <div className="size-8 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-500/20">
+                      {alloc.reservation.customer.firstName.charAt(0)}
+                      {alloc.reservation.customer.lastName
+                        ? alloc.reservation.customer.lastName.charAt(0)
+                        : ""}
                     </div>
-                    <div className="text-muted-foreground truncate text-xs">
-                      Guest:{" "}
-                      <span className="font-semibold text-foreground">
-                        {alloc.reservation.customer.firstName}{" "}
-                        {alloc.reservation.customer.lastName}
-                      </span>{" "}
-                      <span className="font-mono text-[11px] text-muted-foreground/70">
-                        (#{alloc.reservation.reservationNo})
-                      </span>
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
+                          title={`Room ${alloc.room.roomNo}`}
+                        >
+                          Room {alloc.room.roomNo}
+                        </span>
+                        <span
+                          className="text-muted-foreground truncate text-[11px] min-w-0"
+                          title={alloc.roomCategory.name}
+                        >
+                          • {alloc.roomCategory.name}
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground truncate text-xs">
+                        Guest:{" "}
+                        <span className="font-semibold text-foreground">
+                          {alloc.reservation.customer.firstName}{" "}
+                          {alloc.reservation.customer.lastName}
+                        </span>{" "}
+                        <span className="font-mono text-[11px] text-muted-foreground/70">
+                          (#{alloc.reservation.reservationNo})
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -658,30 +672,38 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
                   href={`/reservations/${alloc.reservationId}`}
                   className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
                 >
-                  <div className="space-y-1 min-w-0 pr-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
-                        title={`Room ${alloc.room.roomNo}`}
-                      >
-                        Room {alloc.room.roomNo}
-                      </span>
-                      <span
-                        className="text-muted-foreground truncate text-[11px] min-w-0"
-                        title={alloc.roomCategory.name}
-                      >
-                        • {alloc.roomCategory.name}
-                      </span>
+                  <div className="flex items-center gap-3 min-w-0 pr-3">
+                    <div className="size-8 rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-sky-500/20">
+                      {alloc.reservation.customer.firstName.charAt(0)}
+                      {alloc.reservation.customer.lastName
+                        ? alloc.reservation.customer.lastName.charAt(0)
+                        : ""}
                     </div>
-                    <div className="text-muted-foreground truncate text-xs">
-                      Guest:{" "}
-                      <span className="font-semibold text-foreground">
-                        {alloc.reservation.customer.firstName}{" "}
-                        {alloc.reservation.customer.lastName}
-                      </span>{" "}
-                      <span className="font-mono text-[11px] text-muted-foreground/70">
-                        (#{alloc.reservation.reservationNo})
-                      </span>
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
+                          title={`Room ${alloc.room.roomNo}`}
+                        >
+                          Room {alloc.room.roomNo}
+                        </span>
+                        <span
+                          className="text-muted-foreground truncate text-[11px] min-w-0"
+                          title={alloc.roomCategory.name}
+                        >
+                          • {alloc.roomCategory.name}
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground truncate text-xs">
+                        Guest:{" "}
+                        <span className="font-semibold text-foreground">
+                          {alloc.reservation.customer.firstName}{" "}
+                          {alloc.reservation.customer.lastName}
+                        </span>{" "}
+                        <span className="font-mono text-[11px] text-muted-foreground/70">
+                          (#{alloc.reservation.reservationNo})
+                        </span>
+                      </div>
                     </div>
                   </div>
 
