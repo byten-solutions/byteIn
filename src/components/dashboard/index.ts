@@ -1,10 +1,13 @@
 export { RoomInventoryDonut } from "./room-inventory-donut"
-export { RoomStatusBar } from "./room-status-bar"
 export {
-  OccupancyHorizonSection,
-  OccupancyHorizonSkeleton,
-} from "./occupancy-horizon-section"
-export { ShiftProgressGauges } from "./shift-progress-gauges"
+  OccupancyRevenueChart,
+  OccupancyRevenueSkeleton,
+} from "./occupancy-revenue-chart"
+export {
+  ShiftCollectionsCard,
+  ShiftCollectionsSkeleton,
+} from "./shift-collections-card"
+export { OperationsDispatchCard } from "./operations-dispatch-card"
 export {
   PlatformCapacityBar,
   PropertyMiniCapacityBar,

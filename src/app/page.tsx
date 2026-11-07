@@ -6,9 +6,6 @@ import {
   Plus,
   ShieldCheck,
   ArrowRight,
-  LogIn,
-  LogOut,
-  ChevronRight,
   Building2,
   Users,
   Sparkles,
@@ -25,15 +22,16 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   StatCard,
-  StatusBadge,
   EmptyState,
 } from "@/components/ui-kit"
 import { formatMoney } from "@/lib/currency"
 import {
   RoomInventoryDonut,
-  OccupancyHorizonSection,
-  OccupancyHorizonSkeleton,
-  ShiftProgressGauges,
+  OccupancyRevenueChart,
+  OccupancyRevenueSkeleton,
+  ShiftCollectionsCard,
+  ShiftCollectionsSkeleton,
+  OperationsDispatchCard,
   PlatformCapacityBar,
   PropertyMiniCapacityBar,
 } from "@/components/dashboard"
@@ -367,11 +365,11 @@ export default async function Page() {
               />
             </div>
 
-            {/* Operational Middle Grid: 7-Day Occupancy Horizon (2/3) + Room Inventory Donut (1/3) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Middle Section: Occupancy & Revenue Spline Area Chart (2/3) + Room Inventory Donut (1/3) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               <div className="lg:col-span-2">
-                <Suspense fallback={<OccupancyHorizonSkeleton />}>
-                  <OccupancyHorizonSection propertyId={session.propertyId || undefined} />
+                <Suspense fallback={<OccupancyRevenueSkeleton />}>
+                  <OccupancyRevenueChart propertyId={session.propertyId || undefined} />
                 </Suspense>
               </div>
 
@@ -380,10 +378,20 @@ export default async function Page() {
               </div>
             </div>
 
-            {/* Daily Operations: Arrivals & Departures Matrices */}
-            <Suspense fallback={<DailyOperationsSkeleton />}>
-              <DailyOperationsSection propertyId={session.propertyId || undefined} />
-            </Suspense>
+            {/* Bottom Section: Operations Dispatch (2/3) + Shift Drawer & Collections (1/3) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              <div className="lg:col-span-2">
+                <Suspense fallback={<DailyOperationsSkeleton />}>
+                  <DailyOperationsSection propertyId={session.propertyId || undefined} />
+                </Suspense>
+              </div>
+
+              <div className="lg:col-span-1">
+                <Suspense fallback={<ShiftCollectionsSkeleton />}>
+                  <ShiftCollectionsCard propertyId={session.propertyId || undefined} />
+                </Suspense>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex min-h-[60vh] items-center justify-center">
@@ -417,34 +425,25 @@ export default async function Page() {
 
 function DailyOperationsSkeleton() {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-5 w-24 rounded-full" />
-        </div>
-        <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
+    <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs h-full flex flex-col justify-between">
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-7 w-64 rounded-lg" />
       </div>
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-5 w-24 rounded-full" />
-        </div>
-        <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
-        </div>
+      <div className="space-y-2 flex-1">
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full rounded-lg" />
+      </div>
+      <div className="pt-2 border-t border-border/60 flex items-center justify-between">
+        <Skeleton className="h-3 w-48" />
+        <Skeleton className="h-3 w-24" />
       </div>
     </div>
   )
 }
 
-const DAILY_OPS_PREVIEW_LIMIT = 5
+const DAILY_OPS_PREVIEW_LIMIT = 6
 
 async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
   const todayStr = getHotelTodayDate()
@@ -479,244 +478,12 @@ async function DailyOperationsSection({ propertyId }: { propertyId?: string }) {
     console.error("Failed to load daily operations in DailyOperationsSection:", err)
   }
 
-  const propParam = propertyId ? `&propertyId=${encodeURIComponent(propertyId)}` : ""
-  const arrivalsHref = `/reports?tab=daily_ops&subtab=arrivals${propParam}`
-  const departuresHref = `/reports?tab=daily_ops&subtab=departures${propParam}`
-  const inHouseHref = `/reports?tab=daily_ops&subtab=in_house${propParam}`
-  const overdueHref = `/reports?tab=daily_ops&subtab=pending${propParam}`
-
   return (
-    <div className="space-y-4 pt-2">
-      {/* Shift Operational Turnout Gauges */}
-      <ShiftProgressGauges counts={opsCounts} />
-
-      {/* 4 Daily Operations Counts */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Link
-          href={arrivalsHref}
-          className="rounded-xl border border-border/80 bg-card p-3 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-colors group flex items-center justify-between shadow-2xs"
-        >
-          <div>
-            <div className="text-[11px] font-medium text-muted-foreground">Arrivals</div>
-            <div className="font-mono text-lg font-bold text-foreground tabular-nums">
-              {opsCounts.arrivals}
-            </div>
-          </div>
-          <LogIn className="size-4 text-emerald-600 dark:text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
-
-        <Link
-          href={departuresHref}
-          className="rounded-xl border border-border/80 bg-card p-3 hover:border-sky-500/40 hover:bg-sky-500/5 transition-colors group flex items-center justify-between shadow-2xs"
-        >
-          <div>
-            <div className="text-[11px] font-medium text-muted-foreground">Departures</div>
-            <div className="font-mono text-lg font-bold text-foreground tabular-nums">
-              {opsCounts.departures}
-            </div>
-          </div>
-          <LogOut className="size-4 text-sky-600 dark:text-sky-400 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
-
-        <Link
-          href={inHouseHref}
-          className="rounded-xl border border-border/80 bg-card p-3 hover:border-amber-500/40 hover:bg-amber-500/5 transition-colors group flex items-center justify-between shadow-2xs"
-        >
-          <div>
-            <div className="text-[11px] font-medium text-muted-foreground">In-House</div>
-            <div className="font-mono text-lg font-bold text-foreground tabular-nums">
-              {opsCounts.inHouse}
-            </div>
-          </div>
-          <BedDouble className="size-4 text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
-
-        <Link
-          href={overdueHref}
-          className="rounded-xl border border-border/80 bg-card p-3 hover:border-rose-500/40 hover:bg-rose-500/5 transition-colors group flex items-center justify-between shadow-2xs"
-        >
-          <div>
-            <div className="text-[11px] font-medium text-muted-foreground">Overdue</div>
-            <div className="font-mono text-lg font-bold text-foreground tabular-nums">
-              {opsCounts.overdue}
-            </div>
-          </div>
-          <ChevronRight className="size-4 text-rose-600 dark:text-rose-400 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
-      </div>
-
-      {/* Previews (at most 5 each = 10 rows total) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Arrivals Today */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <LogIn className="size-4 text-emerald-600 dark:text-emerald-400" />
-              <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
-                Arrivals Today
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-                {opsCounts.arrivals} scheduled
-              </span>
-              {opsCounts.arrivals > 0 && (
-                <Link
-                  href={arrivalsHref}
-                  className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
-                >
-                  <span>View all ({opsCounts.arrivals})</span>
-                  <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {arrivals.length === 0 ? (
-            <EmptyState
-              icon={<LogIn className="size-5" />}
-              title="No arrivals scheduled today"
-              description="No confirmed guest check-ins scheduled for today's shift."
-              className="min-h-44"
-            />
-          ) : (
-            <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-              {arrivals.map((alloc) => (
-                <Link
-                  key={alloc.id}
-                  href={`/reservations/${alloc.reservationId}`}
-                  className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0 pr-3">
-                    <div className="size-8 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-500/20">
-                      {alloc.reservation.customer.firstName.charAt(0)}
-                      {alloc.reservation.customer.lastName
-                        ? alloc.reservation.customer.lastName.charAt(0)
-                        : ""}
-                    </div>
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
-                          title={`Room ${alloc.room.roomNo}`}
-                        >
-                          Room {alloc.room.roomNo}
-                        </span>
-                        <span
-                          className="text-muted-foreground truncate text-[11px] min-w-0"
-                          title={alloc.roomCategory.name}
-                        >
-                          • {alloc.roomCategory.name}
-                        </span>
-                      </div>
-                      <div className="text-muted-foreground truncate text-xs">
-                        Guest:{" "}
-                        <span className="font-semibold text-foreground">
-                          {alloc.reservation.customer.firstName}{" "}
-                          {alloc.reservation.customer.lastName}
-                        </span>{" "}
-                        <span className="font-mono text-[11px] text-muted-foreground/70">
-                          (#{alloc.reservation.reservationNo})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <StatusBadge status={alloc.room.status} size="sm" />
-                    <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Departures Today */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <LogOut className="size-4 text-sky-600 dark:text-sky-400" />
-              <h2 className="text-sm font-bold tracking-tight text-foreground uppercase tracking-wider font-mono text-xs">
-                Departures Today
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20 px-2 py-0.5 text-xs font-mono tabular-nums font-semibold">
-                {opsCounts.departures} scheduled
-              </span>
-              {opsCounts.departures > 0 && (
-                <Link
-                  href={departuresHref}
-                  className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
-                >
-                  <span>View all ({opsCounts.departures})</span>
-                  <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              )}
-            </div>
-          </div>
-
-          {departures.length === 0 ? (
-            <EmptyState
-              icon={<LogOut className="size-5" />}
-              title="No departures scheduled today"
-              description="No guest check-outs scheduled for today's shift."
-              className="min-h-44"
-            />
-          ) : (
-            <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
-              {departures.map((alloc) => (
-                <Link
-                  key={alloc.id}
-                  href={`/reservations/${alloc.reservationId}`}
-                  className="flex items-center justify-between p-3.5 text-xs transition-colors hover:bg-muted/40 group"
-                >
-                  <div className="flex items-center gap-3 min-w-0 pr-3">
-                    <div className="size-8 rounded-full bg-sky-500/10 text-sky-700 dark:text-sky-300 font-mono font-bold text-xs flex items-center justify-center shrink-0 border border-sky-500/20">
-                      {alloc.reservation.customer.firstName.charAt(0)}
-                      {alloc.reservation.customer.lastName
-                        ? alloc.reservation.customer.lastName.charAt(0)
-                        : ""}
-                    </div>
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="font-mono tabular-nums font-bold text-foreground text-sm truncate max-w-[200px]"
-                          title={`Room ${alloc.room.roomNo}`}
-                        >
-                          Room {alloc.room.roomNo}
-                        </span>
-                        <span
-                          className="text-muted-foreground truncate text-[11px] min-w-0"
-                          title={alloc.roomCategory.name}
-                        >
-                          • {alloc.roomCategory.name}
-                        </span>
-                      </div>
-                      <div className="text-muted-foreground truncate text-xs">
-                        Guest:{" "}
-                        <span className="font-semibold text-foreground">
-                          {alloc.reservation.customer.firstName}{" "}
-                          {alloc.reservation.customer.lastName}
-                        </span>{" "}
-                        <span className="font-mono text-[11px] text-muted-foreground/70">
-                          (#{alloc.reservation.reservationNo})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <StatusBadge status={alloc.room.status} size="sm" />
-                    <ChevronRight className="size-4 text-muted-foreground/40 group-hover:text-foreground transition-colors" />
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+    <OperationsDispatchCard
+      counts={opsCounts}
+      arrivals={arrivals}
+      departures={departures}
+      propertyId={propertyId}
+    />
   )
 }
