@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Tag, Percent, ArrowDownRight, ExternalLink } from "lucide-react"
-import { StatCard, PaginationFooter } from "@/components/ui-kit"
+import { ExternalLink } from "lucide-react"
+import { PaginationFooter } from "@/components/ui-kit"
 import { formatMoney } from "@/lib/currency"
 import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { DiscountsReportDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "../use-report-query"
-import { ReportSectionError, StatCardsSkeleton, TableSkeleton } from "../report-section-shell"
+import { ReportSectionError, TableSkeleton } from "../report-section-shell"
 
 interface DiscountsSectionProps {
   startDate?: string
@@ -43,7 +44,13 @@ export function DiscountsSection({
   if (isLoading && !data) {
     return (
       <div className="space-y-4">
-        <StatCardsSkeleton count={3} />
+        <div className="flex items-center gap-2 py-1">
+          <Skeleton className="h-4 w-32" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-28" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-28" />
+        </div>
         <TableSkeleton rows={4} cols={5} />
       </div>
     )
@@ -66,27 +73,29 @@ export function DiscountsSection({
   const rateOverrides = data.rateOverrides || []
 
   return (
-    <div className="space-y-6">
-      {/* Concession KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard
-          label="Total Invoice Discounts"
-          value={formatMoney(parseFloat(summary.totalInvoiceDiscounts) || 0)}
-          subtext={`${summary.discountedInvoicesCount} invoices with applied discounts`}
-          icon={<Tag className="size-4" />}
-        />
-        <StatCard
-          label="Rate Overrides Impact"
-          value={formatMoney(parseFloat(summary.totalRateOverrideDiscounts) || 0)}
-          subtext={`${summary.rateOverridesCount} rooms booked below rack rate`}
-          icon={<ArrowDownRight className="size-4" />}
-        />
-        <StatCard
-          label="Total Concession Impact"
-          value={formatMoney(parseFloat(summary.totalConcessionImpact) || 0)}
-          subtext="Total revenue forgone"
-          icon={<Percent className="size-4" />}
-        />
+    <div className="space-y-5">
+      {/* Inline Stat Summary Row */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(summary.totalInvoiceDiscounts) || 0)}
+          </strong>{" "}
+          invoice discounts ({summary.discountedInvoicesCount})
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(summary.totalRateOverrideDiscounts) || 0)}
+          </strong>{" "}
+          rate overrides ({summary.rateOverridesCount})
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(summary.totalConcessionImpact) || 0)}
+          </strong>{" "}
+          total concession impact
+        </span>
       </div>
 
       {/* Itemized Concessions Shell */}

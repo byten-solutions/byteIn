@@ -2,13 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Receipt, BedDouble, ShieldAlert, ChevronRight } from "lucide-react"
-import { StatCard, PaginationFooter } from "@/components/ui-kit"
+import { ChevronRight } from "lucide-react"
+import { PaginationFooter } from "@/components/ui-kit"
 import { formatMoney } from "@/lib/currency"
 import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { ReceivablesReportDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "../use-report-query"
-import { ReportSectionError, StatCardsSkeleton, TableSkeleton } from "../report-section-shell"
+import { ReportSectionError, TableSkeleton } from "../report-section-shell"
 
 interface ReceivablesSectionProps {
   propertyId?: string
@@ -35,7 +36,13 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
   if (isLoading && !data) {
     return (
       <div className="space-y-4">
-        <StatCardsSkeleton count={3} />
+        <div className="flex items-center gap-2 py-1">
+          <Skeleton className="h-4 w-32" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-24" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-24" />
+        </div>
         <TableSkeleton rows={5} cols={8} />
       </div>
     )
@@ -54,29 +61,36 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
   if (!data) return null
 
   const items = data.items || []
+  const b0to7 = Math.max(0, parseFloat(data.agingSummary.bucket0to7) || 0)
+  const b8to30 = Math.max(0, parseFloat(data.agingSummary.bucket8to30) || 0)
+  const b31to60 = Math.max(0, parseFloat(data.agingSummary.bucket31to60) || 0)
+  const b60Plus = Math.max(0, parseFloat(data.agingSummary.bucket60Plus) || 0)
+  const totalAging = b0to7 + b8to30 + b31to60 + b60Plus
 
   return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard
-          label="Total Receivables"
-          value={formatMoney(parseFloat(data.totalReceivables) || 0)}
-          subtext={`${data.totalInvoices} unpaid folios`}
-          icon={<Receipt className="size-4" />}
-        />
-        <StatCard
-          label="In-House Receivables"
-          value={formatMoney(parseFloat(data.inHouseReceivables) || 0)}
-          subtext={`${data.inHouseCount} staying guests`}
-          icon={<BedDouble className="size-4" />}
-        />
-        <StatCard
-          label="Departed Debtors"
-          value={formatMoney(parseFloat(data.departedReceivables) || 0)}
-          subtext={`${data.departedCount} unpaid after checkout`}
-          icon={<ShieldAlert className="size-4" />}
-        />
+    <div className="space-y-5">
+      {/* Inline Stat Summary Row */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(data.totalReceivables) || 0)}
+          </strong>{" "}
+          total ({data.totalInvoices} {data.totalInvoices === 1 ? "folio" : "folios"})
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(data.inHouseReceivables) || 0)}
+          </strong>{" "}
+          in-house ({data.inHouseCount})
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(data.departedReceivables) || 0)}
+          </strong>{" "}
+          departed ({data.departedCount})
+        </span>
       </div>
 
       {/* Receivables & Aging Report Shell */}
@@ -130,30 +144,88 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
           </div>
         </div>
 
+        {/* Aging Distribution Horizontal Stacked Bar */}
+        <div className="space-y-1.5 pb-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Aging Distribution</span>
+            <span className="font-mono text-[11px] text-muted-foreground/70">
+              {formatMoney(totalAging)} across all aging buckets
+            </span>
+          </div>
+          <div className="h-3 w-full rounded-md bg-muted/60 flex overflow-hidden gap-0.5 p-0.5">
+            {totalAging === 0 ? (
+              <div className="h-full w-full bg-muted/80 rounded-xs" />
+            ) : (
+              <>
+                {b0to7 > 0 && (
+                  <div
+                    className="h-full bg-emerald-500 rounded-xs transition-all"
+                    style={{ width: `${(b0to7 / totalAging) * 100}%` }}
+                    title={`0-7 Days: ${((b0to7 / totalAging) * 100).toFixed(1)}% (${formatMoney(b0to7)})`}
+                  />
+                )}
+                {b8to30 > 0 && (
+                  <div
+                    className="h-full bg-sky-500 rounded-xs transition-all"
+                    style={{ width: `${(b8to30 / totalAging) * 100}%` }}
+                    title={`8-30 Days: ${((b8to30 / totalAging) * 100).toFixed(1)}% (${formatMoney(b8to30)})`}
+                  />
+                )}
+                {b31to60 > 0 && (
+                  <div
+                    className="h-full bg-amber-500 rounded-xs transition-all"
+                    style={{ width: `${(b31to60 / totalAging) * 100}%` }}
+                    title={`31-60 Days: ${((b31to60 / totalAging) * 100).toFixed(1)}% (${formatMoney(b31to60)})`}
+                  />
+                )}
+                {b60Plus > 0 && (
+                  <div
+                    className="h-full bg-rose-500 rounded-xs transition-all"
+                    style={{ width: `${(b60Plus / totalAging) * 100}%` }}
+                    title={`60+ Days: ${((b60Plus / totalAging) * 100).toFixed(1)}% (${formatMoney(b60Plus)})`}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Aging Summary Cards */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-            <div className="text-[11px] text-muted-foreground">0 - 7 Days (Current)</div>
-            <div className="text-sm font-semibold text-foreground">
-              {formatMoney(parseFloat(data.agingSummary.bucket0to7) || 0)}
+          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
+              <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+              0 - 7 Days (Current)
+            </div>
+            <div className="text-sm font-semibold text-foreground font-mono tabular-nums">
+              {formatMoney(b0to7)}
             </div>
           </div>
-          <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-            <div className="text-[11px] text-muted-foreground">8 - 30 Days</div>
-            <div className="text-sm font-semibold text-foreground">
-              {formatMoney(parseFloat(data.agingSummary.bucket8to30) || 0)}
+          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
+              <span className="size-2 rounded-full bg-sky-500 shrink-0" />
+              8 - 30 Days
+            </div>
+            <div className="text-sm font-semibold text-foreground font-mono tabular-nums">
+              {formatMoney(b8to30)}
             </div>
           </div>
-          <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-            <div className="text-[11px] text-muted-foreground">31 - 60 Days</div>
-            <div className="text-sm font-semibold text-amber-600 dark:text-amber-400">
-              {formatMoney(parseFloat(data.agingSummary.bucket31to60) || 0)}
+          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
+              <span className="size-2 rounded-full bg-amber-500 shrink-0" />
+              31 - 60 Days
+            </div>
+            <div className="text-sm font-semibold text-amber-600 dark:text-amber-400 font-mono tabular-nums">
+              {formatMoney(b31to60)}
             </div>
           </div>
-          <div className="rounded-lg bg-muted/40 p-2.5 text-center">
-            <div className="text-[11px] text-muted-foreground">60+ Days (Delinquent)</div>
-            <div className="text-sm font-semibold text-rose-600 dark:text-rose-400">
-              {formatMoney(parseFloat(data.agingSummary.bucket60Plus) || 0)}
+          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
+            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
+              <span className="size-2 rounded-full bg-rose-500 shrink-0" />
+              60+ Days (Delinquent)
+            </div>
+            <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 font-mono tabular-nums">
+              {formatMoney(b60Plus)}
             </div>
           </div>
         </div>
@@ -162,15 +234,15 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
-                <th className="px-3 py-2">Invoice / Res No</th>
-                <th className="px-3 py-2">Guest Name & Phone</th>
-                <th className="px-3 py-2">Rooms</th>
-                <th className="px-3 py-2">Guest Status</th>
-                <th className="px-3 py-2">Aging</th>
-                <th className="px-3 py-2">Grand Total</th>
-                <th className="px-3 py-2">Balance Due</th>
-                <th className="px-3 py-2 text-right">Action</th>
+              <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground text-[11px] font-mono uppercase tracking-wider">
+                <th className="px-3 py-1.5">Invoice / Res No</th>
+                <th className="px-3 py-1.5">Guest Name & Phone</th>
+                <th className="px-3 py-1.5">Rooms</th>
+                <th className="px-3 py-1.5">Guest Status</th>
+                <th className="px-3 py-1.5">Aging</th>
+                <th className="px-3 py-1.5">Grand Total</th>
+                <th className="px-3 py-1.5">Balance Due</th>
+                <th className="px-3 py-1.5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -183,18 +255,18 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
               ) : (
                 items.map((rec) => (
                   <tr key={rec.invoiceId} className="hover:bg-muted/20">
-                    <td className="px-3 py-2">
-                      <div className="font-mono font-medium">{rec.invoiceNumber}</div>
-                      <div className="text-[11px] text-muted-foreground">{rec.reservationNo}</div>
+                    <td className="px-3 py-1.5">
+                      <div className="font-mono font-medium leading-tight">{rec.invoiceNumber}</div>
+                      <div className="text-[11px] text-muted-foreground leading-tight">{rec.reservationNo}</div>
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-foreground">{rec.guestName}</div>
-                      <div className="text-[11px] text-muted-foreground">{rec.guestPhone || "No phone"}</div>
+                    <td className="px-3 py-1.5">
+                      <div className="font-medium text-foreground leading-tight">{rec.guestName}</div>
+                      <div className="text-[11px] text-muted-foreground leading-tight">{rec.guestPhone || "No phone"}</div>
                     </td>
-                    <td className="px-3 py-2 font-medium">
+                    <td className="px-3 py-1.5 font-medium">
                       {rec.roomNumbers.join(", ") || "N/A"}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5">
                       {rec.isGuestInHouse ? (
                         <span className="inline-flex rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
                           In-House
@@ -205,7 +277,7 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-1.5">
                       <span
                         className={cn(
                           "font-medium",
@@ -215,16 +287,16 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
                         {rec.daysAging} days ({rec.agingBucket})
                       </span>
                     </td>
-                    <td className="px-3 py-2">{formatMoney(parseFloat(rec.grandTotal) || 0)}</td>
-                    <td className="px-3 py-2 font-semibold text-amber-600 dark:text-amber-400">
+                    <td className="px-3 py-1.5 font-mono tabular-nums">{formatMoney(parseFloat(rec.grandTotal) || 0)}</td>
+                    <td className="px-3 py-1.5 font-semibold font-mono tabular-nums text-amber-600 dark:text-amber-400">
                       {formatMoney(parseFloat(rec.balanceDue) || 0)}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-1.5 text-right">
                       <Link
                         href={`/billing/${rec.invoiceId}`}
                         className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
                       >
-                        Collect
+                        <span>Folio</span>
                         <ChevronRight className="size-3" />
                       </Link>
                     </td>
