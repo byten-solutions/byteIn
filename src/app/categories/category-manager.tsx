@@ -20,13 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -69,6 +63,15 @@ interface Props {
   initialCategories: CategoryItem[];
   amenities: AmenityItem[];
   userRole: "SUPER_ADMIN" | "ADMIN" | "RECEPTIONIST";
+}
+
+function isGenericCategoryDescription(desc: string | null | undefined): boolean {
+  if (!desc) return true;
+  const normalized = desc.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.includes("opulent guest sanctuary")) return true;
+  if (normalized.includes("no description provided")) return true;
+  return false;
 }
 
 export function CategoryManager({
@@ -398,78 +401,99 @@ export function CategoryManager({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCategories.map((cat) => {
             const hasRooms = cat._count.rooms > 0;
+            const hasCustomDescription = !isGenericCategoryDescription(cat.description);
 
             return (
               <Card
                 key={cat.id}
-                className="flex flex-col justify-between shadow-xs hover:border-foreground/20 transition-colors group"
+                className="flex flex-col justify-between shadow-2xs hover:border-foreground/30 hover:shadow-xs transition-all group rounded-xl border border-border/80 bg-card p-4 gap-3.5"
               >
-                <CardHeader className="space-y-2 pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-base font-bold">{cat.name}</CardTitle>
-                        <Badge variant="secondary" className="font-mono text-xs">
-                          {cat._count.rooms} {cat._count.rooms === 1 ? "room" : "rooms"}
-                        </Badge>
-                      </div>
-                      <CardDescription className="text-xs line-clamp-2">
-                        {cat.description || "No description provided"}
-                      </CardDescription>
-                    </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <h3
+                      className="font-bold text-base text-foreground tracking-tight line-clamp-2 leading-snug min-w-0 flex-1 break-words"
+                      title={cat.name}
+                    >
+                      {cat.name}
+                    </h3>
 
-                    {isAdmin && (
-                      <RowActionsMenu
-                        items={[
-                          {
-                            label: "Edit category",
-                            icon: <Pencil className="size-3.5" />,
-                            onClick: () => openEditCategory(cat),
-                          },
-                          {
-                            label: "Delete category",
-                            icon: <Trash2 className="size-3.5" />,
-                            variant: "destructive",
-                            disabled: hasRooms,
-                            onClick: () => {
-                              if (!hasRooms) setCategoryToDelete(cat);
+                    <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-[10px] sm:text-[11px] text-muted-foreground font-medium px-1.5 py-0 border-border/70 bg-muted/30"
+                      >
+                        {cat._count.rooms} {cat._count.rooms === 1 ? "room" : "rooms"}
+                      </Badge>
+
+                      {isAdmin && (
+                        <RowActionsMenu
+                          items={[
+                            {
+                              label: "Edit category",
+                              icon: <Pencil className="size-3.5" />,
+                              onClick: () => openEditCategory(cat),
                             },
-                          },
-                        ]}
-                      />
-                    )}
+                            {
+                              label: "Delete category",
+                              icon: <Trash2 className="size-3.5" />,
+                              variant: "destructive",
+                              disabled: hasRooms,
+                              onClick: () => {
+                                if (!hasRooms) setCategoryToDelete(cat);
+                              },
+                            },
+                          ]}
+                        />
+                      )}
+                    </div>
                   </div>
-                </CardHeader>
 
-                <CardContent className="space-y-4 pt-0">
-                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-2.5 text-xs border border-border/40">
+                  {hasCustomDescription && (
+                    <p
+                      className="text-xs text-muted-foreground truncate"
+                      title={cat.description!}
+                    >
+                      {cat.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-3 pt-0">
+                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-muted/30 p-2.5 text-xs border border-border/50">
                     <div className="space-y-0.5">
-                      <span className="text-muted-foreground text-[11px] flex items-center gap-1">
-                        <IndianRupee className="size-3" /> Base Rate
+                      <span className="text-muted-foreground text-[11px] flex items-center gap-1 font-medium">
+                        <IndianRupee className="size-3 text-muted-foreground/70" /> Base Rate
                       </span>
-                      <div className="flex items-baseline gap-1">
-                        <MoneyText value={cat.basePrice} className="text-base font-bold text-foreground" />
-                        <span className="text-[10px] text-muted-foreground font-normal">/night</span>
+                      <div className="flex items-baseline gap-1 font-mono">
+                        <MoneyText
+                          value={cat.basePrice}
+                          className="text-sm sm:text-base font-bold text-foreground tabular-nums"
+                        />
+                        <span className="text-[10px] text-muted-foreground/70 font-normal">/night</span>
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <span className="text-muted-foreground text-[11px] flex items-center gap-1">
-                        <Users className="size-3" /> Max Capacity
+                      <span className="text-muted-foreground text-[11px] flex items-center gap-1 font-medium">
+                        <Users className="size-3 text-muted-foreground/70" /> Max Capacity
                       </span>
-                      <span className="font-semibold text-sm text-foreground">
+                      <span className="font-semibold text-xs sm:text-sm text-foreground font-mono tabular-nums block pt-0.5">
                         {cat.maxOccupancy} {cat.maxOccupancy === 1 ? "Guest" : "Guests"}
                       </span>
                     </div>
                   </div>
 
                   {cat.amenities.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="space-y-1.5 pt-0.5">
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider block font-mono">
                         Amenities
                       </span>
                       <div className="flex flex-wrap items-center gap-1">
                         {cat.amenities.slice(0, 3).map(({ amenity }) => (
-                          <Badge key={amenity.id} variant="secondary" className="text-[10px] py-0 px-2 font-normal">
+                          <Badge
+                            key={amenity.id}
+                            variant="secondary"
+                            className="text-[10px] py-0 px-2 font-normal"
+                          >
                             {amenity.name}
                           </Badge>
                         ))}
@@ -477,7 +501,10 @@ export function CategoryManager({
                           <Tooltip>
                             <TooltipTrigger
                               render={
-                                <Badge variant="outline" className="text-[10px] py-0 px-2 font-normal cursor-help">
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] py-0 px-1.5 font-mono font-normal text-muted-foreground hover:text-foreground cursor-help"
+                                >
                                   +{cat.amenities.length - 3} more
                                 </Badge>
                               }
@@ -496,7 +523,7 @@ export function CategoryManager({
                   )}
 
                   {isAdmin && (
-                    <div className="flex items-center justify-between pt-2 border-t text-xs">
+                    <div className="flex items-center justify-between pt-2 border-t border-border/50 text-xs mt-auto">
                       <button
                         type="button"
                         onClick={() => openEditCategory(cat)}
@@ -505,13 +532,13 @@ export function CategoryManager({
                         Edit category
                       </button>
                       {hasRooms && (
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-[11px] text-muted-foreground font-mono">
                           {cat._count.rooms} assigned
                         </span>
                       )}
                     </div>
                   )}
-                </CardContent>
+                </div>
               </Card>
             );
           })}
