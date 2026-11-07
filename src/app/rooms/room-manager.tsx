@@ -13,7 +13,6 @@ import {
   Pencil,
   Trash2,
   X,
-  FileText,
   Eye,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,11 +38,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { PageHeader } from "@/components/ui-kit/page-header";
 import { StatusBadge } from "@/components/ui-kit/status-badge";
 import { EmptyState } from "@/components/ui-kit/empty-state";
@@ -168,22 +162,15 @@ const STATUS_FILTER_ITEMS: {
 
 function RoomCardSkeleton() {
   return (
-    <div className="flex flex-col justify-between rounded-lg border border-border/80 bg-card p-3 shadow-2xs h-32 animate-pulse">
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-5 w-14 rounded" />
-          <Skeleton className="size-4 rounded-full" />
-        </div>
-        <Skeleton className="h-3 w-20 rounded" />
-        <div className="flex items-center gap-2 pt-1">
-          <Skeleton className="size-2 rounded-full" />
-          <Skeleton className="h-3 w-14 rounded" />
-        </div>
+    <div className="flex flex-col justify-between rounded-xl border border-border/80 bg-card p-3 shadow-2xs h-24 animate-pulse">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-5 w-12 rounded" />
       </div>
-      <div className="flex items-center justify-between pt-2 border-t border-border/40">
-        <Skeleton className="h-3 w-8 rounded" />
-        <Skeleton className="h-4 w-16 rounded" />
+      <div className="flex items-center gap-1.5 my-1">
+        <Skeleton className="size-2 rounded-full" />
+        <Skeleton className="h-3 w-14 rounded" />
       </div>
+      <Skeleton className="h-4 w-16 rounded mt-auto" />
     </div>
   );
 }
@@ -508,21 +495,6 @@ export function RoomManager({
     setPropertyFilter(defaultProp);
   };
 
-  const isCustomDisplayName = (
-    displayName: string | null | undefined,
-    roomNo: string,
-    categoryName: string
-  ): boolean => {
-    if (!displayName || !displayName.trim()) return false;
-    const trimmed = displayName.trim().toLowerCase();
-    const rNo = roomNo.trim().toLowerCase();
-    const cat = categoryName.trim().toLowerCase();
-    if (trimmed.startsWith(`room ${rNo}`)) return false;
-    if (trimmed.startsWith(rNo)) return false;
-    if (trimmed === cat || trimmed === `room (${cat})`) return false;
-    return true;
-  };
-
   // Group rooms by building, then floor
   const groupedBuildings = rooms.reduce<
     {
@@ -784,19 +756,18 @@ export function RoomManager({
           }
         />
       ) : (
-        <div className={cn("space-y-6 transition-opacity duration-200", isFetchingRooms && "opacity-60 pointer-events-none")}>
+        <div className={cn("space-y-5 transition-opacity duration-200", isFetchingRooms && "opacity-60 pointer-events-none")}>
           {groupedBuildings.map((bldg) => (
-            <div key={bldg.buildingId} className="space-y-4">
+            <div key={bldg.buildingId} className="space-y-3">
               {bldg.floors.map((flr) => (
-                <div key={flr.floorId} className="space-y-2.5">
-                  {/* Quiet Section Header: "Main Wing · Floor 1" */}
-                  <div className="flex items-center gap-2 pt-2 first:pt-0">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <div key={flr.floorId} className="space-y-1.5">
+                  {/* Slim one-line section header */}
+                  <div className="flex items-center justify-between text-xs py-0.5">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {properties.length > 1 && bldg.propertyName ? `${bldg.propertyName} · ` : ""}
                       {bldg.buildingName} · Floor {flr.floorNo}
                     </span>
-                    <div className="h-px bg-border/60 flex-1" />
-                    <span className="text-[11px] text-muted-foreground font-mono">
+                    <span className="text-[11px] text-muted-foreground/70 font-mono">
                       {flr.rooms.length} {flr.rooms.length === 1 ? "room" : "rooms"}
                     </span>
                   </div>
@@ -804,11 +775,6 @@ export function RoomManager({
                   {/* Responsive compact card grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3">
                     {flr.rooms.map((room) => {
-                      const hasCustomName = isCustomDisplayName(
-                        room.displayName,
-                        room.roomNo,
-                        room.category.name
-                      );
                       const statusCfg = STATUS_FILTER_ITEMS.find(
                         (s) => s.status === room.status
                       ) || {
@@ -820,140 +786,81 @@ export function RoomManager({
                         <div
                           key={room.id}
                           onClick={() => setSelectedRoomDetail(room)}
-                          className="rounded-xl border border-border/80 bg-card p-2.5 flex flex-col justify-between hover:border-foreground/30 hover:shadow-xs transition-all cursor-pointer group text-xs relative"
+                          className="rounded-xl border border-border/80 bg-card p-3 flex flex-col justify-between hover:border-foreground/30 hover:shadow-xs transition-all cursor-pointer group text-xs relative min-h-[92px]"
                         >
-                          <div className="space-y-1">
-                            {/* Top row: Room Number & RowActionsMenu */}
-                            <div className="flex items-start justify-between gap-1 min-w-0">
-                              <div className="min-w-0 flex-1">
-                                <span className="font-mono font-bold text-sm sm:text-base text-foreground tracking-tight truncate block">
-                                  {room.roomNo}
-                                </span>
-                                {hasCustomName && (
-                                  <span
-                                    className="text-[10px] text-muted-foreground truncate block leading-tight"
-                                    title={room.displayName!}
-                                  >
-                                    {room.displayName}
-                                  </span>
-                                )}
-                              </div>
-                              <div
-                                className="shrink-0 -mr-1 -mt-1"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <RowActionsMenu
-                                  items={[
-                                    {
-                                      label: "View details",
-                                      icon: <Eye className="size-3.5" />,
-                                      onClick: () => setSelectedRoomDetail(room),
-                                    },
-                                    {
-                                      label: "Update status",
-                                      icon: <CheckCircle2 className="size-3.5" />,
-                                      onClick: () => openStatusChange(room),
-                                    },
-                                    ...(isAdmin
-                                      ? [
-                                          {
-                                            label: "Edit room",
-                                            icon: <Pencil className="size-3.5" />,
-                                            onClick: () => openEditRoom(room),
-                                          },
-                                          {
-                                            label: "Delete room",
-                                            icon: <Trash2 className="size-3.5" />,
-                                            variant: "destructive" as const,
-                                            onClick: () => setRoomToDelete(room),
-                                          },
-                                        ]
-                                      : []),
-                                  ]}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Category: small muted */}
+                          {/* Top row: Room Number & hover-only RowActionsMenu */}
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="font-mono font-bold text-base text-foreground tracking-tight">
+                              {room.roomNo}
+                            </span>
                             <div
-                              className="text-[11px] text-muted-foreground truncate"
-                              title={room.category.name}
+                              className="shrink-0 -mr-1.5 -mt-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              {room.category.name}
-                            </div>
-
-                            {/* Status & Attributes: dot + text on left, notes and capacity on right */}
-                            <div className="flex items-center justify-between gap-1 pt-0.5 min-w-0">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span
-                                  className={cn("size-2 rounded-full shrink-0", statusCfg.dotClass)}
-                                />
-                                <span className="text-[11px] text-muted-foreground truncate font-medium">
-                                  {statusCfg.label}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {room.notes && (
-                                  <div
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="shrink-0"
-                                  >
-                                    <Tooltip>
-                                      <TooltipTrigger
-                                        render={
-                                          <span className="text-muted-foreground hover:text-foreground cursor-help inline-flex p-0.5">
-                                            <FileText className="size-3" />
-                                          </span>
-                                        }
-                                      />
-                                      <TooltipContent>
-                                        <p className="max-w-xs text-xs">{room.notes}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </div>
-                                )}
-                                <div
-                                  className="flex items-center gap-1 text-muted-foreground/80 shrink-0"
-                                  title={`Max capacity: ${room.capacity} ${room.capacity === 1 ? "guest" : "guests"}`}
-                                >
-                                  <Users className="size-3 text-muted-foreground/70" />
-                                  <span className="font-mono text-[11px] text-foreground font-medium">
-                                    {room.capacity}
-                                  </span>
-                                </div>
-                              </div>
+                              <RowActionsMenu
+                                items={[
+                                  {
+                                    label: "View details",
+                                    icon: <Eye className="size-3.5" />,
+                                    onClick: () => setSelectedRoomDetail(room),
+                                  },
+                                  {
+                                    label: "Update status",
+                                    icon: <CheckCircle2 className="size-3.5" />,
+                                    onClick: () => openStatusChange(room),
+                                  },
+                                  ...(isAdmin
+                                    ? [
+                                        {
+                                          label: "Edit room",
+                                          icon: <Pencil className="size-3.5" />,
+                                          onClick: () => openEditRoom(room),
+                                        },
+                                        {
+                                          label: "Delete room",
+                                          icon: <Trash2 className="size-3.5" />,
+                                          variant: "destructive" as const,
+                                          onClick: () => setRoomToDelete(room),
+                                        },
+                                      ]
+                                    : []),
+                                ]}
+                              />
                             </div>
                           </div>
 
-                          {/* Bottom row: Dedicated Pricing Row (nightly rate with subtle cents) */}
-                          <div className="flex items-baseline justify-between gap-1 text-xs pt-1.5 mt-2 border-t border-border/50 text-muted-foreground min-w-0">
-                            <span className="text-[10px] text-muted-foreground/70 font-medium shrink-0">
-                              /night
+                          {/* Status: dot + label */}
+                          <div className="flex items-center gap-1.5 my-1">
+                            <span
+                              className={cn("size-2 rounded-full shrink-0", statusCfg.dotClass)}
+                            />
+                            <span className="text-[11px] sm:text-xs text-muted-foreground font-medium truncate">
+                              {statusCfg.label}
                             </span>
+                          </div>
 
-                            <div className="flex items-baseline gap-1.5 font-mono text-right min-w-0 flex-wrap justify-end">
-                              {room.priceOverride ? (
-                                <>
-                                  <MoneyText
-                                    value={room.priceOverride}
-                                    className="font-bold text-primary text-xs tabular-nums"
-                                    subtleCents
-                                  />
-                                  <MoneyText
-                                    value={room.category.basePrice}
-                                    className="text-[10px] text-muted-foreground/60 line-through tabular-nums"
-                                    subtleCents
-                                  />
-                                </>
-                              ) : (
+                          {/* Price: with strikethrough original if overridden */}
+                          <div className="flex items-baseline gap-1.5 font-mono text-xs tabular-nums mt-auto pt-1">
+                            {room.priceOverride ? (
+                              <>
                                 <MoneyText
-                                  value={room.category.basePrice}
-                                  className="font-semibold text-foreground text-xs tabular-nums"
+                                  value={room.priceOverride}
+                                  className="font-bold text-primary tabular-nums"
                                   subtleCents
                                 />
-                              )}
-                            </div>
+                                <MoneyText
+                                  value={room.category.basePrice}
+                                  className="text-[10px] sm:text-[11px] text-muted-foreground/60 line-through tabular-nums"
+                                  subtleCents
+                                />
+                              </>
+                            ) : (
+                              <MoneyText
+                                value={room.category.basePrice}
+                                className="font-semibold text-foreground tabular-nums"
+                                subtleCents
+                              />
+                            )}
                           </div>
                         </div>
                       );
