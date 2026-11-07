@@ -3,9 +3,12 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { cn } from "@/lib/utils"
 import { OccupancySection } from "./occupancy-section"
 import { RevenueSection } from "./revenue-section"
 import { ReservationsSection } from "./reservations-section"
+
+type PerformanceSubTab = "occupancy" | "revenue" | "reservations"
 
 interface PerformanceTabProps {
   initialStartDate: string
@@ -20,6 +23,10 @@ export function PerformanceTab({
   propertyId,
   refreshTrigger = 0,
 }: PerformanceTabProps) {
+  const [activeSubTab, setActiveSubTab] = React.useState<PerformanceSubTab>("occupancy")
+  const [openedSubTabs, setOpenedSubTabs] = React.useState<Set<PerformanceSubTab>>(
+    () => new Set(["occupancy"])
+  )
   const [startDate, setStartDate] = React.useState<string>(initialStartDate)
   const [endDate, setEndDate] = React.useState<string>(initialEndDate)
   const [appliedDates, setAppliedDates] = React.useState<{ start: string; end: string }>({
@@ -62,10 +69,20 @@ export function PerformanceTab({
     setAppliedDates({ start: startDate, end: endDate })
   }
 
+  const handleSubTabSelect = (tab: PerformanceSubTab) => {
+    setActiveSubTab(tab)
+    setOpenedSubTabs((prev) => {
+      if (prev.has(tab)) return prev
+      const next = new Set(prev)
+      next.add(tab)
+      return next
+    })
+  }
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Date Filter & Presets Bar */}
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between shadow-xs print:hidden">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Presets:</span>
           <Button variant="outline" size="sm" onClick={() => setPreset("last7")}>
@@ -87,14 +104,14 @@ export function PerformanceTab({
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="w-36 text-xs"
+            className="w-36 text-xs bg-background"
           />
           <span className="text-muted-foreground text-xs">to</span>
           <Input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="w-36 text-xs"
+            className="w-36 text-xs bg-background"
           />
           <Button size="sm" onClick={handleApply}>
             Apply
@@ -102,52 +119,82 @@ export function PerformanceTab({
         </div>
       </div>
 
-      {/* Section 1: Occupancy, ADR, RevPAR */}
-      <div className="space-y-3">
-        <div className="border-b border-border pb-2">
-          <h2 className="text-base font-semibold text-foreground">Occupancy & Yield Performance</h2>
-          <p className="text-xs text-muted-foreground">
-            Room occupancy, average daily rate (ADR), and RevPAR over {appliedDates.start} to {appliedDates.end}.
-          </p>
-        </div>
-        <OccupancySection
-          startDate={appliedDates.start}
-          endDate={appliedDates.end}
-          propertyId={propertyId}
-          refreshTrigger={refreshTrigger}
-        />
+      {/* Performance Sub-Tab Navigation — Secondary Segmented Pill */}
+      <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1 print:hidden">
+        <button
+          type="button"
+          onClick={() => handleSubTabSelect("occupancy")}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+            activeSubTab === "occupancy"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Occupancy
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSubTabSelect("revenue")}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+            activeSubTab === "revenue"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Revenue
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleSubTabSelect("reservations")}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+            activeSubTab === "reservations"
+              ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Reservations
+        </button>
       </div>
 
-      {/* Section 2: Revenue & Invoiced vs Collected */}
-      <div className="space-y-3">
-        <div className="border-b border-border pb-2">
-          <h2 className="text-base font-semibold text-foreground">Revenue & Collections Realization</h2>
-          <p className="text-xs text-muted-foreground">
-            Invoiced billing volume, realized settlements, and revenue source breakdown.
-          </p>
-        </div>
-        <RevenueSection
-          startDate={appliedDates.start}
-          endDate={appliedDates.end}
-          propertyId={propertyId}
-          refreshTrigger={refreshTrigger}
-        />
-      </div>
+      {/* Sub-Tab Panels */}
+      <div>
+        {openedSubTabs.has("occupancy") && (
+          <div className={cn(activeSubTab !== "occupancy" && "hidden")}>
+            <OccupancySection
+              startDate={appliedDates.start}
+              endDate={appliedDates.end}
+              propertyId={propertyId}
+              refreshTrigger={refreshTrigger}
+            />
+          </div>
+        )}
 
-      {/* Section 3: Reservation Lifecycle & Booking Volumes */}
-      <div className="space-y-3">
-        <div className="border-b border-border pb-2">
-          <h2 className="text-base font-semibold text-foreground">Reservation Volumes & Statuses</h2>
-          <p className="text-xs text-muted-foreground">
-            Booking fulfillment, cancellation ratios, and average length of stay (ALOS).
-          </p>
-        </div>
-        <ReservationsSection
-          startDate={appliedDates.start}
-          endDate={appliedDates.end}
-          propertyId={propertyId}
-          refreshTrigger={refreshTrigger}
-        />
+        {openedSubTabs.has("revenue") && (
+          <div className={cn(activeSubTab !== "revenue" && "hidden")}>
+            <RevenueSection
+              startDate={appliedDates.start}
+              endDate={appliedDates.end}
+              propertyId={propertyId}
+              refreshTrigger={refreshTrigger}
+            />
+          </div>
+        )}
+
+        {openedSubTabs.has("reservations") && (
+          <div className={cn(activeSubTab !== "reservations" && "hidden")}>
+            <ReservationsSection
+              startDate={appliedDates.start}
+              endDate={appliedDates.end}
+              propertyId={propertyId}
+              refreshTrigger={refreshTrigger}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

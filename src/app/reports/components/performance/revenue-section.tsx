@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { CreditCard, Receipt, Wallet, Layers } from "lucide-react"
-import { StatCard } from "@/components/ui-kit"
+import { CreditCard, Layers } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { formatMoney } from "@/lib/currency"
 import type { RevenueReportDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "../use-report-query"
-import { ReportSectionError, StatCardsSkeleton, TableSkeleton } from "../report-section-shell"
+import { ReportSectionError, TableSkeleton } from "../report-section-shell"
 
 interface RevenueSectionProps {
   startDate: string
@@ -35,7 +35,13 @@ export function RevenueSection({
   if (isLoading && !data) {
     return (
       <div className="space-y-4">
-        <StatCardsSkeleton count={3} />
+        <div className="flex items-center gap-2 py-1">
+          <Skeleton className="h-4 w-32" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-32" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-24" />
+        </div>
         <TableSkeleton rows={3} cols={3} />
       </div>
     )
@@ -55,56 +61,57 @@ export function RevenueSection({
 
   return (
     <div className="space-y-6">
-      {/* Revenue KPI Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard
-          label="Total Invoiced"
-          value={formatMoney(parseFloat(data.totalInvoiced) || 0)}
-          subtext={`${data.invoiceCount} generated folios`}
-          icon={<Receipt className="size-4" />}
-        />
-        <StatCard
-          label="Total Collected"
-          value={formatMoney(parseFloat(data.totalCollected) || 0)}
-          subtext={`${data.paymentCount} settled payments`}
-          icon={<Wallet className="size-4" />}
-        />
-        <StatCard
-          label="Total Outstanding"
-          value={formatMoney(parseFloat(data.totalOutstanding) || 0)}
-          subtext="Net unsettled folios"
-          icon={<CreditCard className="size-4" />}
-        />
+      {/* Inline Stat Summary Row */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground py-1">
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(data.totalInvoiced) || 0)}
+          </strong>{" "}
+          invoiced ({data.invoiceCount} {data.invoiceCount === 1 ? "folio" : "folios"})
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
+            {formatMoney(parseFloat(data.totalCollected) || 0)}
+          </strong>{" "}
+          collected ({data.paymentCount} payments)
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {formatMoney(parseFloat(data.totalOutstanding) || 0)}
+          </strong>{" "}
+          outstanding
+        </span>
       </div>
 
       {/* Multi-Property Revenue Comparison (when available) */}
       {data.propertyBreakdown && data.propertyBreakdown.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Multi-Property Revenue Comparison</h3>
-            <p className="text-xs text-muted-foreground">Portfolio revenue generation across hotels</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
-                  <th className="px-3 py-2">Hotel Property</th>
-                  <th className="px-3 py-2 text-right">Total Invoiced</th>
-                  <th className="px-3 py-2 text-right">Total Collected</th>
-                  <th className="px-3 py-2 text-right">Occupancy %</th>
+                <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground text-[11px] font-mono uppercase tracking-wider">
+                  <th className="px-3 py-1.5">Hotel Property</th>
+                  <th className="px-3 py-1.5 text-right">Total Invoiced</th>
+                  <th className="px-3 py-1.5 text-right">Total Collected</th>
+                  <th className="px-3 py-1.5 text-right">Occupancy %</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {data.propertyBreakdown.map((pb) => (
                   <tr key={pb.propertyId} className="hover:bg-muted/20">
-                    <td className="px-3 py-2 font-medium text-foreground">{pb.propertyName}</td>
-                    <td className="px-3 py-2 text-right font-medium">
+                    <td className="px-3 py-1.5 font-medium text-foreground">{pb.propertyName}</td>
+                    <td className="px-3 py-1.5 text-right font-medium">
                       {formatMoney(parseFloat(pb.totalInvoiced || "0") || 0)}
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">
+                    <td className="px-3 py-1.5 text-right font-semibold text-emerald-600 dark:text-emerald-400">
                       {formatMoney(parseFloat(pb.totalCollected || "0") || 0)}
                     </td>
-                    <td className="px-3 py-2 text-right">{pb.occupancyRate ?? 0}%</td>
+                    <td className="px-3 py-1.5 text-right">{pb.occupancyRate ?? 0}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -116,7 +123,7 @@ export function RevenueSection({
       {/* Breakdowns Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* By Payment Method */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Revenue by Payment Method</h3>
           </div>
@@ -148,7 +155,7 @@ export function RevenueSection({
         </div>
 
         {/* By Charge Type */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
           <div className="border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Charges Breakdown (Folio Line Types)</h3>
           </div>

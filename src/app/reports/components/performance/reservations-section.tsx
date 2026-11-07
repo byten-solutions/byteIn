@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { CalendarCheck, Clock, CheckCircle2 } from "lucide-react"
-import { StatCard, StatusBadge } from "@/components/ui-kit"
+import { StatusBadge } from "@/components/ui-kit"
+import { Skeleton } from "@/components/ui/skeleton"
 import { formatMoney } from "@/lib/currency"
 import type { ReservationStatusReportDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "../use-report-query"
-import { ReportSectionError, StatCardsSkeleton, TableSkeleton } from "../report-section-shell"
+import { ReportSectionError, TableSkeleton } from "../report-section-shell"
 
 interface ReservationsSectionProps {
   startDate: string
@@ -35,7 +35,13 @@ export function ReservationsSection({
   if (isLoading && !data) {
     return (
       <div className="space-y-4">
-        <StatCardsSkeleton count={3} />
+        <div className="flex items-center gap-2 py-1">
+          <Skeleton className="h-4 w-32" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-28" />
+          <span className="text-muted-foreground/30">·</span>
+          <Skeleton className="h-4 w-28" />
+        </div>
         <TableSkeleton rows={4} cols={5} />
       </div>
     )
@@ -55,56 +61,55 @@ export function ReservationsSection({
 
   return (
     <div className="space-y-6">
-      {/* Booking Volume & Stay Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard
-          label="Total Bookings"
-          value={data.totalReservations}
-          subtext={`${data.totalAllocations} rooms, ${data.totalStayNights} room-nights`}
-          icon={<CalendarCheck className="size-4" />}
-        />
-        <StatCard
-          label="Avg Stay (ALOS)"
-          value={`${data.averageLengthOfStay} nights`}
-          subtext="Average duration per room stay"
-          icon={<Clock className="size-4" />}
-        />
-        <StatCard
-          label="Cancellation %"
-          value={`${data.cancellationRate}%`}
-          subtext={`${data.completionRate}% completion rate`}
-          icon={<CheckCircle2 className="size-4" />}
-        />
+      {/* Inline Stat Summary Row */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground py-1">
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {data.totalReservations}
+          </strong>{" "}
+          bookings ({data.totalAllocations} rooms, {data.totalStayNights} nights)
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {data.averageLengthOfStay}
+          </strong>{" "}
+          nights avg stay (ALOS)
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {data.cancellationRate}%
+          </strong>{" "}
+          cancellation ({data.completionRate}% completion)
+        </span>
       </div>
 
       {/* Reservation Status Breakdown Table */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
         <div className="border-b border-border pb-2">
           <h3 className="font-semibold text-foreground">Reservation Lifecycle Breakdown</h3>
-          <p className="text-xs text-muted-foreground">
-            Distribution of reservations by active status, room-nights fulfilled, and booked folio value.
-          </p>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground">
-                <th className="px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5">Bookings</th>
-                <th className="px-3 py-2.5">Share %</th>
-                <th className="px-3 py-2.5">Room Nights</th>
-                <th className="px-3 py-2.5 text-right">Booked Value</th>
+              <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground text-[11px] font-mono uppercase tracking-wider">
+                <th className="px-3 py-1.5">Status</th>
+                <th className="px-3 py-1.5">Bookings</th>
+                <th className="px-3 py-1.5">Share %</th>
+                <th className="px-3 py-1.5">Room Nights</th>
+                <th className="px-3 py-1.5 text-right">Booked Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {data.statusBreakdown.map((item) => (
                 <tr key={item.status} className="hover:bg-muted/20">
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5">
                     <StatusBadge status={item.status} />
                   </td>
-                  <td className="px-3 py-2.5 font-medium text-foreground">{item.count}</td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-1.5 font-medium text-foreground">{item.count}</td>
+                  <td className="px-3 py-1.5">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{item.percentage}%</span>
                       <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
@@ -115,8 +120,8 @@ export function ReservationsSection({
                       </div>
                     </div>
                   </td>
-                  <td className="px-3 py-2.5">{item.roomNights}</td>
-                  <td className="px-3 py-2.5 text-right font-medium">
+                  <td className="px-3 py-1.5">{item.roomNights}</td>
+                  <td className="px-3 py-1.5 text-right font-medium">
                     {formatMoney(parseFloat(item.totalValue) || 0)}
                   </td>
                 </tr>
