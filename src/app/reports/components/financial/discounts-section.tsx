@@ -101,12 +101,7 @@ export function DiscountsSection({
       {/* Itemized Concessions Shell */}
       <div className="rounded-xl border border-border bg-card space-y-4 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
-          <div>
-            <h3 className="font-semibold text-foreground">Discounts & Concessions Breakdown</h3>
-            <p className="text-xs text-muted-foreground">
-              Itemized ledger of custom manual invoice discounts and lower-than-rack nightly rates.
-            </p>
-          </div>
+          <h3 className="font-semibold text-foreground">Discounts & Concessions Breakdown</h3>
 
           <div className="flex items-center gap-2">
             <button

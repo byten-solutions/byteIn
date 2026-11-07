@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { PaginationFooter } from "@/components/ui-kit"
 import { formatMoney } from "@/lib/currency"
 import { cn } from "@/lib/utils"
@@ -31,11 +33,12 @@ const FALLBACK_COLORS = [
 
 interface CollectionsSectionProps {
   date: string
+  onDateChange?: (date: string) => void
   propertyId?: string
   refreshTrigger?: number
 }
 
-export function CollectionsSection({ date, propertyId, refreshTrigger }: CollectionsSectionProps) {
+export function CollectionsSection({ date, onDateChange, propertyId, refreshTrigger }: CollectionsSectionProps) {
   const [page, setPage] = React.useState<number>(1)
   const [limit, setLimit] = React.useState<number>(25)
 
@@ -53,15 +56,32 @@ export function CollectionsSection({ date, propertyId, refreshTrigger }: Collect
 
   if (isLoading && !data) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 py-1">
-          <Skeleton className="h-4 w-28" />
-          <span className="text-muted-foreground/30">·</span>
-          <Skeleton className="h-4 w-24" />
-          <span className="text-muted-foreground/30">·</span>
-          <Skeleton className="h-4 w-20" />
-          <span className="text-muted-foreground/30">·</span>
-          <Skeleton className="h-4 w-20" />
+      <div className="space-y-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-1">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-4 w-28" />
+            <span className="text-muted-foreground/30">·</span>
+            <Skeleton className="h-4 w-24" />
+            <span className="text-muted-foreground/30">·</span>
+            <Skeleton className="h-4 w-20" />
+            <span className="text-muted-foreground/30">·</span>
+            <Skeleton className="h-4 w-20" />
+          </div>
+          {onDateChange && (
+            <div className="flex items-center gap-2 print:hidden shrink-0">
+              <span className="text-xs text-muted-foreground font-medium hidden sm:inline">Date:</span>
+              <Input
+                type="date"
+                aria-label="Reconciliation Date"
+                value={date}
+                disabled
+                className="h-8 w-36 text-xs bg-background"
+              />
+              <Button variant="outline" size="sm" disabled className="h-8 text-xs px-2.5">
+                Today
+              </Button>
+            </div>
+          )}
         </div>
         <TableSkeleton rows={4} cols={3} />
       </div>
@@ -84,35 +104,61 @@ export function CollectionsSection({ date, propertyId, refreshTrigger }: Collect
 
   return (
     <div className="space-y-5">
-      {/* Inline Stat Summary Row */}
-      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {formatMoney(totalCollectedNum)}
-          </strong>{" "}
-          collected
-        </span>
-        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {data.totalTransactions}
-          </strong>{" "}
-          {data.totalTransactions === 1 ? "transaction" : "transactions"}
-        </span>
-        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {data.methodBreakdown.length}
-          </strong>{" "}
-          {data.methodBreakdown.length === 1 ? "method" : "methods"}
-        </span>
-        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {data.staffBreakdown.length}
-          </strong>{" "}
-          {data.staffBreakdown.length === 1 ? "handler" : "handlers"}
-        </span>
+      {/* Combined Date Picker & Inline Stat Summary Row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between py-1">
+        <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
+          <span>
+            <strong className="font-bold font-mono text-foreground tabular-nums">
+              {formatMoney(totalCollectedNum)}
+            </strong>{" "}
+            collected
+          </span>
+          <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+          <span>
+            <strong className="font-bold font-mono text-foreground tabular-nums">
+              {data.totalTransactions}
+            </strong>{" "}
+            {data.totalTransactions === 1 ? "transaction" : "transactions"}
+          </span>
+          <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+          <span>
+            <strong className="font-bold font-mono text-foreground tabular-nums">
+              {data.methodBreakdown.length}
+            </strong>{" "}
+            {data.methodBreakdown.length === 1 ? "method" : "methods"}
+          </span>
+          <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+          <span>
+            <strong className="font-bold font-mono text-foreground tabular-nums">
+              {data.staffBreakdown.length}
+            </strong>{" "}
+            {data.staffBreakdown.length === 1 ? "handler" : "handlers"}
+          </span>
+        </div>
+
+        {onDateChange && (
+          <div className="flex items-center gap-2 print:hidden shrink-0">
+            <span className="text-xs text-muted-foreground font-medium hidden sm:inline">Date:</span>
+            <Input
+              type="date"
+              aria-label="Reconciliation Date"
+              value={date}
+              onChange={(e) => onDateChange(e.target.value)}
+              className="h-8 w-36 text-xs bg-background"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-2.5"
+              onClick={() => {
+                const today = new Date().toISOString().split("T")[0]!
+                onDateChange(today)
+              }}
+            >
+              Today
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Breakdowns Grid */}
@@ -182,7 +228,7 @@ export function CollectionsSection({ date, propertyId, refreshTrigger }: Collect
         </div>
 
         {/* By Front Desk Staff */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+        <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-border pb-2">
             <h3 className="font-semibold text-foreground">Collections by Staff User</h3>
             <span className="text-xs text-muted-foreground">Shift Accountability</span>

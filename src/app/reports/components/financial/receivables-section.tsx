@@ -96,12 +96,7 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
       {/* Receivables & Aging Report Shell */}
       <div className="rounded-xl border border-border bg-card space-y-4 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
-          <div>
-            <h3 className="font-semibold text-foreground">Outstanding Balances & Aging</h3>
-            <p className="text-xs text-muted-foreground">
-              All active uncollected folios categorized by aging and guest stay status.
-            </p>
-          </div>
+          <h3 className="font-semibold text-foreground">Outstanding Balances & Aging</h3>
 
           {/* Filter Tabs */}
           <div className="flex items-center gap-2">

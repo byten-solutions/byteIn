@@ -2,9 +2,6 @@
 
 import * as React from "react"
 import { Wallet, Receipt, Tag } from "lucide-react"
-import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { CollectionsSection } from "./collections-section"
 import { ReceivablesSection } from "./receivables-section"
@@ -89,64 +86,19 @@ export function FinancialTab({
       {/* Sub-Tab Panels */}
       <div>
         {openedSubTabs.has("collections") && (
-          <div className={cn("space-y-6", activeSubTab !== "collections" && "hidden")}>
-            {/* Shift Date Filter Bar */}
-            <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
-              <div className="flex items-center gap-3">
-                <Label htmlFor="financial-date" className="whitespace-nowrap font-medium">
-                  Reconciliation Date:
-                </Label>
-                <Input
-                  id="financial-date"
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-44"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const today = new Date().toISOString().split("T")[0]!
-                    setDate(today)
-                  }}
-                >
-                  Today
-                </Button>
-              </div>
-
-              <div className="text-xs text-muted-foreground">
-                Shift collections, drawer reconciliation & outstanding folios as of{" "}
-                <span className="font-semibold text-foreground">{date}</span>
-              </div>
-            </div>
-
-            {/* Section 1: Shift Collections */}
-            <div className="space-y-3">
-              <div className="border-b border-border pb-2">
-                <h2 className="text-base font-semibold text-foreground">Shift Drawer & Collections</h2>
-                <p className="text-xs text-muted-foreground">
-                  Cash, card, and digital collections logged for the selected shift date.
-                </p>
-              </div>
-              <CollectionsSection
-                key={`collections-${date}-${propertyId || "global"}`}
-                date={date}
-                propertyId={propertyId}
-                refreshTrigger={refreshTrigger}
-              />
-            </div>
+          <div className={cn(activeSubTab !== "collections" && "hidden")}>
+            <CollectionsSection
+              key={`collections-${date}-${propertyId || "global"}`}
+              date={date}
+              onDateChange={setDate}
+              propertyId={propertyId}
+              refreshTrigger={refreshTrigger}
+            />
           </div>
         )}
 
         {openedSubTabs.has("receivables") && (
-          <div className={cn("space-y-3", activeSubTab !== "receivables" && "hidden")}>
-            <div className="border-b border-border pb-2">
-              <h2 className="text-base font-semibold text-foreground">Outstanding Balances & Folio Aging</h2>
-              <p className="text-xs text-muted-foreground">
-                Unpaid invoices grouped by guest stay status and days overdue.
-              </p>
-            </div>
+          <div className={cn(activeSubTab !== "receivables" && "hidden")}>
             <ReceivablesSection
               key={`receivables-${propertyId || "global"}`}
               propertyId={propertyId}
@@ -156,13 +108,7 @@ export function FinancialTab({
         )}
 
         {openedSubTabs.has("discounts") && (
-          <div className={cn("space-y-3", activeSubTab !== "discounts" && "hidden")}>
-            <div className="border-b border-border pb-2">
-              <h2 className="text-base font-semibold text-foreground">Discounts & Rate Overrides</h2>
-              <p className="text-xs text-muted-foreground">
-                Revenue impact of manual invoice discounts and lower-than-rack bookings.
-              </p>
-            </div>
+          <div className={cn(activeSubTab !== "discounts" && "hidden")}>
             <DiscountsSection
               key={`discounts-${propertyId || "global"}`}
               propertyId={propertyId}
