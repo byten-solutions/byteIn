@@ -25,7 +25,7 @@ import type { SessionPayload } from "@/modules/auth/auth.types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -533,9 +533,10 @@ export function UserManagement({
         </span>
       </div>
 
-      {/* Filter & Search Bar */}
-      <Card className="border border-border/80 shadow-2xs">
-        <CardContent className="p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+      {/* Users Table & Integrated Toolbar */}
+      <Card className="border border-border/80 shadow-2xs overflow-hidden">
+        {/* Table Toolbar (Search + Filters) */}
+        <div className="p-3 sm:p-4 border-b border-border/80 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between bg-card">
           {/* Search Input */}
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -611,11 +612,8 @@ export function UserManagement({
               </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Users Table */}
-      <Card className="border border-border/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
