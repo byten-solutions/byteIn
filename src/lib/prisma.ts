@@ -25,44 +25,68 @@ if (isRunningTests) {
   }
 }
 
+/**
+ * Computes the datasource URL with protective connection limit bounds
+ * if connecting to a Supabase pooler without an explicit connection_limit.
+ * Supabase session pooler (port 5432) has a strict pool_size of 15;
+ * capping the client pool to 5 prevents EMAXCONNSESSION crashes.
+ */
+function getDatasourceUrl(): string | undefined {
+  const url = process.env.DATABASE_URL;
+  if (!url) return undefined;
+
+  if (url.includes("pooler.supabase.com") && !url.includes("connection_limit")) {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}connection_limit=5`;
+  }
+
+  return undefined;
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-const rawPrisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
+function createPrismaClient(): PrismaClient {
+  const datasourceUrl = getDatasourceUrl();
+  const baseClient = new PrismaClient({
+    datasources: datasourceUrl ? { db: { url: datasourceUrl } } : undefined,
     log:
       process.env.NODE_ENV === "development"
         ? ["query", "error", "warn"]
         : ["error"],
   });
 
-export const prisma = (rawPrisma as unknown as PrismaClient).$extends({
-  query: {
-    $allOperations({ args, query }) {
-      const delay = parseInt(process.env.SIMULATE_DB_LATENCY_MS || "0", 10);
-      const metrics = requestMetricsStorage.getStore();
-      const start = performance.now();
+  return baseClient.$extends({
+    query: {
+      $allOperations({ args, query }) {
+        const delay = parseInt(process.env.SIMULATE_DB_LATENCY_MS || "0", 10);
+        const metrics = requestMetricsStorage.getStore();
+        const start = performance.now();
 
-      const execute = () => {
-        const queryPromise = query(args);
-        if (metrics) {
-          metrics.queryCount++;
-          return queryPromise.then((result) => {
-            metrics.dbMs += performance.now() - start;
-            return result;
-          });
+        const execute = () => {
+          const queryPromise = query(args);
+          if (metrics) {
+            metrics.queryCount++;
+            return queryPromise.then((result) => {
+              metrics.dbMs += performance.now() - start;
+              return result;
+            });
+          }
+          return queryPromise;
+        };
+
+        if (delay > 0) {
+          return new Promise((resolve) => setTimeout(resolve, delay)).then(execute);
         }
-        return queryPromise;
-      };
-
-      if (delay > 0) {
-        return new Promise((resolve) => setTimeout(resolve, delay)).then(execute);
-      }
-      return execute();
+        return execute();
+      },
     },
-  },
-}) as unknown as PrismaClient;
+  }) as unknown as PrismaClient;
+}
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = rawPrisma;
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+
+// Always retain singleton on globalThis across all environments (production chunks, warm containers, dev HMR)
+// to ensure Next.js route handlers share a single connection pool and never exceed database pool limits.
+globalForPrisma.prisma = prisma;
