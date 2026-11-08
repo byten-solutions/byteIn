@@ -26,18 +26,41 @@ if (isRunningTests) {
 }
 
 /**
- * Computes the datasource URL with protective connection limit bounds
- * if connecting to a Supabase pooler without an explicit connection_limit.
- * Supabase session pooler (port 5432) has a strict pool_size of 15;
- * capping the client pool to 5 prevents EMAXCONNSESSION crashes.
+ * Normalizes and guards the datasource connection URL for serverless/production runtimes.
+ *
+ * If connecting to a Supabase pooler (pooler.supabase.com):
+ * 1. Automatically rewrites port 5432 (Session mode) to port 6543 (Transaction mode).
+ *    On Vercel and serverless functions, port 5432 session pooler is strictly capped (15 clients)
+ *    and unreachable, leading to connection timeouts and EMAXCONNSESSION errors.
+ *    Port 6543 is Supabase's transaction pooler built for serverless environments.
+ * 2. Automatically appends `pgbouncer=true` if missing (required by Prisma for transaction poolers).
+ * 3. Automatically sets `connection_limit=5` if missing to protect client pool bounds.
  */
 function getDatasourceUrl(): string | undefined {
   const url = process.env.DATABASE_URL;
   if (!url) return undefined;
 
-  if (url.includes("pooler.supabase.com") && !url.includes("connection_limit")) {
-    const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}connection_limit=5`;
+  if (url.includes("pooler.supabase.com")) {
+    let rewritten = url;
+
+    // Migrate from Session mode (5432) to Transaction mode (6543)
+    if (rewritten.includes(":5432")) {
+      rewritten = rewritten.replace(":5432", ":6543");
+    }
+
+    // Ensure pgbouncer parameter is present for transaction poolers
+    if (!rewritten.includes("pgbouncer=true")) {
+      const sep = rewritten.includes("?") ? "&" : "?";
+      rewritten = `${rewritten}${sep}pgbouncer=true`;
+    }
+
+    // Ensure connection limit is capped for serverless functions
+    if (!rewritten.includes("connection_limit")) {
+      const sep = rewritten.includes("?") ? "&" : "?";
+      rewritten = `${rewritten}${sep}connection_limit=5`;
+    }
+
+    return rewritten;
   }
 
   return undefined;
