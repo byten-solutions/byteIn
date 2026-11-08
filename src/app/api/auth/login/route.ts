@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { AuthService } from "@/modules/auth/auth.service";
 import { loginSchema } from "@/modules/auth/auth.validation";
-import { setSessionCookie } from "@/lib/session";
+import { setSessionCookie, getSessionCookieOptions, SESSION_COOKIE_NAME } from "@/lib/session";
 import { loginRateLimiter } from "@/lib/rate-limiter";
 import { TRUST_PROXY_HEADERS } from "@/config/security";
 
@@ -85,12 +85,17 @@ export async function POST(req: NextRequest) {
       loginRateLimiter.reset(accountRateKey);
     }
 
-    await setSessionCookie(token);
+    await setSessionCookie(token, req);
+    const cookieOptions = await getSessionCookieOptions(req);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       user,
     });
+
+    response.cookies.set(SESSION_COOKIE_NAME, token, cookieOptions);
+
+    return response;
   } catch (error) {
     // Record failed authentication attempt against IP and targeted email
     loginRateLimiter.recordAttempt(ipRateKey);

@@ -30,22 +30,27 @@ async function fetchSessionUser(userId: string): Promise<CachedUserRecord | null
     return cached;
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      role: true,
-      property: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: true,
+        property: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  setCachedSessionUser(userId, user);
-  return user;
+    setCachedSessionUser(userId, user);
+    return user;
+  } catch (err) {
+    console.error(`[AuthGuard] Failed to fetch session user '${userId}' from database:`, err);
+    throw err;
+  }
 }
 
 /**
@@ -66,16 +71,28 @@ export async function getSession(
   }
   if (!token) return null;
   const payload = await AuthService.verifySessionToken(token);
-  if (!payload) return null;
+  if (!payload) {
+    console.warn("[AuthGuard] Cookie exists but session token verification failed (invalid signature or expired token).");
+    return null;
+  }
 
   try {
     const user = await fetchSessionUser(payload.sub);
 
-    if (!user || user.status !== "ACTIVE") {
+    if (!user) {
+      console.warn(`[AuthGuard] Session user '${payload.sub}' not found in database.`);
+      return null;
+    }
+
+    if (user.status !== "ACTIVE") {
+      console.warn(`[AuthGuard] Session user '${payload.sub}' is not ACTIVE (status: ${user.status}).`);
       return null;
     }
 
     if (payload.tokenVersion !== undefined && user.tokenVersion !== payload.tokenVersion) {
+      console.warn(
+        `[AuthGuard] Session tokenVersion mismatch for user '${payload.sub}': token=${payload.tokenVersion}, db=${user.tokenVersion}.`
+      );
       return null;
     }
 
@@ -95,7 +112,8 @@ export async function getSession(
       tokenVersion: user.tokenVersion,
       mustChangePassword: user.mustChangePassword,
     };
-  } catch {
+  } catch (err) {
+    console.error("[AuthGuard] Error verifying active session user:", err);
     return null;
   }
 }

@@ -133,7 +133,10 @@ export class AuthService {
         iat: payload.iat,
         exp: payload.exp,
       };
-    } catch {
+    } catch (err) {
+      if (process.env.NODE_ENV !== "test") {
+        console.warn("[AuthService] verifySessionToken error:", err instanceof Error ? err.message : err);
+      }
       return null;
     }
   }

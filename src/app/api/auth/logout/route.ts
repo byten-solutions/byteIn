@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, invalidateSessionUserCache } from "@/lib/auth-guard";
-import { deleteSessionCookie, SESSION_COOKIE_NAME } from "@/lib/session";
+import { deleteSessionCookie, getSessionCookieOptions, SESSION_COOKIE_NAME } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     console.error("[Logout] Failed to increment tokenVersion:", error);
   }
 
-  await deleteSessionCookie();
+  await deleteSessionCookie(req);
+  const cookieOptions = await getSessionCookieOptions(req);
 
   const response = NextResponse.json({
     success: true,
@@ -26,11 +27,8 @@ export async function POST(req: NextRequest) {
   });
 
   response.cookies.set(SESSION_COOKIE_NAME, "", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    ...cookieOptions,
     maxAge: 0,
-    path: "/",
   });
 
   return response;
