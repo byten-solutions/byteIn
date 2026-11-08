@@ -59,6 +59,61 @@ export class CustomerService {
     return maskCustomer(created);
   }
 
+  static async getCustomerTabCounts(propertyId?: string): Promise<{
+    ALL: number;
+    IN_HOUSE: number;
+    UPCOMING: number;
+    REPEAT: number;
+  }> {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const [allCount, inHouseRes, upcomingRes, repeatRes] = await Promise.all([
+      prisma.customer.count({
+        where: propertyId
+          ? {
+              OR: [
+                { registeredPropertyId: propertyId },
+                { reservations: { some: { propertyId } } },
+              ],
+            }
+          : {},
+      }),
+      prisma.$queryRaw<Array<{ count: number }>>`
+        SELECT COUNT(DISTINCT r.customer_id)::int as count
+        FROM reservation_rooms rr
+        JOIN reservations r ON rr.reservation_id = r.id
+        WHERE rr.status = ${"CHECKED_IN"}::"AllocationStatus"
+          ${propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty}
+      `,
+      prisma.$queryRaw<Array<{ count: number }>>`
+        SELECT COUNT(DISTINCT r.customer_id)::int as count
+        FROM reservation_rooms rr
+        JOIN reservations r ON rr.reservation_id = r.id
+        WHERE r.status = ${"CONFIRMED"}::"ReservationStatus"
+          AND rr.status = ${"CONFIRMED"}::"AllocationStatus"
+          AND rr.arrival_date >= ${today}
+          ${propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty}
+      `,
+      prisma.$queryRaw<Array<{ count: number }>>`
+        SELECT COUNT(*)::int as count FROM (
+          SELECT customer_id
+          FROM reservations
+          WHERE 1=1 ${propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty}
+          GROUP BY customer_id
+          HAVING COUNT(*) >= 2
+        ) repeat_customers
+      `,
+    ]);
+
+    return {
+      ALL: allCount,
+      IN_HOUSE: inHouseRes[0]?.count ?? 0,
+      UPCOMING: upcomingRes[0]?.count ?? 0,
+      REPEAT: repeatRes[0]?.count ?? 0,
+    };
+  }
+
   static async getCustomers(options: CustomerFilterOptions = {}) {
     const { search, propertyId, tab } = options;
     const { page, limit, skip } = sanitizePagination(options.page, options.limit, DEFAULT_PAGE_SIZE);

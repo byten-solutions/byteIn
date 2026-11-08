@@ -27,14 +27,17 @@ export async function GET(req: NextRequest) {
       limit: limitParam ?? undefined,
     });
 
-    const result = await CustomerService.getCustomers({
-      search,
-      tab,
-      page,
-      limit,
-      propertyId: effectivePropertyId || undefined,
-    });
-    return NextResponse.json({ success: true, ...result });
+    const [result, tabCounts] = await Promise.all([
+      CustomerService.getCustomers({
+        search,
+        tab,
+        page,
+        limit,
+        propertyId: effectivePropertyId || undefined,
+      }),
+      !search ? CustomerService.getCustomerTabCounts(effectivePropertyId || undefined) : Promise.resolve(undefined),
+    ]);
+    return NextResponse.json({ success: true, ...result, tabCounts });
   } catch (error) {
     return handleApiError(error, "Failed to fetch customers");
   }

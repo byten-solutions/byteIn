@@ -37,14 +37,26 @@ export default async function CustomersPage(props: {
     },
   }
 
+  let tabCounts = {
+    ALL: 0,
+    IN_HOUSE: 0,
+    UPCOMING: 0,
+    REPEAT: 0,
+  }
+
   try {
-    result = await CustomerService.getCustomers({
-      page: isNaN(page) ? 1 : page,
-      limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
-      search: searchParams?.search,
-      tab,
-      propertyId: scope ?? undefined,
-    })
+    const [custResult, countsResult] = await Promise.all([
+      CustomerService.getCustomers({
+        page: isNaN(page) ? 1 : page,
+        limit: isNaN(limit) ? DEFAULT_PAGE_SIZE : limit,
+        search: searchParams?.search,
+        tab,
+        propertyId: scope ?? undefined,
+      }),
+      CustomerService.getCustomerTabCounts(scope ?? undefined),
+    ])
+    result = custResult
+    tabCounts = countsResult
   } catch (err) {
     console.error("Failed to load customers in CustomersPage:", err)
   }
@@ -81,6 +93,7 @@ export default async function CustomersPage(props: {
           initialCustomers={serializedCustomers}
           initialPagination={result.pagination}
           initialTab={tab || "ALL"}
+          initialTabCounts={tabCounts}
         />
       </div>
     </AppShell>

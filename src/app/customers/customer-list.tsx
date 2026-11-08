@@ -85,6 +85,7 @@ interface CustomerListProps {
   initialCustomers: SerializedCustomer[]
   initialPagination?: CustomerPagination
   initialTab?: FilterTab
+  initialTabCounts?: Record<FilterTab, number>
 }
 
 export interface CustomerStayMeta {
@@ -167,6 +168,7 @@ export function CustomerList({
   initialCustomers,
   initialPagination,
   initialTab = "ALL",
+  initialTabCounts,
 }: CustomerListProps) {
   const router = useRouter()
   const [customers, setCustomers] = React.useState<SerializedCustomer[]>(initialCustomers)
@@ -174,12 +176,12 @@ export function CustomerList({
   const [filterTab, setFilterTab] = React.useState<FilterTab>(initialTab)
   const [currentPage, setCurrentPage] = React.useState(initialPagination?.page || 1)
   const [currentLimit, setCurrentLimit] = React.useState(initialPagination?.limit || DEFAULT_PAGE_SIZE)
-  const [tabCounts, setTabCounts] = React.useState<Record<FilterTab, number>>({
-    ALL: initialTab === "ALL" ? (initialPagination?.total || initialCustomers.length) : 0,
-    IN_HOUSE: initialTab === "IN_HOUSE" ? (initialPagination?.total || 0) : 0,
-    UPCOMING: initialTab === "UPCOMING" ? (initialPagination?.total || 0) : 0,
-    REPEAT: initialTab === "REPEAT" ? (initialPagination?.total || 0) : 0,
-  })
+  const [tabCounts, setTabCounts] = React.useState<Record<FilterTab, number>>(() => ({
+    ALL: initialTabCounts?.ALL ?? (initialTab === "ALL" ? (initialPagination?.total || initialCustomers.length) : 0),
+    IN_HOUSE: initialTabCounts?.IN_HOUSE ?? (initialTab === "IN_HOUSE" ? (initialPagination?.total || 0) : 0),
+    UPCOMING: initialTabCounts?.UPCOMING ?? (initialTab === "UPCOMING" ? (initialPagination?.total || 0) : 0),
+    REPEAT: initialTabCounts?.REPEAT ?? (initialTab === "REPEAT" ? (initialPagination?.total || 0) : 0),
+  }))
   const [pagination, setPagination] = React.useState<CustomerPagination>(
     initialPagination || {
       total: initialCustomers.length,
@@ -296,10 +298,14 @@ export function CustomerList({
         setCustomers(mapped)
         if (data.pagination) {
           setPagination(data.pagination)
-          setTabCounts((prev) => ({
-            ...prev,
-            [tab]: data.pagination.total,
-          }))
+          if (data.tabCounts) {
+            setTabCounts(data.tabCounts)
+          } else {
+            setTabCounts((prev) => ({
+              ...prev,
+              [tab]: data.pagination.total,
+            }))
+          }
         }
       }
     } catch (err: unknown) {
