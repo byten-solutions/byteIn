@@ -59,12 +59,12 @@ export function OperationsDispatchCard({
         </div>
 
         {/* Secondary Segmented Switcher */}
-        <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1">
+        <div className="inline-flex max-w-full items-center gap-0.5 sm:gap-1 rounded-lg border border-border/80 bg-muted/40 p-1 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab("arrivals")}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+              "rounded-md px-2 sm:px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0",
               activeTab === "arrivals"
                 ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
@@ -78,7 +78,7 @@ export function OperationsDispatchCard({
             type="button"
             onClick={() => setActiveTab("departures")}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+              "rounded-md px-2 sm:px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0",
               activeTab === "departures"
                 ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
@@ -92,13 +92,13 @@ export function OperationsDispatchCard({
             type="button"
             onClick={() => setActiveTab("inHouse")}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+              "rounded-md px-2 sm:px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0",
               activeTab === "inHouse"
                 ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            <span>In-House</span>
+            <span className="whitespace-nowrap">In-House</span>
             <span className="font-mono text-[11px] tabular-nums font-bold">({counts.inHouse})</span>
           </button>
 
@@ -106,17 +106,18 @@ export function OperationsDispatchCard({
             type="button"
             onClick={() => setActiveTab("overdue")}
             className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1.5",
+              "rounded-md px-2 sm:px-2.5 py-1 text-xs font-medium transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap shrink-0",
               activeTab === "overdue"
                 ? "bg-card text-foreground border border-border/60 shadow-2xs font-semibold"
                 : "text-muted-foreground hover:text-foreground"
             )}
+            title={`${counts.overdue} overdue check-ins (all-time unresolved)`}
           >
-            <span>Overdue</span>
+            <span className="whitespace-nowrap">Overdue</span>
             <span
               className={cn(
                 "font-mono text-[11px] tabular-nums font-bold",
-                counts.overdue > 0 && "text-rose-600 dark:text-rose-400"
+                counts.overdue > 0 ? "text-amber-600/90 dark:text-amber-400/90" : "text-muted-foreground"
               )}
             >
               ({counts.overdue})
@@ -266,21 +267,21 @@ export function OperationsDispatchCard({
         {/* OVERDUE TAB */}
         {activeTab === "overdue" && (
           <div className="rounded-xl border border-border/80 bg-card p-6 text-center space-y-3 shadow-2xs">
-            <div className="size-8 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold flex items-center justify-center mx-auto border border-rose-500/20">
+            <div className="size-8 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold flex items-center justify-center mx-auto border border-amber-500/20 font-mono text-sm">
               !
             </div>
             <div className="space-y-1">
               <h4 className="font-semibold text-sm text-foreground">
-                {counts.overdue} Overdue Pending Check-Ins
+                {counts.overdue} Overdue Check-Ins (All-Time)
               </h4>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Past arrival dates that have not yet been checked in or marked as no-show.
+                Historical bookings with past arrival dates that were never checked in, cancelled, or marked as no-show.
               </p>
             </div>
             <Link href={reportsHref}>
               <button
                 type="button"
-                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
               >
                 <span>Review Overdue Arrivals</span>
                 <ArrowUpRight className="size-3.5" />

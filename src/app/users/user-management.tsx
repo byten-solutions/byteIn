@@ -5,7 +5,6 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Users,
-  UserCheck,
   UserX,
   Building2,
   Plus,
@@ -509,71 +508,29 @@ export function UserManagement({
         </Button>
       </div>
 
-      {/* KPI Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="border border-border/80 shadow-2xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono">
-                Total Users
-              </p>
-              <p className="text-2xl font-bold tracking-tight text-foreground mt-1 font-mono">
-                {totalUsers}
-              </p>
-            </div>
-            <div className="size-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-              <Users className="size-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/80 shadow-2xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono">
-                Active Staff
-              </p>
-              <p className="text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 mt-1 font-mono">
-                {activeCount}
-              </p>
-            </div>
-            <div className="size-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <UserCheck className="size-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/80 shadow-2xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono">
-                Disabled
-              </p>
-              <p className="text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400 mt-1 font-mono">
-                {disabledCount}
-              </p>
-            </div>
-            <div className="size-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <UserX className="size-5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/80 shadow-2xs">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider font-mono">
-                {isSuperAdmin ? "Hotels" : "Assigned Hotel"}
-              </p>
-              <p className="text-2xl font-bold tracking-tight text-foreground mt-1 font-mono truncate max-w-[140px]">
-                {isSuperAdmin ? uniqueHotelsCount : "1 Hotel"}
-              </p>
-            </div>
-            <div className="size-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center">
-              <Building2 className="size-5" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Inline Stat Summary Row */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">{totalUsers}</strong>{" "}
+          {totalUsers === 1 ? "user" : "users"}
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">{activeCount}</strong>{" "}
+          active
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">{disabledCount}</strong>{" "}
+          disabled
+        </span>
+        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
+        <span>
+          <strong className="font-bold font-mono text-foreground tabular-nums">
+            {isSuperAdmin ? uniqueHotelsCount : 1}
+          </strong>{" "}
+          {isSuperAdmin ? (uniqueHotelsCount === 1 ? "hotel" : "hotels") : "hotel"}
+        </span>
       </div>
 
       {/* Filter & Search Bar */}
