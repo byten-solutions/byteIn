@@ -122,40 +122,40 @@ export async function OccupancyRevenueChart({ propertyId }: OccupancyRevenueChar
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-xs flex flex-col justify-between h-full">
       {/* Header & Metric Callouts */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-2.5">
-        <div className="space-y-0.5">
+      <div className="space-y-1 border-b border-border pb-2.5">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="size-4 text-primary" />
             <h3 className="font-semibold text-sm text-foreground">Occupancy & Revenue Trend</h3>
           </div>
-          <p className="text-xs text-muted-foreground font-mono">
-            7-Day Outlook · Average:{" "}
-            <strong className="text-foreground font-bold tabular-nums">{avgOccupancy}%</strong> · Total
-            Revenue:{" "}
-            <strong className="text-foreground font-bold tabular-nums">
-              {formatMoney(totalRevenue)}
-            </strong>
-          </p>
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-4 text-xs font-medium">
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-sky-500 shrink-0" />
-            <span className="text-foreground">Occupancy Rate</span>
-          </span>
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-            <span className="text-foreground">Room Revenue</span>
-          </span>
           <Link
             href="/reports?tab=performance"
-            className="text-primary hover:underline text-xs inline-flex items-center gap-0.5 ml-1"
+            className="text-primary hover:underline text-xs inline-flex items-center gap-0.5 font-medium"
           >
             <span>Full Report</span>
             <ArrowUpRight className="size-3" />
           </Link>
         </div>
+        <p className="text-xs text-muted-foreground font-mono">
+          7-Day Outlook · Average:{" "}
+          <strong className="text-foreground font-bold tabular-nums">{avgOccupancy}%</strong> · Total
+          Revenue:{" "}
+          <strong className="text-foreground font-bold tabular-nums">
+            {formatMoney(totalRevenue)}
+          </strong>
+        </p>
+      </div>
+
+      {/* Legend directly above chart */}
+      <div className="flex items-center justify-end gap-4 text-xs font-medium pt-0.5">
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="size-2 rounded-full bg-sky-500 shrink-0" />
+          <span className="text-foreground">Occupancy Rate</span>
+        </span>
+        <span className="flex items-center gap-1.5 text-muted-foreground">
+          <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+          <span className="text-foreground">Room Revenue</span>
+        </span>
       </div>
 
       {/* Smooth SVG Spline Chart */}
@@ -310,9 +310,16 @@ export async function OccupancyRevenueChart({ propertyId }: OccupancyRevenueChar
 export function OccupancyRevenueSkeleton() {
   return (
     <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs h-full flex flex-col justify-between">
-      <div className="flex items-center justify-between border-b border-border pb-2.5">
-        <Skeleton className="h-4 w-44" />
-        <Skeleton className="h-4 w-52" />
+      <div className="space-y-1.5 border-b border-border pb-2.5">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-4 w-44" />
+          <Skeleton className="h-3 w-16" />
+        </div>
+        <Skeleton className="h-3 w-56" />
+      </div>
+      <div className="flex justify-end gap-3 pt-0.5">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-3 w-20" />
       </div>
       <div className="h-44 sm:h-48 flex items-center justify-center">
         <Skeleton className="h-36 w-full rounded-lg" />

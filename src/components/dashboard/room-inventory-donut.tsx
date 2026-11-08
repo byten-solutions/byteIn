@@ -61,7 +61,7 @@ export function RoomInventoryDonut({ counts }: RoomInventoryDonutProps) {
     },
     {
       key: "MAINTENANCE",
-      label: "Maintenance / OOS",
+      label: "Maint & OOS",
       count: maintenance,
       colorClass: "bg-purple-500",
       strokeHex: "var(--color-purple-500, #a855f7)",
@@ -217,7 +217,7 @@ export function RoomInventoryDonut({ counts }: RoomInventoryDonutProps) {
           <span className="flex items-center gap-1.5 min-w-0">
             <span className="size-2.5 rounded-full bg-purple-500 shrink-0" />
             <span className="text-muted-foreground group-hover:text-foreground truncate text-xs">
-              Maint / OOS
+              Maint & OOS
             </span>
           </span>
           <span className="font-mono text-xs font-bold text-foreground tabular-nums ml-1">

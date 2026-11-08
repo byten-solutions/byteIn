@@ -98,17 +98,12 @@ export async function ShiftCollectionsCard({ propertyId }: ShiftCollectionsCardP
           </div>
         </div>
       ) : (
-        <div className="rounded-lg bg-muted/30 border border-border/60 p-2.5 space-y-1 text-xs">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="font-medium text-foreground">Cash Drawer Status</span>
-            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Active Shift
-            </span>
-          </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Front desk drawer ready for Cash, UPI QR, and Card terminal receipts.
-          </p>
+        <div className="flex items-center justify-between rounded-lg bg-muted/20 border border-dashed border-border/60 px-3 py-2 text-xs">
+          <span className="text-muted-foreground">Cash Drawer</span>
+          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+            Ready for receipts
+          </span>
         </div>
       )}
 
@@ -122,8 +117,8 @@ export async function ShiftCollectionsCard({ propertyId }: ShiftCollectionsCardP
         </div>
 
         {recentTx.length === 0 ? (
-          <div className="py-5 text-center text-xs text-muted-foreground">
-            No payments recorded yet for today&apos;s shift.
+          <div className="py-2.5 px-3 text-center text-xs text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border/60">
+            No payments recorded yet today
           </div>
         ) : (
           <div className="space-y-1.5">

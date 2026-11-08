@@ -306,15 +306,10 @@ export default async function Page() {
           <div className="space-y-6">
             {/* Reception Header & Quick Actions */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-2 border-b border-border/60">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-                    {hotelName}
-                  </h1>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Front Desk Console • Operator: <span className="font-medium text-foreground">{session.name}</span>
-                </p>
+              <div>
+                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+                  {hotelName}
+                </h1>
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
@@ -352,14 +347,18 @@ export default async function Page() {
               <StatCard
                 label="Occupied"
                 value={counts.occupied}
-                subtext={`${counts.confirmedReservations} active booking${counts.confirmedReservations === 1 ? "" : "s"}`}
+                subtext="Currently in-house"
                 indicatorColor="bg-sky-500"
                 href="/rooms?status=OCCUPIED"
               />
               <StatCard
-                label="Maintenance"
-                value={counts.maintenance}
-                subtext={`${counts.outOfService} out of service`}
+                label="Maint & OOS"
+                value={counts.maintenance + counts.outOfService}
+                subtext={
+                  counts.outOfService > 0
+                    ? `${counts.maintenance} maint · ${counts.outOfService} out of service`
+                    : "Maintenance & out of service"
+                }
                 indicatorColor="bg-purple-500"
                 href="/rooms?status=MAINTENANCE"
               />
@@ -435,8 +434,7 @@ function DailyOperationsSkeleton() {
         <Skeleton className="h-12 w-full rounded-lg" />
         <Skeleton className="h-12 w-full rounded-lg" />
       </div>
-      <div className="pt-2 border-t border-border/60 flex items-center justify-between">
-        <Skeleton className="h-3 w-48" />
+      <div className="pt-2 border-t border-border/60 flex items-center justify-end">
         <Skeleton className="h-3 w-24" />
       </div>
     </div>

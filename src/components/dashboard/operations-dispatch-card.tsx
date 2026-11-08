@@ -2,9 +2,9 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { LogIn, LogOut, BedDouble, ChevronRight, ArrowUpRight } from "lucide-react"
+import { LogIn, BedDouble, ChevronRight, ArrowUpRight } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { StatusBadge, EmptyState } from "@/components/ui-kit"
+import { StatusBadge } from "@/components/ui-kit"
 import type { RoomStatus } from "@prisma/client"
 import type { DailyOperationsCountsDTO } from "@/modules/reports/reports.types"
 
@@ -126,16 +126,13 @@ export function OperationsDispatchCard({
       </div>
 
       {/* Panel Content */}
-      <div className="flex-1 min-h-[220px]">
+      <div className="flex-1">
         {/* ARRIVALS TAB */}
         {activeTab === "arrivals" && (
           arrivals.length === 0 ? (
-            <EmptyState
-              icon={<LogIn className="size-5" />}
-              title="No arrivals scheduled today"
-              description="No confirmed guest check-ins scheduled for today's shift."
-              className="min-h-48"
-            />
+            <div className="py-2.5 px-3 text-center text-xs text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border/60">
+              No arrivals scheduled for today
+            </div>
           ) : (
             <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
               {arrivals.map((alloc) => (
@@ -189,12 +186,9 @@ export function OperationsDispatchCard({
         {/* DEPARTURES TAB */}
         {activeTab === "departures" && (
           departures.length === 0 ? (
-            <EmptyState
-              icon={<LogOut className="size-5" />}
-              title="No departures scheduled today"
-              description="No guest check-outs scheduled for today's shift."
-              className="min-h-48"
-            />
+            <div className="py-2.5 px-3 text-center text-xs text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border/60">
+              No departures scheduled for today
+            </div>
           ) : (
             <div className="divide-y divide-border/60 rounded-xl border border-border/80 bg-card overflow-hidden shadow-2xs">
               {departures.map((alloc) => (
@@ -297,11 +291,7 @@ export function OperationsDispatchCard({
       </div>
 
       {/* Card Footer */}
-      <div className="flex items-center justify-between pt-2 border-t border-border/60 text-xs text-muted-foreground">
-        <span className="font-mono">
-          Shift Status: <strong className="text-foreground font-bold">{counts.checkedInArrivals}</strong> checked in ·{" "}
-          <strong className="text-foreground font-bold">{counts.checkedOutDepartures}</strong> departed
-        </span>
+      <div className="flex items-center justify-end pt-2 border-t border-border/60 text-xs text-muted-foreground">
         <Link
           href={reportsHref}
           className="text-primary hover:underline font-mono text-xs inline-flex items-center gap-0.5"
