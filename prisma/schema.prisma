@@ -632,6 +632,7 @@ model Payment {
   paymentMethodCode String        @map("payment_method_code")
   amount            Decimal       @db.Decimal(10, 2)
   referenceNumber   String?       @map("reference_number")
+  idempotencyKey    String?       @map("idempotency_key")
   status            PaymentStatus @default(RECORDED)
   paidAt            DateTime      @default(now()) @map("paid_at")
   createdBy         String        @map("created_by")
@@ -649,6 +650,7 @@ model Payment {
   voider        User?            @relation("VoidedOutgoingPayments", fields: [voidedBy], references: [id])
 
   @@unique([propertyId, id])
+  @@unique([propertyId, idempotencyKey])
   @@index([propertyId, paidAt(sort: Desc)])
   @@index([expenseId])
   @@index([accountId])
