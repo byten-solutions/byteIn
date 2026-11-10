@@ -426,12 +426,10 @@ export class ExpenseService {
         // 6. Idempotency Key Handling
         if (input.idempotencyKey) {
           const trimmedKey = input.idempotencyKey.trim();
-          const existingPayment = await tx.payment.findUnique({
+          const existingPayment = await tx.payment.findFirst({
             where: {
-              propertyId_idempotencyKey: {
-                propertyId,
-                idempotencyKey: trimmedKey,
-              },
+              propertyId,
+              idempotencyKey: trimmedKey,
             },
             include: {
               account: { select: { accountName: true } },
@@ -554,12 +552,10 @@ export class ExpenseService {
         input.idempotencyKey
       ) {
         // Unique constraint race condition on payments_property_id_idempotency_key_key
-        const committedPayment = await prisma.payment.findUnique({
+        const committedPayment = await prisma.payment.findFirst({
           where: {
-            propertyId_idempotencyKey: {
-              propertyId,
-              idempotencyKey: input.idempotencyKey.trim(),
-            },
+            propertyId,
+            idempotencyKey: input.idempotencyKey.trim(),
           },
           include: {
             account: { select: { accountName: true } },

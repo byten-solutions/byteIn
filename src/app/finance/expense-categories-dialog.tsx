@@ -9,9 +9,7 @@ import {
   Sparkles,
   Edit2,
   Trash2,
-  CheckCircle2,
-  XCircle,
-  Tag,
+  ArrowLeft,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,7 +17,6 @@ import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -49,8 +46,8 @@ export function ExpenseCategoriesDialog({
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
-  // Sub-forms: create / edit
-  const [isCreating, setIsCreating] = React.useState(false)
+  // View mode: 'list' | 'add' | 'edit'
+  const [view, setView] = React.useState<"list" | "add" | "edit">("list")
   const [editingCategory, setEditingCategory] = React.useState<ExpenseHeadDTO | null>(null)
 
   // Form states
@@ -104,21 +101,21 @@ export function ExpenseCategoriesDialog({
     setDescription("")
     setIsActive(true)
     setFormError(null)
-    setIsCreating(true)
+    setView("add")
   }
 
   const startEdit = (cat: ExpenseHeadDTO) => {
-    setIsCreating(false)
     setEditingCategory(cat)
     setName(cat.name)
     setCode(cat.code)
     setDescription(cat.description || "")
     setIsActive(cat.isActive)
     setFormError(null)
+    setView("edit")
   }
 
-  const cancelSubForm = () => {
-    setIsCreating(false)
+  const backToList = () => {
+    setView("list")
     setEditingCategory(null)
     setFormError(null)
   }
@@ -158,7 +155,7 @@ export function ExpenseCategoriesDialog({
       }
 
       toast.success(`Category "${name}" created successfully`)
-      cancelSubForm()
+      backToList()
       setReloadKey((k) => k + 1)
       onSuccess()
     } catch (err: unknown) {
@@ -197,7 +194,7 @@ export function ExpenseCategoriesDialog({
       }
 
       toast.success("Category updated successfully")
-      cancelSubForm()
+      backToList()
       setReloadKey((k) => k + 1)
       onSuccess()
     } catch (err: unknown) {
@@ -208,7 +205,7 @@ export function ExpenseCategoriesDialog({
   }
 
   const handleDelete = async (cat: ExpenseHeadDTO) => {
-    if (!confirm(`Are you sure you want to delete category "${cat.name}"? Referenced categories cannot be deleted.`)) {
+    if (!confirm(`Are you sure you want to delete category "${cat.name}"?`)) {
       return
     }
 
@@ -230,30 +227,6 @@ export function ExpenseCategoriesDialog({
     }
   }
 
-  const handleToggleActive = async (cat: ExpenseHeadDTO) => {
-    try {
-      const res = await fetch(`/api/expense-heads/${cat.id}?propertyId=${propertyId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          propertyId,
-          isActive: !cat.isActive,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update category status")
-      }
-
-      toast.success(`Category "${cat.name}" marked as ${!cat.isActive ? "active" : "inactive"}`)
-      setReloadKey((k) => k + 1)
-      onSuccess()
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to toggle status")
-    }
-  }
-
   const handleSeedDefaults = async () => {
     setSeeding(true)
     try {
@@ -266,14 +239,14 @@ export function ExpenseCategoriesDialog({
       }
 
       if (data.seededCount > 0) {
-        toast.success(`Successfully initialized ${data.seededCount} standard expense categories`)
+        toast.success(`Initialized ${data.seededCount} standard expense categories`)
       } else {
-        toast.info("Standard expense categories are already seeded for this property")
+        toast.info("Standard categories are already seeded")
       }
       setReloadKey((k) => k + 1)
       onSuccess()
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to seed default categories")
+      toast.error(err instanceof Error ? err.message : "Failed to seed categories")
     } finally {
       setSeeding(false)
     }
@@ -281,86 +254,167 @@ export function ExpenseCategoriesDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                <Tag className="size-4" />
-              </div>
-              <div>
+      <DialogContent className="sm:max-w-xl">
+        {view === "list" ? (
+          <>
+            <DialogHeader>
+              <div className="flex items-center justify-between">
                 <DialogTitle>Expense Categories</DialogTitle>
-                <DialogDescription className="text-xs">
-                  Property-scoped expense categories for operational and administrative accounting.
-                </DialogDescription>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleSeedDefaults}
+                    disabled={seeding || loading}
+                    className="h-8 text-xs cursor-pointer"
+                  >
+                    {seeding ? (
+                      <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                    ) : (
+                      <Sparkles className="size-3.5 mr-1.5 text-primary" />
+                    )}
+                    Seed Defaults
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={startCreate}
+                    disabled={loading}
+                    className="h-8 text-xs cursor-pointer"
+                  >
+                    <Plus className="size-3.5 mr-1.5" />
+                    Add Category
+                  </Button>
+                </div>
               </div>
+            </DialogHeader>
+
+            <div className="py-2 min-h-[260px] max-h-[60vh] overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+                  <Loader2 className="size-5 animate-spin text-primary" />
+                  <span className="text-xs">Loading categories...</span>
+                </div>
+              ) : error ? (
+                <div className="text-center py-8 text-xs text-destructive space-y-1">
+                  <AlertCircle className="size-5 mx-auto" />
+                  <p>{error}</p>
+                </div>
+              ) : categories.length === 0 ? (
+                <div className="text-center py-12 border border-dashed rounded-lg space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    No expense categories configured for this hotel.
+                  </p>
+                  <Button size="sm" onClick={handleSeedDefaults} disabled={seeding} className="text-xs">
+                    {seeding && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                    Seed Standard Categories
+                  </Button>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden bg-card">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="text-xs font-semibold">Code</TableHead>
+                        <TableHead className="text-xs font-semibold">Name</TableHead>
+                        <TableHead className="text-xs font-semibold text-center w-20">Status</TableHead>
+                        <TableHead className="text-xs font-semibold text-right w-16">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {categories.map((cat) => (
+                        <TableRow key={cat.id} className="text-xs hover:bg-muted/40 transition-colors">
+                          <TableCell className="font-mono text-[11px] font-semibold text-primary">
+                            {cat.code}
+                          </TableCell>
+                          <TableCell className="font-medium text-foreground">
+                            {cat.name}
+                            {cat.description && (
+                              <p className="text-[11px] text-muted-foreground line-clamp-1">{cat.description}</p>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                                cat.isActive
+                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                  : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {cat.isActive ? "Active" : "Inactive"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => startEdit(cat)}
+                                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                                title="Edit Category"
+                              >
+                                <Edit2 className="size-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(cat)}
+                                className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                                title="Delete Category"
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </div>
 
-            {!isCreating && !editingCategory && (
+            <DialogFooter className="pt-2">
+              <Button variant="outline" size="sm" onClick={onClose} className="text-xs cursor-pointer">
+                Close
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          /* Form View: Add or Edit */
+          <form onSubmit={view === "add" ? handleCreate : handleUpdate} className="space-y-4">
+            <DialogHeader>
               <div className="flex items-center gap-2">
                 <Button
+                  type="button"
+                  variant="ghost"
                   size="sm"
-                  variant="outline"
-                  onClick={handleSeedDefaults}
-                  disabled={seeding || loading}
-                  className="h-8 text-xs cursor-pointer"
+                  onClick={backToList}
+                  className="h-7 px-1.5 text-xs text-muted-foreground cursor-pointer"
                 >
-                  {seeding ? (
-                    <Loader2 className="size-3.5 animate-spin mr-1.5" />
-                  ) : (
-                    <Sparkles className="size-3.5 mr-1.5 text-primary" />
-                  )}
-                  Seed Defaults
+                  <ArrowLeft className="size-3.5 mr-1" />
+                  Categories
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={startCreate}
-                  disabled={loading}
-                  className="h-8 text-xs cursor-pointer"
-                >
-                  <Plus className="size-3.5 mr-1.5" />
-                  Add Category
-                </Button>
+                <DialogTitle>
+                  {view === "add" ? "New Category" : `Edit Category: ${editingCategory?.code}`}
+                </DialogTitle>
               </div>
-            )}
-          </div>
-        </DialogHeader>
-
-        {/* Sub-form: Create or Edit */}
-        {(isCreating || editingCategory) && (
-          <form
-            onSubmit={isCreating ? handleCreate : handleUpdate}
-            className="mx-6 p-4 rounded-xl border border-border/80 bg-muted/40 space-y-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-foreground">
-                {isCreating ? "New Expense Category" : `Edit Category: ${editingCategory?.code}`}
-              </span>
-              <button
-                type="button"
-                onClick={cancelSubForm}
-                className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
+            </DialogHeader>
 
             {formError && (
-              <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2 rounded-lg border border-destructive/20">
+              <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
                 <AlertCircle className="size-3.5 shrink-0" />
                 <span>{formError}</span>
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-3 text-xs">
               <div className="space-y-1">
                 <Label className="text-xs">Category Name *</Label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Linen & Laundry Supplies"
-                  className="h-8 text-xs"
+                  placeholder="e.g. Laundry Supplies"
+                  className="h-9 text-xs"
                   required
+                  autoFocus
                 />
               </div>
 
@@ -369,165 +423,59 @@ export function ExpenseCategoriesDialog({
                 <Input
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="e.g. LINEN_SUPPLIES"
-                  className="h-8 text-xs font-mono uppercase"
-                  disabled={Boolean(editingCategory)}
+                  placeholder="e.g. LAUNDRY"
+                  className="h-9 text-xs font-mono uppercase"
+                  disabled={view === "edit"}
                   required
                 />
-                {editingCategory && (
-                  <p className="text-[10px] text-muted-foreground">Category code is strictly immutable after creation.</p>
-                )}
               </div>
-            </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Description (Optional)</Label>
-              <Input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Details on what disbursements belong in this category"
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isActive}
-                  onChange={(e) => setIsActive(e.target.checked)}
-                  className="rounded border-border text-primary focus:ring-primary size-3.5"
+              <div className="space-y-1">
+                <Label className="text-xs">Description (Optional)</Label>
+                <Input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief description"
+                  className="h-9 text-xs"
                 />
-                Active (available for recording new expenses)
-              </label>
+              </div>
 
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={cancelSubForm}
-                  className="h-7 text-xs cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={submitting}
-                  className="h-7 text-xs cursor-pointer"
-                >
-                  {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
-                  {isCreating ? "Save Category" : "Update Category"}
-                </Button>
+              <div className="pt-1">
+                <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={(e) => setIsActive(e.target.checked)}
+                    className="rounded border-border text-primary focus:ring-primary size-3.5"
+                  />
+                  Active (available for new expenses)
+                </label>
               </div>
             </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={backToList}
+                disabled={submitting}
+                className="text-xs cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={submitting}
+                className="text-xs cursor-pointer"
+              >
+                {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+                {view === "add" ? "Save Category" : "Save Changes"}
+              </Button>
+            </DialogFooter>
           </form>
         )}
-
-        {/* Categories Table */}
-        <div className="flex-1 overflow-y-auto px-6 py-2 min-h-[220px]">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-              <Loader2 className="size-5 animate-spin text-primary" />
-              <span className="text-xs">Loading categories...</span>
-            </div>
-          ) : error ? (
-            <div className="text-center py-8 text-xs text-destructive space-y-1">
-              <AlertCircle className="size-5 mx-auto" />
-              <p>{error}</p>
-            </div>
-          ) : categories.length === 0 ? (
-            <div className="text-center py-12 border border-dashed rounded-xl bg-card/50 space-y-3">
-              <Tag className="size-8 text-muted-foreground mx-auto" />
-              <div className="space-y-1">
-                <h4 className="text-sm font-semibold">No Expense Categories Found</h4>
-                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  Click &quot;Seed Defaults&quot; to initialize standard hotel operating expense heads or create custom ones.
-                </p>
-              </div>
-              <Button size="sm" onClick={handleSeedDefaults} disabled={seeding} className="text-xs">
-                {seeding ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Sparkles className="size-3.5 mr-1.5" />}
-                Seed Standard Categories
-              </Button>
-            </div>
-          ) : (
-            <div className="border rounded-xl overflow-hidden bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50">
-                    <TableHead className="text-xs font-semibold">Code</TableHead>
-                    <TableHead className="text-xs font-semibold">Name</TableHead>
-                    <TableHead className="text-xs font-semibold hidden sm:table-cell">Description</TableHead>
-                    <TableHead className="text-xs font-semibold text-center w-24">Status</TableHead>
-                    <TableHead className="text-xs font-semibold text-right w-24">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {categories.map((cat) => (
-                    <TableRow key={cat.id} className="text-xs hover:bg-muted/40 transition-colors">
-                      <TableCell className="font-mono text-[11px] font-semibold text-primary">
-                        {cat.code}
-                      </TableCell>
-                      <TableCell className="font-medium text-foreground">
-                        {cat.name}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground hidden sm:table-cell max-w-xs truncate">
-                        {cat.description || "—"}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(cat)}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer"
-                          title="Click to toggle status"
-                        >
-                          {cat.isActive ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              <CheckCircle2 className="size-3" />
-                              Active
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border">
-                              <XCircle className="size-3" />
-                              Inactive
-                            </span>
-                          )}
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => startEdit(cat)}
-                            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                            title="Edit Category"
-                          >
-                            <Edit2 className="size-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(cat)}
-                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                            title="Delete Category"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="p-4 border-t border-border flex justify-end">
-          <Button variant="outline" size="sm" onClick={onClose} className="text-xs cursor-pointer">
-            Close
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

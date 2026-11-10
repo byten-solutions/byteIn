@@ -2,16 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import {
-  Loader2,
-  AlertCircle,
-  Receipt,
-  Plus,
-  Coins,
-  Ban,
-  AlertTriangle,
-  Wallet,
-} from "lucide-react"
+import { Loader2, AlertCircle, Ban } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -23,14 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { StatusBadge } from "@/components/ui-kit"
 import { formatDate } from "@/lib/date-format"
 import type {
@@ -83,7 +66,7 @@ export function CreateExpenseDialog({
 
     const parsedAmount = parseFloat(amount)
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setError("Expense amount must be strictly greater than zero.")
+      setError("Please enter an amount greater than zero.")
       return
     }
 
@@ -116,7 +99,7 @@ export function CreateExpenseDialog({
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create expense record")
+        throw new Error(data.error || "Failed to record expense")
       }
 
       toast.success("Expense recorded successfully")
@@ -131,119 +114,108 @@ export function CreateExpenseDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                <Plus className="size-4" />
-              </div>
-              <div>
-                <DialogTitle>Record New Expense</DialogTitle>
-                <DialogDescription className="text-xs">
-                  Incur an operational, maintenance, or vendor expense for this property.
-                </DialogDescription>
-              </div>
-            </div>
-          </DialogHeader>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Record Expense</DialogTitle>
+        </DialogHeader>
 
-          {error && (
-            <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
-              <AlertCircle className="size-4 shrink-0" />
-              <span>{error}</span>
-            </div>
-          )}
+        {error && (
+          <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
+            <AlertCircle className="size-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
-          <div className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+          <div className="space-y-1">
+            <Label className="text-xs">Title *</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Electricity bill, Laundry supplies"
+              className="h-9 text-xs"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Title / Short Description *</Label>
+              <Label className="text-xs">Category *</Label>
+              <select
+                value={effectiveHeadId}
+                onChange={(e) => setExpenseHeadId(e.target.value)}
+                className="w-full h-9 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
+                required
+              >
+                {activeCategories.length === 0 ? (
+                  <option value="">No active categories</option>
+                ) : (
+                  activeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Amount ($) *</Label>
               <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. October Electricity Bill or Fresh Linens Batch"
-                className="h-8 text-xs"
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="h-9 text-xs font-mono font-medium"
                 required
               />
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Category *</Label>
-                <select
-                  value={effectiveHeadId}
-                  onChange={(e) => setExpenseHeadId(e.target.value)}
-                  className="w-full h-8 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden focus:ring-1 focus:ring-ring cursor-pointer"
-                  required
-                >
-                  {activeCategories.length === 0 ? (
-                    <option value="">No active categories</option>
-                  ) : (
-                    activeCategories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code})
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Amount ($) *</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="h-8 text-xs font-mono font-medium"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Vendor / Supplier Name</Label>
-                <Input
-                  value={vendorName}
-                  onChange={(e) => setVendorName(e.target.value)}
-                  placeholder="e.g. Acme Supplies Ltd"
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Invoice / Reference #</Label>
-                <Input
-                  value={referenceNumber}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                  placeholder="e.g. INV-2026-089"
-                  className="h-8 text-xs font-mono"
-                />
-              </div>
-            </div>
-
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Expense Date</Label>
+              <Label className="text-xs">Date *</Label>
               <Input
                 type="date"
                 value={expenseDate}
                 onChange={(e) => setExpenseDate(e.target.value)}
-                className="h-8 text-xs"
+                className="h-9 text-xs"
                 required
               />
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Notes / Details (Optional)</Label>
+              <Label className="text-xs">Reference #</Label>
               <Input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Additional notes or procurement details"
-                className="h-8 text-xs"
+                value={referenceNumber}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+                placeholder="Invoice or bill #"
+                className="h-9 text-xs font-mono"
               />
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Vendor (Optional)</Label>
+            <Input
+              value={vendorName}
+              onChange={(e) => setVendorName(e.target.value)}
+              placeholder="Vendor or supplier name"
+              className="h-9 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Notes (Optional)</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Additional details"
+              className="h-9 text-xs"
+            />
           </div>
 
           <DialogFooter className="pt-2">
@@ -263,7 +235,7 @@ export function CreateExpenseDialog({
               disabled={submitting || activeCategories.length === 0}
               className="text-xs cursor-pointer"
             >
-              {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
+              {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
               Save Expense
             </Button>
           </DialogFooter>
@@ -309,14 +281,12 @@ function EditExpenseDialogInner({
 
     const parsedAmount = parseFloat(amount)
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setError("Expense amount must be strictly greater than zero.")
+      setError("Please enter an amount greater than zero.")
       return
     }
 
     if (parsedAmount < paidAmountNum) {
-      setError(
-        `Expense amount cannot be reduced below the amount already paid ($${paidAmountNum.toFixed(2)}).`
-      )
+      setError(`Amount cannot be less than already disbursed funds ($${paidAmountNum.toFixed(2)}).`)
       return
     }
 
@@ -358,111 +328,107 @@ function EditExpenseDialogInner({
   }
 
   return (
-    <DialogContent className="max-w-lg">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <DialogHeader>
-          <DialogTitle>Edit Expense</DialogTitle>
-          <DialogDescription className="text-xs">
-            Update expense details. Amount cannot be less than already disbursed funds.
-          </DialogDescription>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Edit Expense</DialogTitle>
+      </DialogHeader>
 
-        {error && (
-          <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
-        {paidAmountNum > 0 && (
-          <div className="text-xs bg-amber-500/10 text-amber-900 dark:text-amber-200 p-2.5 rounded-lg border border-amber-500/20 flex items-center gap-2">
-            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
-            <span>
-              <strong>${paidAmountNum.toFixed(2)}</strong> has already been disbursed against this expense. The amount cannot be reduced below this figure.
-            </span>
-          </div>
-        )}
+      <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+        <div className="space-y-1">
+          <Label className="text-xs">Title *</Label>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="h-9 text-xs"
+            required
+          />
+        </div>
 
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Title *</Label>
+            <Label className="text-xs">Category *</Label>
+            <select
+              value={expenseHeadId}
+              onChange={(e) => setExpenseHeadId(e.target.value)}
+              className="w-full h-9 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
+            >
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Amount ($) *</Label>
+              {paidAmountNum > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  Min: ${paidAmountNum.toFixed(2)}
+                </span>
+              )}
+            </div>
             <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="h-8 text-xs"
+              type="number"
+              step="0.01"
+              min={paidAmountNum > 0 ? paidAmountNum : 0.01}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="h-9 text-xs font-mono font-medium"
               required
             />
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Category</Label>
-              <select
-                value={expenseHeadId}
-                onChange={(e) => setExpenseHeadId(e.target.value)}
-                className="w-full h-8 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Total Amount ($) *</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min={paidAmountNum > 0 ? paidAmountNum : 0.01}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="h-8 text-xs font-mono font-medium"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Vendor Name</Label>
-              <Input
-                value={vendorName}
-                onChange={(e) => setVendorName(e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Reference Number</Label>
-              <Input
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-          </div>
-
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Expense Date</Label>
+            <Label className="text-xs">Date *</Label>
             <Input
               type="date"
               value={expenseDate}
               onChange={(e) => setExpenseDate(e.target.value)}
-              className="h-8 text-xs"
+              className="h-9 text-xs"
               required
             />
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Description</Label>
+            <Label className="text-xs">Reference #</Label>
             <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="h-8 text-xs"
+              value={referenceNumber}
+              onChange={(e) => setReferenceNumber(e.target.value)}
+              placeholder="Invoice or bill #"
+              className="h-9 text-xs font-mono"
             />
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Vendor (Optional)</Label>
+          <Input
+            value={vendorName}
+            onChange={(e) => setVendorName(e.target.value)}
+            placeholder="Vendor name"
+            className="h-9 text-xs"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Notes (Optional)</Label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Additional details"
+            className="h-9 text-xs"
+          />
         </div>
 
         <DialogFooter className="pt-2">
@@ -477,7 +443,7 @@ function EditExpenseDialogInner({
             Cancel
           </Button>
           <Button type="submit" size="sm" disabled={submitting} className="text-xs cursor-pointer">
-            {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
+            {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
             Save Changes
           </Button>
         </DialogFooter>
@@ -517,7 +483,7 @@ export function EditExpenseDialog({
 }
 
 // ----------------------------------------------------------------------------
-// 3. Record Expense Payment Dialog (with Idempotency Key & Liquidity Guards)
+// 3. Record Expense Payment Dialog
 // ----------------------------------------------------------------------------
 function RecordExpensePaymentDialogInner({
   onClose,
@@ -536,29 +502,32 @@ function RecordExpensePaymentDialogInner({
 }) {
   const outstandingNum = parseFloat(expense.outstandingAmount || "0")
 
+  const activeAccounts = React.useMemo(() => accounts.filter((a) => a.isActive), [accounts])
+  const activeMethods = React.useMemo(() => paymentMethods.filter((m) => m.isActive), [paymentMethods])
+
   const defaultAccount =
-    accounts.find((a) => a.isDefault && a.isActive) ||
-    accounts.find((a) => a.isActive)
+    activeAccounts.find((a) => a.isDefault) ||
+    activeAccounts[0]
 
   const [accountId, setAccountId] = React.useState(defaultAccount?.id || "")
-  const [paymentMethodId, setPaymentMethodId] = React.useState(paymentMethods[0]?.id || "")
+  const [paymentMethodId, setPaymentMethodId] = React.useState(activeMethods[0]?.id || "")
   const [amount, setAmount] = React.useState(expense.outstandingAmount)
   const [referenceNumber, setReferenceNumber] = React.useState("")
   const [paidAt, setPaidAt] = React.useState(() =>
-    new Date().toISOString().slice(0, 16)
+    new Date().toISOString().slice(0, 10)
   )
   const [idempotencyKey] = React.useState(() => crypto.randomUUID())
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  const selectedAccount = accounts.find((a) => a.id === accountId)
+  const selectedAccount = activeAccounts.find((a) => a.id === accountId)
   const availableBalance = selectedAccount
     ? parseFloat(selectedAccount.currentBalance || "0")
     : 0
 
   const handleMethodChange = (pmId: string) => {
     setPaymentMethodId(pmId)
-    const pm = paymentMethods.find((m) => m.id === pmId)
+    const pm = activeMethods.find((m) => m.id === pmId)
     if (pm && pm.defaultAccountId) {
       setAccountId(pm.defaultAccountId)
     }
@@ -570,25 +539,23 @@ function RecordExpensePaymentDialogInner({
 
     const parsedAmount = parseFloat(amount)
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setError("Payment disbursement amount must be strictly greater than zero.")
+      setError("Please enter a payment amount greater than zero.")
       return
     }
 
     if (parsedAmount > outstandingNum) {
-      setError(
-        `Disbursement amount ($${parsedAmount.toFixed(2)}) cannot exceed the outstanding balance ($${outstandingNum.toFixed(2)}).`
-      )
+      setError(`Payment cannot exceed the outstanding balance of $${outstandingNum.toFixed(2)}.`)
       return
     }
 
     if (!accountId) {
-      setError("Please select a financial account to disburse funds from.")
+      setError("Please select a financial account.")
       return
     }
 
     if (parsedAmount > availableBalance) {
       setError(
-        `Insufficient liquid funds in ${selectedAccount?.accountName}. Available: $${availableBalance.toFixed(2)}, Requested: $${parsedAmount.toFixed(2)}.`
+        `Insufficient funds in ${selectedAccount?.accountName}. Available: $${availableBalance.toFixed(2)}.`
       )
       return
     }
@@ -611,15 +578,10 @@ function RecordExpensePaymentDialogInner({
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to record payment disbursement")
+        throw new Error(data.error || "Failed to record payment")
       }
 
-      if (data.idempotentReplay) {
-        toast.info("Payment was already recorded (idempotent replay)")
-      } else {
-        toast.success(`Disbursed $${parsedAmount.toFixed(2)} successfully`)
-      }
-
+      toast.success(`Payment of $${parsedAmount.toFixed(2)} recorded successfully`)
       onSuccess()
       onClose()
     } catch (err: unknown) {
@@ -630,139 +592,118 @@ function RecordExpensePaymentDialogInner({
   }
 
   return (
-    <DialogContent className="max-w-md">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600">
-              <Wallet className="size-4" />
-            </div>
-            <div>
-              <DialogTitle>Disburse Expense Payment</DialogTitle>
-              <DialogDescription className="text-xs">
-                Pay vendor from an active hotel financial account.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Disburse Payment</DialogTitle>
+      </DialogHeader>
 
-        {/* Expense Snapshot Banner */}
-        <div className="p-3 bg-muted/60 rounded-xl border border-border/80 space-y-1.5 text-xs">
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-foreground truncate max-w-[240px]">
-              {expense.title}
-            </span>
-            <StatusBadge status={expense.status} />
+      {/* Clean Compact Summary */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border text-xs">
+        <div>
+          <span className="font-semibold text-foreground">{expense.title}</span>
+          <span className="text-muted-foreground ml-2">Total: ${parseFloat(expense.amount).toFixed(2)}</span>
+        </div>
+        <div className="text-right">
+          <span className="text-muted-foreground mr-1.5">Due:</span>
+          <span className="font-bold text-primary font-mono">${outstandingNum.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Amount ($) *</Label>
+            <button
+              type="button"
+              onClick={() => setAmount(outstandingNum.toFixed(2))}
+              className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
+            >
+              Pay Full (${outstandingNum.toFixed(2)})
+            </button>
           </div>
-          <div className="flex justify-between items-center text-muted-foreground pt-1 border-t border-border/50">
-            <span>Total: ${parseFloat(expense.amount).toFixed(2)}</span>
-            <span>Paid: ${parseFloat(expense.paidAmount).toFixed(2)}</span>
-            <span className="font-semibold text-primary">
-              Outstanding: ${outstandingNum.toFixed(2)}
-            </span>
-          </div>
+          <Input
+            type="number"
+            step="0.01"
+            min="0.01"
+            max={outstandingNum}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-9 text-xs font-mono font-bold"
+            required
+            autoFocus
+          />
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
+        <div className="space-y-1">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Financial Account *</Label>
+            {selectedAccount && (
+              <span className="text-[11px] text-muted-foreground font-mono">
+                Available: ${availableBalance.toFixed(2)}
+              </span>
+            )}
           </div>
-        )}
+          <select
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            className="w-full h-9 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
+            required
+          >
+            {activeAccounts.length === 0 ? (
+              <option value="">No active accounts</option>
+            ) : (
+              activeAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.accountName} (${parseFloat(a.currentBalance || "0").toFixed(2)})
+                </option>
+              ))
+            )}
+          </select>
+        </div>
 
-        <div className="space-y-3">
-          {/* Account Selection */}
-          <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <Label className="text-xs">From Financial Account *</Label>
-              {selectedAccount && (
-                <span
-                  className={`text-[11px] font-semibold ${
-                    availableBalance <= 0 ? "text-destructive" : "text-emerald-600 dark:text-emerald-400"
-                  }`}
-                >
-                  Balance: ${availableBalance.toFixed(2)}
-                </span>
-              )}
-            </div>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="w-full h-8 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
-              required
-            >
-              <option value="">Select Account</option>
-              {accounts
-                .filter((a) => a.isActive)
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.accountName} ({a.accountType}) — ${parseFloat(a.currentBalance || "0").toFixed(2)}
-                  </option>
-                ))}
-            </select>
-          </div>
-
-          {/* Payment Method Selection */}
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">Payment Method</Label>
             <select
               value={paymentMethodId}
               onChange={(e) => handleMethodChange(e.target.value)}
-              className="w-full h-8 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
+              className="w-full h-9 px-2 text-xs rounded-md border border-input bg-background font-medium outline-hidden cursor-pointer"
             >
-              {paymentMethods.map((m) => (
+              {activeMethods.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} ({m.code})
+                  {m.name}
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Amount */}
           <div className="space-y-1">
-            <div className="flex justify-between items-center">
-              <Label className="text-xs">Disbursement Amount ($) *</Label>
-              <button
-                type="button"
-                onClick={() => setAmount(outstandingNum.toFixed(2))}
-                className="text-[10px] text-primary hover:underline cursor-pointer font-medium"
-              >
-                Pay Full Balance (${outstandingNum.toFixed(2)})
-              </button>
-            </div>
+            <Label className="text-xs">Payment Date *</Label>
             <Input
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={outstandingNum}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="h-8 text-xs font-mono font-semibold"
+              type="date"
+              value={paidAt}
+              onChange={(e) => setPaidAt(e.target.value)}
+              className="h-9 text-xs"
               required
             />
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Reference / Cheque #</Label>
-              <Input
-                value={referenceNumber}
-                onChange={(e) => setReferenceNumber(e.target.value)}
-                placeholder="e.g. CHQ-9901 or TXN-882"
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs">Disbursement Date</Label>
-              <Input
-                type="datetime-local"
-                value={paidAt}
-                onChange={(e) => setPaidAt(e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Reference # (Optional)</Label>
+          <Input
+            value={referenceNumber}
+            onChange={(e) => setReferenceNumber(e.target.value)}
+            placeholder="Cheque # or transaction ref"
+            className="h-9 text-xs font-mono"
+          />
         </div>
 
         <DialogFooter className="pt-2">
@@ -782,8 +723,8 @@ function RecordExpensePaymentDialogInner({
             disabled={submitting || !accountId || outstandingNum <= 0}
             className="text-xs cursor-pointer"
           >
-            {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
-            Confirm Disbursement
+            {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
+            Confirm Payment
           </Button>
         </DialogFooter>
       </form>
@@ -825,7 +766,7 @@ export function RecordExpensePaymentDialog({
 }
 
 // ----------------------------------------------------------------------------
-// 4. Expense Details Dialog (with full payments itemization & actions)
+// 4. Expense Details Dialog (Clean, No-Overflow Layout)
 // ----------------------------------------------------------------------------
 export function ExpenseDetailsDialog({
   isOpen,
@@ -889,213 +830,177 @@ export function ExpenseDetailsDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="p-6 pb-3 border-b border-border">
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
           <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <DialogTitle className="text-base font-semibold">
-                  {loading ? "Expense Details" : expense?.title}
-                </DialogTitle>
-                {expense && <StatusBadge status={expense.status} />}
+            <DialogTitle className="text-base font-semibold">
+              {loading ? "Expense Details" : expense?.title}
+            </DialogTitle>
+            {expense && <StatusBadge status={expense.status} />}
+          </div>
+          {expense && (
+            <DialogDescription className="text-xs text-muted-foreground">
+              {expense.categoryName} • {expense.expenseDate ? formatDate(expense.expenseDate) : "—"}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+            <Loader2 className="size-5 animate-spin text-primary" />
+            <span className="text-xs">Loading...</span>
+          </div>
+        ) : error || !expense ? (
+          <div className="text-center py-8 text-xs text-destructive space-y-1">
+            <AlertCircle className="size-5 mx-auto" />
+            <p>{error || "Expense not found"}</p>
+          </div>
+        ) : (
+          <div className="space-y-4 text-xs">
+            {/* 3-Column Financial Summary Strip */}
+            <div className="grid grid-cols-3 gap-2 p-3 bg-muted/40 rounded-lg border border-border text-center">
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Incurred</span>
+                <div className="text-sm font-bold text-foreground">
+                  ${parseFloat(expense.amount).toFixed(2)}
+                </div>
               </div>
-              <DialogDescription className="text-xs">
-                {expense?.categoryName} ({expense?.categoryCode}) • Incurred on{" "}
-                {expense?.expenseDate ? formatDate(expense.expenseDate) : "—"}
-              </DialogDescription>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Paid</span>
+                <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                  ${parseFloat(expense.paidAmount).toFixed(2)}
+                </div>
+              </div>
+              <div>
+                <span className="text-[10px] text-muted-foreground uppercase font-semibold">Balance</span>
+                <div className="text-sm font-bold text-amber-600 dark:text-amber-400 font-mono">
+                  ${outstandingNum.toFixed(2)}
+                </div>
+              </div>
             </div>
 
-            {expense && (
-              <div className="flex items-center gap-2">
+            {/* Metadata Fields */}
+            <div className="grid grid-cols-2 gap-3 p-3 bg-card rounded-lg border border-border">
+              <div>
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Vendor</span>
+                <p className="font-medium text-foreground mt-0.5">{expense.vendorName || "—"}</p>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-[10px] uppercase font-semibold">Reference #</span>
+                <p className="font-mono font-medium text-foreground mt-0.5">{expense.referenceNumber || "—"}</p>
+              </div>
+              {expense.description && (
+                <div className="col-span-2 pt-1 border-t border-border/50">
+                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Notes</span>
+                  <p className="text-foreground mt-0.5">{expense.description}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Void Record Banner */}
+            {expense.status === "VOID" && (
+              <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">
+                <span className="font-semibold">Voided: </span>
+                {expense.voidReason || "No reason specified"}
+              </div>
+            )}
+
+            {/* Payments List (No horizontal overflow) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground text-xs">
+                  Payments ({expense.payments.length})
+                </span>
                 {canDisburse && (
                   <Button
                     size="sm"
-                    onClick={() => {
-                      onRecordPayment(expense)
-                    }}
-                    className="h-8 text-xs cursor-pointer"
+                    variant="ghost"
+                    onClick={() => onRecordPayment(expense)}
+                    className="h-6 text-xs text-primary hover:underline p-0 cursor-pointer"
                   >
-                    <Coins className="size-3.5 mr-1.5" />
-                    Disburse
-                  </Button>
-                )}
-                {canVoid && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      onVoidExpense(expense)
-                    }}
-                    className="h-8 text-xs text-destructive hover:bg-destructive/10 cursor-pointer"
-                  >
-                    <Ban className="size-3.5 mr-1.5" />
-                    Void
+                    + Disburse Payment
                   </Button>
                 )}
               </div>
+
+              {expense.payments.length === 0 ? (
+                <p className="text-muted-foreground text-xs py-2 text-center border border-dashed rounded-lg">
+                  No payments recorded yet.
+                </p>
+              ) : (
+                <div className="divide-y divide-border border rounded-lg bg-card overflow-hidden">
+                  {expense.payments.map((p) => (
+                    <div
+                      key={p.id}
+                      className="p-2.5 flex items-center justify-between text-xs hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-foreground">{p.accountName}</span>
+                          <span className="text-muted-foreground text-[11px] font-mono">
+                            {p.paymentMethodCode}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {formatDate(p.paidAt)}
+                          {p.referenceNumber && ` • Ref: ${p.referenceNumber}`}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className="font-mono font-bold text-foreground">
+                            ${parseFloat(p.amount).toFixed(2)}
+                          </div>
+                          <StatusBadge status={p.status} />
+                        </div>
+
+                        {p.status === "RECORDED" && expense.status !== "VOID" && (
+                          <button
+                            type="button"
+                            onClick={() => onVoidPayment(p)}
+                            className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                            title="Void this payment"
+                          >
+                            <Ban className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter className="pt-2 flex items-center justify-between">
+          <div>
+            {canVoid && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onVoidExpense(expense!)}
+                className="h-8 text-xs text-destructive hover:bg-destructive/10 border-destructive/30 cursor-pointer"
+              >
+                Void Expense
+              </Button>
             )}
           </div>
-        </DialogHeader>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-              <Loader2 className="size-5 animate-spin text-primary" />
-              <span className="text-xs">Loading expense details...</span>
-            </div>
-          ) : error || !expense ? (
-            <div className="text-center py-8 text-xs text-destructive space-y-1">
-              <AlertCircle className="size-5 mx-auto" />
-              <p>{error || "Expense not found"}</p>
-            </div>
-          ) : (
-            <>
-              {/* Financial Summary KPI Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="p-3 bg-card border rounded-xl space-y-0.5">
-                  <span className="text-[11px] text-muted-foreground font-medium">Incurred Amount</span>
-                  <div className="text-sm font-bold text-foreground">
-                    ${parseFloat(expense.amount).toFixed(2)}
-                  </div>
-                </div>
-                <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl space-y-0.5">
-                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium">Paid (Disbursed)</span>
-                  <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                    ${parseFloat(expense.paidAmount).toFixed(2)}
-                  </div>
-                </div>
-                <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-0.5">
-                  <span className="text-[11px] text-amber-800 dark:text-amber-300 font-medium">Outstanding Balance</span>
-                  <div className="text-sm font-bold text-amber-700 dark:text-amber-400">
-                    ${outstandingNum.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Expense Metadata Info Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs bg-muted/30 p-4 rounded-xl border border-border/80">
-                <div>
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Vendor / Supplier</span>
-                  <p className="font-medium text-foreground mt-0.5">{expense.vendorName || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Invoice / Reference #</span>
-                  <p className="font-mono font-medium text-foreground mt-0.5">{expense.referenceNumber || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px] uppercase font-semibold">Recorded By</span>
-                  <p className="font-medium text-foreground mt-0.5">{expense.creatorName || "Staff Member"}</p>
-                </div>
-                {expense.description && (
-                  <div className="col-span-full pt-1 border-t border-border/40">
-                    <span className="text-muted-foreground text-[10px] uppercase font-semibold">Description / Notes</span>
-                    <p className="text-foreground mt-0.5">{expense.description}</p>
-                  </div>
-                )}
-                {expense.status === "VOID" && (
-                  <div className="col-span-full pt-2 border-t border-destructive/20 text-destructive bg-destructive/10 p-3 rounded-lg">
-                    <span className="text-[10px] uppercase font-semibold">Voided Record</span>
-                    <p className="text-xs font-medium mt-0.5">
-                      <strong>Reason:</strong> {expense.voidReason || "Unspecified"}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Voided at {expense.voidedAt ? formatDate(expense.voidedAt) : "—"}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Disbursements History Table */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <Receipt className="size-3.5 text-primary" />
-                    Outgoing Payment History ({expense.payments.length})
-                  </h4>
-                  {outstandingNum === 0 && expense.status === "PAID" && (
-                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                      Fully Settled
-                    </span>
-                  )}
-                </div>
-
-                {expense.payments.length === 0 ? (
-                  <div className="text-center py-6 border border-dashed rounded-xl bg-card text-xs text-muted-foreground space-y-1">
-                    <p>No outgoing payments disbursed yet.</p>
-                    {canDisburse && (
-                      <button
-                        type="button"
-                        onClick={() => onRecordPayment(expense)}
-                        className="text-primary hover:underline font-semibold cursor-pointer"
-                      >
-                        Click here to record a payment
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="border rounded-xl overflow-hidden bg-card">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="bg-muted/50">
-                          <TableHead className="text-xs font-semibold">Date</TableHead>
-                          <TableHead className="text-xs font-semibold">Account</TableHead>
-                          <TableHead className="text-xs font-semibold">Method</TableHead>
-                          <TableHead className="text-xs font-semibold">Ref #</TableHead>
-                          <TableHead className="text-xs font-semibold text-right">Amount</TableHead>
-                          <TableHead className="text-xs font-semibold text-center w-20">Status</TableHead>
-                          <TableHead className="text-xs font-semibold text-right w-16">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {expense.payments.map((p) => (
-                          <TableRow key={p.id} className="text-xs hover:bg-muted/40 transition-colors">
-                            <TableCell className="text-muted-foreground whitespace-nowrap">
-                              {formatDate(p.paidAt)}
-                            </TableCell>
-                            <TableCell className="font-medium text-foreground">
-                              {p.accountName}
-                            </TableCell>
-                            <TableCell className="font-mono text-[11px] text-muted-foreground">
-                              {p.paymentMethodCode}
-                            </TableCell>
-                            <TableCell className="font-mono text-[11px] text-muted-foreground">
-                              {p.referenceNumber || "—"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
-                              ${parseFloat(p.amount).toFixed(2)}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              <StatusBadge status={p.status} />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {p.status === "RECORDED" && expense.status !== "VOID" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => onVoidPayment(p)}
-                                  className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
-                                  title="Void payment & reverse account balance"
-                                >
-                                  <Ban className="size-3.5" />
-                                </button>
-                              ) : (
-                                <span className="text-muted-foreground text-[10px]">—</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <DialogFooter className="p-4 border-t border-border flex justify-end">
-          <Button variant="outline" size="sm" onClick={onClose} className="text-xs cursor-pointer">
-            Close
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onClose} className="h-8 text-xs cursor-pointer">
+              Close
+            </Button>
+            {canDisburse && (
+              <Button
+                size="sm"
+                onClick={() => onRecordPayment(expense!)}
+                className="h-8 text-xs cursor-pointer"
+              >
+                Disburse Payment
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1147,12 +1052,10 @@ function VoidExpensePaymentDialogInner({
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to void payment disbursement")
+        throw new Error(data.error || "Failed to void payment")
       }
 
-      toast.success(
-        `Disbursement of $${parseFloat(payment.amount).toFixed(2)} voided. Balance restored to ${payment.accountName}.`
-      )
+      toast.success("Payment voided and balance restored")
       onSuccess()
       onClose()
     } catch (err: unknown) {
@@ -1163,50 +1066,35 @@ function VoidExpensePaymentDialogInner({
   }
 
   return (
-    <DialogContent className="max-w-md">
-      <form onSubmit={handleVoid} className="space-y-4">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
-              <Ban className="size-4" />
-            </div>
-            <div>
-              <DialogTitle>Void Outgoing Payment</DialogTitle>
-              <DialogDescription className="text-xs">
-                Reverses the disbursement and restores money to the financial account.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Void Payment</DialogTitle>
+      </DialogHeader>
 
-        <div className="p-3 bg-muted/60 rounded-xl border border-border/80 space-y-1 text-xs">
-          <div className="flex justify-between font-semibold">
-            <span>Account: {payment.accountName}</span>
-            <span className="font-mono text-destructive">
-              -${parseFloat(payment.amount).toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between text-muted-foreground text-[11px]">
-            <span>Disbursed on: {formatDate(payment.paidAt)}</span>
-            <span>Ref: {payment.referenceNumber || "—"}</span>
-          </div>
+      <div className="p-3 bg-muted/50 rounded-lg border border-border text-xs flex justify-between items-center">
+        <span>{payment.accountName}</span>
+        <span className="font-mono font-bold text-destructive">
+          -${parseFloat(payment.amount).toFixed(2)}
+        </span>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {error && (
-          <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
+      <form onSubmit={handleVoid} className="space-y-3.5 text-xs">
         <div className="space-y-1">
-          <Label className="text-xs">Reason for Voiding *</Label>
+          <Label className="text-xs">Reason for voiding *</Label>
           <Input
             value={voidReason}
             onChange={(e) => setVoidReason(e.target.value)}
-            placeholder="e.g. Paid from wrong bank account, duplicate disbursement"
-            className="h-8 text-xs"
+            placeholder="e.g. Paid from wrong account, duplicate"
+            className="h-9 text-xs"
             required
+            autoFocus
           />
         </div>
 
@@ -1228,7 +1116,7 @@ function VoidExpensePaymentDialogInner({
             disabled={submitting}
             className="text-xs cursor-pointer"
           >
-            {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
+            {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
             Confirm Void
           </Button>
         </DialogFooter>
@@ -1268,7 +1156,7 @@ export function VoidExpensePaymentDialog({
 }
 
 // ----------------------------------------------------------------------------
-// 6. Void Expense Dialog (with Two-Stage Active Payments Guard)
+// 6. Void Expense Dialog
 // ----------------------------------------------------------------------------
 function VoidExpenseDialogInner({
   onClose,
@@ -1293,9 +1181,7 @@ function VoidExpenseDialogInner({
     setError(null)
 
     if (hasActivePayments) {
-      setError(
-        "Cannot void expense with active payments. Please void each outgoing payment individually first to reverse the account balance."
-      )
+      setError("Cannot void expense with active payments. Please void each payment first.")
       return
     }
 
@@ -1317,10 +1203,10 @@ function VoidExpenseDialogInner({
 
       const data = await res.json()
       if (!res.ok) {
-        throw new Error(data.error || "Failed to void expense record")
+        throw new Error(data.error || "Failed to void expense")
       }
 
-      toast.success("Expense record marked as void")
+      toast.success("Expense marked as void")
       onSuccess()
       onClose()
     } catch (err: unknown) {
@@ -1331,62 +1217,40 @@ function VoidExpenseDialogInner({
   }
 
   return (
-    <DialogContent className="max-w-md">
-      <form onSubmit={handleVoid} className="space-y-4">
-        <DialogHeader>
-          <div className="flex items-center gap-2">
-            <div className="size-8 rounded-lg bg-destructive/10 flex items-center justify-center text-destructive">
-              <Ban className="size-4" />
-            </div>
-            <div>
-              <DialogTitle>Void Expense Record</DialogTitle>
-              <DialogDescription className="text-xs">
-                Cancel this expense. Voided expenses do not contribute to property financials.
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Void Expense</DialogTitle>
+      </DialogHeader>
 
-        {/* Snapshot Info */}
-        <div className="p-3 bg-muted/60 rounded-xl border border-border/80 space-y-1 text-xs">
-          <div className="flex justify-between font-semibold">
-            <span>{expense.title}</span>
-            <span className="font-mono">${parseFloat(expense.amount).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-muted-foreground text-[11px]">
-            <span>Category: {expense.categoryName}</span>
-            <span>Paid: ${paidAmountNum.toFixed(2)}</span>
-          </div>
+      <div className="p-3 bg-muted/50 rounded-lg border border-border text-xs flex justify-between items-center">
+        <span>{expense.title}</span>
+        <span className="font-mono font-bold">${parseFloat(expense.amount).toFixed(2)}</span>
+      </div>
+
+      {hasActivePayments && (
+        <div className="p-2.5 bg-amber-500/10 text-amber-900 dark:text-amber-300 rounded-lg border border-amber-500/30 text-xs">
+          This expense has active payments (${paidAmountNum.toFixed(2)}). You must void each payment first to return the funds to accounts.
         </div>
+      )}
 
-        {hasActivePayments && (
-          <div className="p-3 bg-amber-500/10 text-amber-900 dark:text-amber-200 rounded-lg border border-amber-500/30 text-xs space-y-1">
-            <div className="flex items-center gap-1.5 font-semibold text-amber-700 dark:text-amber-400">
-              <AlertTriangle className="size-4 shrink-0" />
-              <span>Controlled Two-Stage Voiding Guard</span>
-            </div>
-            <p>
-              This expense has active disbursements totaling <strong>${paidAmountNum.toFixed(2)}</strong>. You must void each individual outgoing payment first to return the funds to the respective financial accounts before voiding this expense.
-            </p>
-          </div>
-        )}
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
-        {error && (
-          <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 p-2.5 rounded-lg border border-destructive/20">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
+      <form onSubmit={handleVoid} className="space-y-3.5 text-xs">
         <div className="space-y-1">
-          <Label className="text-xs">Void Reason *</Label>
+          <Label className="text-xs">Reason for voiding *</Label>
           <Input
             value={voidReason}
             onChange={(e) => setVoidReason(e.target.value)}
-            placeholder="e.g. Vendor contract canceled, billing error"
-            className="h-8 text-xs"
+            placeholder="e.g. Incurred in error, cancelled"
+            className="h-9 text-xs"
             disabled={hasActivePayments}
             required
+            autoFocus={!hasActivePayments}
           />
         </div>
 
@@ -1408,7 +1272,7 @@ function VoidExpenseDialogInner({
             disabled={submitting || hasActivePayments}
             className="text-xs cursor-pointer"
           >
-            {submitting && <Loader2 className="size-3 animate-spin mr-1.5" />}
+            {submitting && <Loader2 className="size-3.5 animate-spin mr-1.5" />}
             Confirm Void
           </Button>
         </DialogFooter>
