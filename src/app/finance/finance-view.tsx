@@ -2,17 +2,18 @@
 
 import * as React from "react"
 import { RoleName } from "@prisma/client"
-import { Wallet, CreditCard, ArrowLeftRight, Building2, TrendingUp } from "lucide-react"
+import { Wallet, CreditCard, ArrowLeftRight, Building2, TrendingUp, Receipt } from "lucide-react"
 import { PageHeader } from "@/components/ui-kit"
 import { AccountsTab } from "./accounts-tab"
 import { MethodsTab } from "./methods-tab"
 import { TransfersTab } from "./transfers-tab"
 import { IncomeTab } from "./income-tab"
+import { ExpensesTab } from "./expenses-tab"
 import { cn } from "@/lib/utils"
 import type { SessionPayload } from "@/modules/auth/auth.types"
 import type { FinancialAccountWithBalanceDTO } from "@/modules/financial-accounts/financial-accounts.types"
 
-type FinanceTab = "accounts" | "methods" | "transfers" | "income"
+type FinanceTab = "accounts" | "methods" | "transfers" | "income" | "expenses"
 
 interface PropertyItem {
   id: string
@@ -163,6 +164,19 @@ export function FinanceView({
               <TrendingUp className="size-4" />
               Direct Income
             </button>
+
+            <button
+              onClick={() => setActiveTab("expenses")}
+              className={cn(
+                "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
+                activeTab === "expenses"
+                  ? "border-primary text-foreground font-semibold"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              )}
+            >
+              <Receipt className="size-4" />
+              Expenses
+            </button>
           </div>
 
           {/* Tab Content Panes */}
@@ -195,6 +209,15 @@ export function FinanceView({
 
             {activeTab === "income" && (
               <IncomeTab
+                propertyId={effectivePropertyId}
+                accounts={accounts}
+                refreshKey={refreshKey}
+                onDataChange={handleDataChange}
+              />
+            )}
+
+            {activeTab === "expenses" && (
+              <ExpensesTab
                 propertyId={effectivePropertyId}
                 accounts={accounts}
                 refreshKey={refreshKey}
