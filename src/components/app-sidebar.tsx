@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   BarChart3,
   UserCog,
+  Landmark,
 } from "lucide-react"
 import { Logo } from "@/components/logo"
 import { NavUser } from "@/components/nav-user"
@@ -26,7 +27,7 @@ interface AppSidebarProps {
   forceExpanded?: boolean
 }
 
-function getNavItems(role?: string | null) {
+export function getNavItems(role?: string | null) {
   if (role === "SUPER_ADMIN") {
     return [
       {
@@ -62,6 +63,11 @@ function getNavItems(role?: string | null) {
             title: "Billing",
             href: "/billing",
             icon: Receipt,
+          },
+          {
+            title: "Finance",
+            href: "/finance",
+            icon: Landmark,
           },
           {
             title: "Guests",
@@ -103,6 +109,11 @@ function getNavItems(role?: string | null) {
             title: "Billing",
             href: "/billing",
             icon: Receipt,
+          },
+          {
+            title: "Finance",
+            href: "/finance",
+            icon: Landmark,
           },
           {
             title: "Guests",
