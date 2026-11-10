@@ -207,6 +207,9 @@ describe("Phase 3 Stage 2: Income Management API Route Handlers", () => {
     await prisma.incomeHead.deleteMany({
       where: { propertyId: { in: [propA.id, propB.id] } },
     });
+    await prisma.paymentMethod.deleteMany({
+      where: { propertyId: { in: [propA.id, propB.id] } },
+    });
     await prisma.financialAccount.deleteMany({
       where: { propertyId: { in: [propA.id, propB.id] } },
     });
@@ -517,6 +520,16 @@ describe("Phase 3 Stage 2: Income Management API Route Handlers", () => {
     });
 
     it("records a partial receipt collection via POST /api/incomes/[id]/receipts", async () => {
+      const pmA = await prisma.paymentMethod.create({
+        data: {
+          id: `pm_bank_${timestamp}`,
+          propertyId: propA.id,
+          name: "Bank Transfer",
+          code: "BANK_TRANSFER",
+          isActive: true,
+        },
+      });
+
       const res = await IncomeReceiptsRoute.POST(
         makeReq(
           `http://localhost:3000/api/incomes/${createdIncomeId}/receipts`,
@@ -526,6 +539,7 @@ describe("Phase 3 Stage 2: Income Management API Route Handlers", () => {
             amount: 200,
             accountId: accountA.id,
             paymentMethod: "BANK_TRANSFER",
+            paymentMethodId: pmA.id,
             referenceNumber: "TXN-VEND-001",
           }
         ),

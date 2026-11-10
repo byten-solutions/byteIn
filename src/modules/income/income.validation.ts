@@ -6,7 +6,7 @@ import { IncomeStatus } from "@prisma/client";
 // ----------------------------------------------------------------------------
 
 export const createIncomeHeadSchema = z.object({
-  propertyId: z.string().cuid().optional(),
+  propertyId: z.string().trim().min(1).optional(),
   name: z
     .string()
     .trim()
@@ -73,8 +73,8 @@ export const incomeHeadFilterSchema = z.object({
 // ----------------------------------------------------------------------------
 
 export const createIncomeSchema = z.object({
-  propertyId: z.string().cuid().optional(),
-  incomeHeadId: z.string().cuid("Invalid income head identifier"),
+  propertyId: z.string().trim().min(1).optional(),
+  incomeHeadId: z.string().trim().min(1, "Income category identifier is required"),
   title: z
     .string()
     .trim()
@@ -102,7 +102,7 @@ export const createIncomeSchema = z.object({
 });
 
 export const updateIncomeSchema = z.object({
-  incomeHeadId: z.string().cuid("Invalid income head identifier").optional(),
+  incomeHeadId: z.string().trim().min(1, "Income category identifier is required").optional(),
   title: z
     .string()
     .trim()
@@ -153,13 +153,13 @@ export const recordIncomeReceiptSchema = z.object({
     .refine((val) => val <= 100000000, {
       message: "Amount exceeds maximum allowable limit",
     }),
-  accountId: z.string().cuid("Invalid destination financial account identifier"),
+  accountId: z.string().trim().min(1, "Destination financial account is required"),
   paymentMethod: z
     .string()
     .trim()
     .min(1, "Payment method is required")
     .max(50, "Payment method cannot exceed 50 characters"),
-  paymentMethodId: z.string().cuid().optional().nullable(),
+  paymentMethodId: z.string().trim().min(1).optional().nullable(),
   referenceNumber: z
     .string()
     .trim()
@@ -199,7 +199,7 @@ export const incomeFilterSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "End date must be YYYY-MM-DD")
     .optional(),
-  incomeHeadId: z.string().cuid().optional(),
+  incomeHeadId: z.string().trim().min(1).optional(),
   status: z.union([z.literal("ALL"), z.nativeEnum(IncomeStatus)]).optional(),
   search: z.string().trim().optional(),
   page: z
