@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { NextRequest } from "next/server";
 import { prisma } from "../src/lib/prisma";
-import { RoleName, RoomStatus, ReservationStatus, InvoiceStatus, PaymentStatus } from "@prisma/client";
+import { RoleName, RoomStatus, ReservationStatus, InvoiceStatus, ReceiptStatus } from "@prisma/client";
 import { AuthService } from "../src/modules/auth/auth.service";
 
 // Handlers
@@ -27,6 +27,12 @@ import * as CustomersRoute from "../src/app/api/customers/route";
 import * as CustomerDetailRoute from "../src/app/api/customers/[id]/route";
 import * as DailyOpsCountsRoute from "../src/app/api/reports/daily-operations/counts/route";
 import * as DailyOpsListRoute from "../src/app/api/reports/daily-operations/list/route";
+import * as FinancialAccountsRoute from "../src/app/api/financial-accounts/route";
+import * as FinancialAccountDetailRoute from "../src/app/api/financial-accounts/[id]/route";
+import * as FinancialAccountStatementRoute from "../src/app/api/financial-accounts/[id]/statement/route";
+import * as PaymentMethodsRoute from "../src/app/api/payment-methods/route";
+import * as PaymentMethodDetailRoute from "../src/app/api/payment-methods/[id]/route";
+import * as AccountTransfersRoute from "../src/app/api/account-transfers/route";
 
 describe("Permanent Route Isolation Sweep Test", () => {
   let propA: { id: string };
@@ -49,6 +55,8 @@ describe("Permanent Route Isolation Sweep Test", () => {
     zeroInvoiceId: string;
     itemId: string;
     paymentId: string;
+    accountId: string;
+    paymentMethodId: string;
   };
 
   function getAllRouteFiles(dir: string, fileList: string[] = []): string[] {
@@ -218,15 +226,35 @@ describe("Permanent Route Isolation Sweep Test", () => {
         itemType: "ROOM_CHARGE",
       },
     });
-    const payB = await prisma.payment.create({
+    const accB = await prisma.financialAccount.create({
+      data: {
+        propertyId: propB.id,
+        accountName: "Hotel B Operating",
+        accountType: "CASH",
+        isDefault: true,
+        isActive: true,
+      },
+    });
+    const payB = await prisma.receipt.create({
       data: {
         propertyId: propB.id,
         invoiceId: invB.id,
+        accountId: accB.id,
         amount: 1000,
-        paymentMethod: "CASH",
-        status: PaymentStatus.RECORDED,
+        paymentMethodCode: "CASH",
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date(),
         createdBy: userAdminB.id,
+      },
+    });
+
+    const pmB = await prisma.paymentMethod.create({
+      data: {
+        propertyId: propB.id,
+        name: "Hotel B Cash",
+        code: `CASH_B_${time}`,
+        defaultAccountId: accB.id,
+        isActive: true,
       },
     });
 
@@ -265,12 +293,18 @@ describe("Permanent Route Isolation Sweep Test", () => {
       zeroInvoiceId: zeroInvB.id,
       itemId: itemB.id,
       paymentId: payB.id,
+      accountId: accB.id,
+      paymentMethodId: pmB.id,
     };
   });
 
   after(async () => {
     // Cleanup property records
+    await prisma.accountTransfer.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
+    await prisma.receipt.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
     await prisma.payment.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
+    await prisma.paymentMethod.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
+    await prisma.financialAccount.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
     await prisma.invoiceItem.deleteMany({ where: { invoice: { propertyId: { in: [propA.id, propB.id] } } } });
     await prisma.invoice.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
     await prisma.reservationRoom.deleteMany({ where: { room: { propertyId: { in: [propA.id, propB.id] } } } });
@@ -375,6 +409,20 @@ describe("Permanent Route Isolation Sweep Test", () => {
       "src/app/api/reports/collections/route.ts",
       "src/app/api/reports/receivables/route.ts",
       "src/app/api/reports/discounts/route.ts",
+      "src/app/api/financial-accounts/route.ts",
+      "src/app/api/financial-accounts/[id]/route.ts",
+      "src/app/api/financial-accounts/[id]/statement/route.ts",
+      "src/app/api/payment-methods/route.ts",
+      "src/app/api/payment-methods/[id]/route.ts",
+      "src/app/api/account-transfers/route.ts",
+      "src/app/api/income-heads/route.ts",
+      "src/app/api/income-heads/[id]/route.ts",
+      "src/app/api/income-heads/seed/route.ts",
+      "src/app/api/incomes/route.ts",
+      "src/app/api/incomes/[id]/route.ts",
+      "src/app/api/incomes/[id]/void/route.ts",
+      "src/app/api/incomes/[id]/receipts/route.ts",
+      "src/app/api/incomes/[id]/receipts/[receiptId]/void/route.ts",
     ]);
 
     for (const f of allFiles) {
@@ -501,6 +549,27 @@ describe("Permanent Route Isolation Sweep Test", () => {
         { params: Promise.resolve({ id: hotelB.allocationId }) }
       );
       await assertDomainRejection(resNoShow, `${role.name} POST /api/room-allocations/[id]/no-show`);
+
+      // 15. Single Financial Account by ID
+      const resAcc = await FinancialAccountDetailRoute.GET(
+        makeReq(`http://localhost/api/financial-accounts/${hotelB.accountId}`, "GET", role.token),
+        { params: Promise.resolve({ id: hotelB.accountId }) }
+      );
+      await assertDomainRejection(resAcc, `${role.name} GET /api/financial-accounts/[id]`);
+
+      // 16. Financial Account Statement by ID
+      const resStmt = await FinancialAccountStatementRoute.GET(
+        makeReq(`http://localhost/api/financial-accounts/${hotelB.accountId}/statement`, "GET", role.token),
+        { params: Promise.resolve({ id: hotelB.accountId }) }
+      );
+      await assertDomainRejection(resStmt, `${role.name} GET /api/financial-accounts/[id]/statement`);
+
+      // 17. Single Payment Method by ID
+      const resPm = await PaymentMethodDetailRoute.GET(
+        makeReq(`http://localhost/api/payment-methods/${hotelB.paymentMethodId}`, "GET", role.token),
+        { params: Promise.resolve({ id: hotelB.paymentMethodId }) }
+      );
+      await assertDomainRejection(resPm, `${role.name} GET /api/payment-methods/[id]`);
     }
   });
 
@@ -540,6 +609,21 @@ describe("Permanent Route Isolation Sweep Test", () => {
     const reqList = makeReq(`http://localhost/api/reports/daily-operations/list?type=arrivals&propertyId=${propB.id}`, "GET", tokenAdminA);
     const resList = await DailyOpsListRoute.GET(reqList);
     assert.equal(resList.status, 403, "Query override ?propertyId=B on list must be rejected with 403");
+
+    // 5c. GET /api/financial-accounts?propertyId=B -> 403 Forbidden
+    const reqFinAcc = makeReq(`http://localhost/api/financial-accounts?propertyId=${propB.id}`, "GET", tokenAdminA);
+    const resFinAcc = await FinancialAccountsRoute.GET(reqFinAcc);
+    assert.equal(resFinAcc.status, 403, "Query override ?propertyId=B on financial-accounts must be rejected with 403");
+
+    // 5d. GET /api/payment-methods?propertyId=B -> 403 Forbidden
+    const reqPm = makeReq(`http://localhost/api/payment-methods?propertyId=${propB.id}`, "GET", tokenAdminA);
+    const resPm = await PaymentMethodsRoute.GET(reqPm);
+    assert.equal(resPm.status, 403, "Query override ?propertyId=B on payment-methods must be rejected with 403");
+
+    // 5e. GET /api/account-transfers?propertyId=B -> 403 Forbidden
+    const reqTr = makeReq(`http://localhost/api/account-transfers?propertyId=${propB.id}`, "GET", tokenAdminA);
+    const resTr = await AccountTransfersRoute.GET(reqTr);
+    assert.equal(resTr.status, 403, "Query override ?propertyId=B on account-transfers must be rejected with 403");
 
     // 6. Normal scoped requests for Hotel A return 200 and never contain Hotel B data
     const reqResOwn = makeReq(`http://localhost/api/reservations`, "GET", tokenAdminA);
