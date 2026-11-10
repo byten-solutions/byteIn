@@ -647,6 +647,62 @@ export class FinancialAccountService {
   }
 
   /**
+   * Calculate the live derived balance of a financial account inside a locked transaction.
+   * Strictly respects openingBalanceDate, recorded receipts, outgoing payments, and completed transfers.
+   */
+  static async getLockedAccountBalance(
+    propertyId: string,
+    accountId: string,
+    tx: Prisma.TransactionClient
+  ): Promise<Prisma.Decimal> {
+    const balanceRes = await tx.$queryRawUnsafe<{ current_balance: string }[]>(
+      `
+      SELECT (
+        fa.opening_balance +
+        COALESCE((
+          SELECT SUM(r.amount) 
+          FROM receipts r 
+          WHERE r.account_id = fa.id 
+            AND r.property_id = fa.property_id 
+            AND r.status = 'RECORDED' 
+            AND r.paid_at >= fa.opening_balance_date
+        ), 0) -
+        COALESCE((
+          SELECT SUM(p.amount) 
+          FROM payments p 
+          WHERE p.account_id = fa.id 
+            AND p.property_id = fa.property_id 
+            AND p.status = 'RECORDED' 
+            AND p.paid_at >= fa.opening_balance_date
+        ), 0) +
+        COALESCE((
+          SELECT SUM(ti.amount) 
+          FROM account_transfers ti 
+          WHERE ti.to_account_id = fa.id 
+            AND ti.property_id = fa.property_id 
+            AND ti.status = 'COMPLETED' 
+            AND ti.transfer_date >= fa.opening_balance_date
+        ), 0) -
+        COALESCE((
+          SELECT SUM(to_out.amount) 
+          FROM account_transfers to_out 
+          WHERE to_out.from_account_id = fa.id 
+            AND to_out.property_id = fa.property_id 
+            AND to_out.status = 'COMPLETED' 
+            AND to_out.transfer_date >= fa.opening_balance_date
+        ), 0)
+      )::text AS current_balance
+      FROM financial_accounts fa
+      WHERE fa.id = $1 AND fa.property_id = $2;
+      `,
+      accountId,
+      propertyId
+    );
+
+    return new Prisma.Decimal(balanceRes[0]?.current_balance || "0");
+  }
+
+  /**
    * Execute an atomic liquidity transfer between two accounts on the same property.
    * Concurrency Safe:
    * - Locks source and destination accounts with SELECT FOR UPDATE.
@@ -701,51 +757,7 @@ export class FinancialAccountService {
       }
 
       // 2. Compute live derived balance of source account inside the lock
-      const balanceRes = await tx.$queryRawUnsafe<{ current_balance: string }[]>(
-        `
-        SELECT (
-          fa.opening_balance +
-          COALESCE((
-            SELECT SUM(r.amount) 
-            FROM receipts r 
-            WHERE r.account_id = fa.id 
-              AND r.property_id = fa.property_id 
-              AND r.status = 'RECORDED' 
-              AND r.paid_at >= fa.opening_balance_date
-          ), 0) -
-          COALESCE((
-            SELECT SUM(p.amount) 
-            FROM payments p 
-            WHERE p.account_id = fa.id 
-              AND p.property_id = fa.property_id 
-              AND p.status = 'RECORDED' 
-              AND p.paid_at >= fa.opening_balance_date
-          ), 0) +
-          COALESCE((
-            SELECT SUM(ti.amount) 
-            FROM account_transfers ti 
-            WHERE ti.to_account_id = fa.id 
-              AND ti.property_id = fa.property_id 
-              AND ti.status = 'COMPLETED' 
-              AND ti.transfer_date >= fa.opening_balance_date
-          ), 0) -
-          COALESCE((
-            SELECT SUM(to_out.amount) 
-            FROM account_transfers to_out 
-            WHERE to_out.from_account_id = fa.id 
-              AND to_out.property_id = fa.property_id 
-              AND to_out.status = 'COMPLETED' 
-              AND to_out.transfer_date >= fa.opening_balance_date
-          ), 0)
-        )::text AS current_balance
-        FROM financial_accounts fa
-        WHERE fa.id = $1 AND fa.property_id = $2;
-        `,
-        input.fromAccountId,
-        propertyId
-      );
-
-      const availableBalance = new Prisma.Decimal(balanceRes[0]?.current_balance || "0");
+      const availableBalance = await this.getLockedAccountBalance(propertyId, input.fromAccountId, tx);
       if (availableBalance.lessThan(transferAmount)) {
         throw new BadRequestError(
           `Insufficient funds in '${fromAccount.account_name}'. Available: ₹${availableBalance.toFixed(2)}, Requested: ₹${transferAmount.toFixed(2)}.`

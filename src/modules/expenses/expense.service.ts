@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { BadRequestError, NotFoundError } from "@/lib/errors";
+import { BadRequestError, NotFoundError, ConflictError } from "@/lib/errors";
 import { ExpenseStatus, PaymentStatus, Prisma } from "@prisma/client";
+import { FinancialAccountService } from "../financial-accounts/financial-accounts.service";
 import {
   ExpenseDTO,
   ExpenseDetailDTO,
@@ -230,26 +231,9 @@ export class ExpenseService {
 
     const formattedBase = this.formatExpense(expense, totalPaid);
 
-    const formattedPayments: ExpensePaymentDTO[] = expense.payments.map((p) => ({
-      id: p.id,
-      propertyId: p.propertyId,
-      expenseId: p.expenseId,
-      accountId: p.accountId,
-      accountName: p.account.accountName,
-      paymentMethodId: p.paymentMethodId,
-      paymentMethodCode: p.paymentMethodCode,
-      amount: p.amount.toFixed(2),
-      referenceNumber: p.referenceNumber,
-      idempotencyKey: p.idempotencyKey,
-      status: p.status,
-      paidAt: p.paidAt.toISOString(),
-      createdBy: p.createdBy,
-      creatorName: p.creator?.name,
-      voidReason: p.voidReason,
-      voidedAt: p.voidedAt ? p.voidedAt.toISOString() : null,
-      voidedBy: p.voidedBy,
-      createdAt: p.createdAt.toISOString(),
-    }));
+    const formattedPayments: ExpensePaymentDTO[] = expense.payments.map((p) =>
+      this.formatExpensePayment(p)
+    );
 
     return {
       ...formattedBase,
@@ -351,100 +335,230 @@ export class ExpenseService {
     expense: ExpenseDetailDTO;
     idempotentReplay?: boolean;
   }> {
-    return await prisma.$transaction(async (tx) => {
-      // 1. Lock the expense row to prevent concurrent overpayments
-      await tx.$executeRaw`SELECT id FROM expenses WHERE id = ${expenseId} FOR UPDATE`;
+    const paymentAmount = new Prisma.Decimal(input.amount.toFixed(2));
+    if (paymentAmount.lessThanOrEqualTo(0)) {
+      throw new BadRequestError("Payment amount must be strictly greater than zero.");
+    }
 
-      // 2. Fetch the locked expense
-      const expense = await tx.expense.findFirst({
-        where: { id: expenseId, propertyId },
-        include: {
-          payments: {
-            where: { status: PaymentStatus.RECORDED },
-            select: { amount: true },
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // 1. Lock the expense row to prevent concurrent overpayments
+        await tx.$executeRaw`SELECT id FROM expenses WHERE id = ${expenseId} FOR UPDATE`;
+
+        // 2. Fetch the locked expense
+        const expense = await tx.expense.findFirst({
+          where: { id: expenseId, propertyId },
+          include: {
+            payments: {
+              where: { status: PaymentStatus.RECORDED },
+              select: { amount: true },
+            },
           },
-        },
-      });
+        });
 
-      if (!expense) {
-        throw new NotFoundError("Expense record not found");
-      }
+        if (!expense) {
+          throw new NotFoundError("Expense record not found");
+        }
 
-      if (expense.status === ExpenseStatus.VOID) {
-        throw new BadRequestError("Cannot disburse payment against a voided expense record.");
-      }
+        if (expense.status === ExpenseStatus.VOID) {
+          throw new BadRequestError("Cannot disburse payment against a voided expense record.");
+        }
 
-      const totalPaid = (expense.payments || []).reduce(
-        (sum, p) => sum.add(p.amount),
-        new Prisma.Decimal(0)
-      );
-
-      const remainingBalance = expense.amount.sub(totalPaid);
-      if (remainingBalance.lessThanOrEqualTo(0)) {
-        throw new BadRequestError("Expense is already fully paid.");
-      }
-
-      const paymentAmount = new Prisma.Decimal(input.amount.toFixed(2));
-      if (paymentAmount.lessThanOrEqualTo(0)) {
-        throw new BadRequestError("Payment amount must be strictly greater than zero.");
-      }
-
-      if (paymentAmount.greaterThan(remainingBalance)) {
-        throw new BadRequestError(
-          `Payment amount ($${paymentAmount.toFixed(2)}) cannot exceed remaining balance ($${remainingBalance.toFixed(2)}).`
+        const totalPaid = (expense.payments || []).reduce(
+          (sum, p) => sum.add(p.amount),
+          new Prisma.Decimal(0)
         );
-      }
 
-      // 3. Lock the financial account row to serialize balance-reducing operations
-      await tx.$executeRaw`SELECT id FROM financial_accounts WHERE id = ${input.accountId} FOR UPDATE`;
-
-      // 4. Validate financial account inside transaction
-      const account = await tx.financialAccount.findFirst({
-        where: { id: input.accountId, propertyId },
-      });
-
-      if (!account) {
-        throw new BadRequestError("The specified financial account does not exist for this property.");
-      }
-
-      if (!account.isActive) {
-        throw new BadRequestError("Cannot pay from an inactive financial account.");
-      }
-
-      // 5. Validate payment method inside transaction
-      let paymentMethodId = input.paymentMethodId;
-      let paymentMethodCode = input.paymentMethodCode || "CASH";
-
-      if (paymentMethodId) {
-        const pm = await tx.paymentMethod.findFirst({
-          where: { id: paymentMethodId, propertyId },
-        });
-        if (!pm) {
-          throw new BadRequestError("The specified payment method does not exist for this property.");
+        const remainingBalance = expense.amount.sub(totalPaid);
+        if (remainingBalance.lessThanOrEqualTo(0)) {
+          throw new BadRequestError("Expense is already fully paid.");
         }
-        if (!pm.isActive) {
-          throw new BadRequestError("Cannot use an inactive payment method.");
+
+        if (paymentAmount.greaterThan(remainingBalance)) {
+          throw new BadRequestError(
+            `Payment amount ($${paymentAmount.toFixed(2)}) cannot exceed remaining balance ($${remainingBalance.toFixed(2)}).`
+          );
         }
-        paymentMethodCode = pm.code;
-      } else if (input.paymentMethodCode) {
-        const pm = await tx.paymentMethod.findFirst({
-          where: { code: input.paymentMethodCode, propertyId },
+
+        // 3. Lock the financial account row to serialize balance-reducing operations
+        await tx.$executeRaw`SELECT id FROM financial_accounts WHERE id = ${input.accountId} FOR UPDATE`;
+
+        // 4. Validate financial account inside transaction
+        const account = await tx.financialAccount.findFirst({
+          where: { id: input.accountId, propertyId },
         });
-        if (pm) {
+
+        if (!account) {
+          throw new BadRequestError("The specified financial account does not exist for this property.");
+        }
+
+        if (!account.isActive) {
+          throw new BadRequestError("Cannot pay from an inactive financial account.");
+        }
+
+        // 5. Validate payment method inside transaction
+        let paymentMethodId = input.paymentMethodId;
+        let paymentMethodCode = input.paymentMethodCode || "CASH";
+
+        if (paymentMethodId) {
+          const pm = await tx.paymentMethod.findFirst({
+            where: { id: paymentMethodId, propertyId },
+          });
+          if (!pm) {
+            throw new BadRequestError("The specified payment method does not exist for this property.");
+          }
           if (!pm.isActive) {
             throw new BadRequestError("Cannot use an inactive payment method.");
           }
-          paymentMethodId = pm.id;
+          paymentMethodCode = pm.code;
+        } else if (input.paymentMethodCode) {
+          const pm = await tx.paymentMethod.findFirst({
+            where: { code: input.paymentMethodCode, propertyId },
+          });
+          if (pm) {
+            if (!pm.isActive) {
+              throw new BadRequestError("Cannot use an inactive payment method.");
+            }
+            paymentMethodId = pm.id;
+          }
         }
-      }
 
-      // 6. Idempotency Key Handling
-      if (input.idempotencyKey) {
-        const existingPayment = await tx.payment.findUnique({
+        // 6. Idempotency Key Handling
+        if (input.idempotencyKey) {
+          const trimmedKey = input.idempotencyKey.trim();
+          const existingPayment = await tx.payment.findUnique({
+            where: {
+              propertyId_idempotencyKey: {
+                propertyId,
+                idempotencyKey: trimmedKey,
+              },
+            },
+            include: {
+              account: { select: { accountName: true } },
+              creator: { select: { name: true } },
+            },
+          });
+
+          if (existingPayment) {
+            // A previously voided payment must never be recreated through a retry using its original key
+            if (existingPayment.status === PaymentStatus.VOIDED) {
+              throw new ConflictError(
+                "The payment associated with this idempotency key was previously voided and cannot be replayed."
+              );
+            }
+
+            // Complete idempotency payload comparison
+            const isMatch = this.isMatchingPaymentPayload(
+              existingPayment,
+              expenseId,
+              input,
+              paymentAmount,
+              paymentMethodId,
+              paymentMethodCode
+            );
+
+            if (isMatch) {
+              const fullDetail = await this.getExpenseById(propertyId, expenseId, tx);
+              return {
+                payment: this.formatExpensePayment(existingPayment, account.accountName),
+                expense: fullDetail,
+                idempotentReplay: true,
+              };
+            } else {
+              throw new ConflictError(
+                "Idempotency key has already been used for a payment with different details."
+              );
+            }
+          }
+        }
+
+        // 7. Verify sufficient available balance on the financial account
+        const availableBalance = await FinancialAccountService.getLockedAccountBalance(
+          propertyId,
+          account.id,
+          tx
+        );
+
+        if (availableBalance.lessThan(paymentAmount)) {
+          throw new BadRequestError(
+            `Insufficient funds in financial account '${account.accountName}'. Available balance: $${availableBalance.toFixed(2)}, requested disbursement: $${paymentAmount.toFixed(2)}.`
+          );
+        }
+
+        // 8. Create the Payment record
+        const paidAtDate = input.paidAt ? new Date(input.paidAt) : new Date();
+
+        const payment = await tx.payment.create({
+          data: {
+            propertyId,
+            expenseId,
+            accountId: account.id,
+            paymentMethodId,
+            paymentMethodCode,
+            amount: paymentAmount,
+            referenceNumber: input.referenceNumber?.trim() || null,
+            idempotencyKey: input.idempotencyKey?.trim() || null,
+            status: PaymentStatus.RECORDED,
+            paidAt: paidAtDate,
+            createdBy: userId,
+          },
+          include: {
+            account: { select: { accountName: true } },
+            creator: { select: { name: true } },
+          },
+        });
+
+        // 9. Recalculate expense status
+        const newTotalPaid = totalPaid.add(paymentAmount);
+        let nextStatus: ExpenseStatus = ExpenseStatus.PARTIALLY_PAID;
+        if (newTotalPaid.greaterThanOrEqualTo(expense.amount)) {
+          nextStatus = ExpenseStatus.PAID;
+        }
+
+        await tx.expense.update({
+          where: { id: expenseId },
+          data: { status: nextStatus },
+        });
+
+        // 10. Audit log
+        await tx.auditLog.create({
+          data: {
+            userId,
+            entityType: "PAYMENT",
+            entityId: payment.id,
+            action: "RECORD_EXPENSE_PAYMENT",
+            newData: {
+              propertyId,
+              expenseId,
+              accountId: account.id,
+              paymentMethodCode,
+              amount: payment.amount.toString(),
+              idempotencyKey: payment.idempotencyKey,
+              status: payment.status,
+              paidAt: payment.paidAt,
+            },
+          },
+        });
+
+        const fullDetail = await this.getExpenseById(propertyId, expenseId, tx);
+
+        return {
+          payment: this.formatExpensePayment(payment, account.accountName),
+          expense: fullDetail,
+        };
+      });
+    } catch (err: unknown) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002" &&
+        input.idempotencyKey
+      ) {
+        // Unique constraint race condition on payments_property_id_idempotency_key_key
+        const committedPayment = await prisma.payment.findUnique({
           where: {
             propertyId_idempotencyKey: {
               propertyId,
-              idempotencyKey: input.idempotencyKey,
+              idempotencyKey: input.idempotencyKey.trim(),
             },
           },
           include: {
@@ -453,128 +567,38 @@ export class ExpenseService {
           },
         });
 
-        if (existingPayment) {
-          // Verify matching payment details
-          const isMatchingRetry =
-            existingPayment.expenseId === expenseId &&
-            existingPayment.accountId === input.accountId &&
-            existingPayment.amount.equals(paymentAmount);
+        if (committedPayment) {
+          if (committedPayment.status === PaymentStatus.VOIDED) {
+            throw new ConflictError(
+              "The payment associated with this idempotency key was previously voided and cannot be replayed."
+            );
+          }
 
-          if (isMatchingRetry) {
-            // Return existing payment and state without re-debiting
-            const fullDetail = await this.getExpenseById(propertyId, expenseId, tx);
-            const formattedExisting: ExpensePaymentDTO = {
-              id: existingPayment.id,
-              propertyId: existingPayment.propertyId,
-              expenseId: existingPayment.expenseId,
-              accountId: existingPayment.accountId,
-              accountName: existingPayment.account.accountName,
-              paymentMethodId: existingPayment.paymentMethodId,
-              paymentMethodCode: existingPayment.paymentMethodCode,
-              amount: existingPayment.amount.toFixed(2),
-              referenceNumber: existingPayment.referenceNumber,
-              idempotencyKey: existingPayment.idempotencyKey,
-              status: existingPayment.status,
-              paidAt: existingPayment.paidAt.toISOString(),
-              createdBy: existingPayment.createdBy,
-              creatorName: existingPayment.creator?.name,
-              voidReason: existingPayment.voidReason,
-              voidedAt: existingPayment.voidedAt ? existingPayment.voidedAt.toISOString() : null,
-              voidedBy: existingPayment.voidedBy,
-              createdAt: existingPayment.createdAt.toISOString(),
-            };
+          const isMatch = this.isMatchingPaymentPayload(
+            committedPayment,
+            expenseId,
+            input,
+            paymentAmount,
+            input.paymentMethodId,
+            input.paymentMethodCode
+          );
 
+          if (isMatch) {
+            const fullDetail = await this.getExpenseById(propertyId, committedPayment.expenseId);
             return {
-              payment: formattedExisting,
+              payment: this.formatExpensePayment(committedPayment),
               expense: fullDetail,
               idempotentReplay: true,
             };
           } else {
-            throw new BadRequestError(
+            throw new ConflictError(
               "Idempotency key has already been used for a payment with different details."
             );
           }
         }
       }
-
-      // 7. Create the Payment record
-      const paidAtDate = input.paidAt ? new Date(input.paidAt) : new Date();
-
-      const payment = await tx.payment.create({
-        data: {
-          propertyId,
-          expenseId,
-          accountId: account.id,
-          paymentMethodId,
-          paymentMethodCode,
-          amount: paymentAmount,
-          referenceNumber: input.referenceNumber?.trim() || null,
-          idempotencyKey: input.idempotencyKey?.trim() || null,
-          status: PaymentStatus.RECORDED,
-          paidAt: paidAtDate,
-          createdBy: userId,
-        },
-      });
-
-      // 8. Recalculate expense status
-      const newTotalPaid = totalPaid.add(paymentAmount);
-      let nextStatus: ExpenseStatus = ExpenseStatus.PARTIALLY_PAID;
-      if (newTotalPaid.greaterThanOrEqualTo(expense.amount)) {
-        nextStatus = ExpenseStatus.PAID;
-      }
-
-      await tx.expense.update({
-        where: { id: expenseId },
-        data: { status: nextStatus },
-      });
-
-      // 9. Audit log
-      await tx.auditLog.create({
-        data: {
-          userId,
-          entityType: "PAYMENT",
-          entityId: payment.id,
-          action: "RECORD_EXPENSE_PAYMENT",
-          newData: {
-            propertyId,
-            expenseId,
-            accountId: account.id,
-            paymentMethodCode,
-            amount: payment.amount.toString(),
-            idempotencyKey: payment.idempotencyKey,
-            status: payment.status,
-            paidAt: payment.paidAt,
-          },
-        },
-      });
-
-      const fullDetail = await this.getExpenseById(propertyId, expenseId, tx);
-
-      const formattedPayment: ExpensePaymentDTO = {
-        id: payment.id,
-        propertyId: payment.propertyId,
-        expenseId: payment.expenseId,
-        accountId: payment.accountId,
-        accountName: account.accountName,
-        paymentMethodId: payment.paymentMethodId,
-        paymentMethodCode: payment.paymentMethodCode,
-        amount: payment.amount.toFixed(2),
-        referenceNumber: payment.referenceNumber,
-        idempotencyKey: payment.idempotencyKey,
-        status: payment.status,
-        paidAt: payment.paidAt.toISOString(),
-        createdBy: payment.createdBy,
-        voidReason: null,
-        voidedAt: null,
-        voidedBy: null,
-        createdAt: payment.createdAt.toISOString(),
-      };
-
-      return {
-        payment: formattedPayment,
-        expense: fullDetail,
-      };
-    });
+      throw err;
+    }
   }
 
   /**
@@ -890,5 +914,116 @@ export class ExpenseService {
       createdAt: expense.createdAt.toISOString(),
       updatedAt: expense.updatedAt.toISOString(),
     };
+  }
+
+  private static formatExpensePayment(
+    payment: {
+      id: string;
+      propertyId: string;
+      expenseId: string;
+      accountId: string;
+      account?: { accountName: string } | null;
+      paymentMethodId: string | null;
+      paymentMethodCode: string;
+      amount: Prisma.Decimal;
+      referenceNumber: string | null;
+      idempotencyKey: string | null;
+      status: PaymentStatus;
+      paidAt: Date;
+      createdBy: string;
+      creator?: { name: string } | null;
+      voidReason: string | null;
+      voidedAt: Date | null;
+      voidedBy: string | null;
+      createdAt: Date;
+    },
+    fallbackAccountName?: string
+  ): ExpensePaymentDTO {
+    return {
+      id: payment.id,
+      propertyId: payment.propertyId,
+      expenseId: payment.expenseId,
+      accountId: payment.accountId,
+      accountName: payment.account?.accountName || fallbackAccountName || "Unknown Account",
+      paymentMethodId: payment.paymentMethodId,
+      paymentMethodCode: payment.paymentMethodCode,
+      amount: payment.amount.toFixed(2),
+      referenceNumber: payment.referenceNumber,
+      idempotencyKey: payment.idempotencyKey,
+      status: payment.status,
+      paidAt: payment.paidAt.toISOString(),
+      createdBy: payment.createdBy,
+      creatorName: payment.creator?.name,
+      voidReason: payment.voidReason,
+      voidedAt: payment.voidedAt ? payment.voidedAt.toISOString() : null,
+      voidedBy: payment.voidedBy,
+      createdAt: payment.createdAt.toISOString(),
+    };
+  }
+
+  private static isMatchingPaymentPayload(
+    existing: {
+      expenseId: string;
+      accountId: string;
+      amount: Prisma.Decimal;
+      paymentMethodId: string | null;
+      paymentMethodCode: string;
+      referenceNumber: string | null;
+      paidAt: Date;
+      createdAt: Date;
+    },
+    expenseId: string,
+    input: RecordExpensePaymentInput,
+    paymentAmount: Prisma.Decimal,
+    expectedPaymentMethodId: string | undefined,
+    expectedPaymentMethodCode?: string
+  ): boolean {
+    // 1. Expense ID match
+    if (existing.expenseId !== expenseId) {
+      return false;
+    }
+
+    // 2. Account ID match
+    if (existing.accountId !== input.accountId) {
+      return false;
+    }
+
+    // 3. Amount match
+    if (!existing.amount.equals(paymentAmount)) {
+      return false;
+    }
+
+    // 4. Payment Method ID match (if supplied in input or resolved)
+    if (expectedPaymentMethodId && existing.paymentMethodId !== expectedPaymentMethodId) {
+      return false;
+    }
+
+    // 5. Payment Method Code match (if supplied or resolved)
+    if (expectedPaymentMethodCode && existing.paymentMethodCode !== expectedPaymentMethodCode) {
+      return false;
+    }
+
+    // 6. Reference Number match (normalized null / whitespace trimmed)
+    const expectedRef = input.referenceNumber?.trim() || null;
+    const existingRef = existing.referenceNumber?.trim() || null;
+    if (expectedRef !== existingRef) {
+      return false;
+    }
+
+    // 7. Paid At date match
+    if (input.paidAt) {
+      const inputTime = new Date(input.paidAt).getTime();
+      if (isNaN(inputTime) || inputTime !== existing.paidAt.getTime()) {
+        return false;
+      }
+    } else {
+      // If retry omitted paidAt, check if original had a significantly different custom date
+      const diffWithCreated = Math.abs(existing.paidAt.getTime() - existing.createdAt.getTime());
+      if (diffWithCreated > 60000) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }

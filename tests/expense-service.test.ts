@@ -5,7 +5,7 @@ import { RoleName, AccountType, ExpenseStatus, PaymentStatus } from "@prisma/cli
 import { ExpenseHeadService, DEFAULT_EXPENSE_HEADS } from "../src/modules/expenses/expense-head.service";
 import { ExpenseService } from "../src/modules/expenses/expense.service";
 import { FinancialAccountService } from "../src/modules/financial-accounts/financial-accounts.service";
-import { BadRequestError } from "../src/lib/errors";
+import { BadRequestError, ConflictError } from "../src/lib/errors";
 
 describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () => {
   const timestamp = Date.now();
@@ -646,6 +646,150 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
         }
       );
     });
+
+    it("rejects disbursement exceeding available financial account balance", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      // Create an account with small balance ($150)
+      const lowBalanceAccount = await prisma.financialAccount.create({
+        data: {
+          propertyId: propA.id,
+          accountName: `Low Balance Account ${Date.now()}`,
+          accountType: AccountType.CASH,
+          openingBalance: 150,
+          openingBalanceDate: new Date("2026-01-01"),
+          isDefault: false,
+          isActive: true,
+        },
+      });
+
+      const exp = await ExpenseService.createExpense(
+        propA.id,
+        {
+          expenseHeadId: head.id,
+          title: "Large Appliance Purchase",
+          amount: 300,
+        },
+        userAdminA.id
+      );
+
+      // Attempt to disburse $160 (exceeds $150 available)
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: lowBalanceAccount.id,
+              amount: 160,
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof BadRequestError);
+          assert.ok(String(err.message).includes("Insufficient funds in financial account"));
+          assert.ok(String(err.message).includes("Available balance: $150.00"));
+          assert.ok(String(err.message).includes("requested disbursement: $160.00"));
+          return true;
+        }
+      );
+
+      // Disburse $100 (succeeds, remaining available = $50)
+      await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        {
+          accountId: lowBalanceAccount.id,
+          amount: 100,
+        },
+        userAdminA.id
+      );
+
+      // Attempting to disburse remaining $60 (exceeds $50 remaining) must fail
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: lowBalanceAccount.id,
+              amount: 60,
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof BadRequestError);
+          assert.ok(String(err.message).includes("Insufficient funds in financial account"));
+          assert.ok(String(err.message).includes("Available balance: $50.00"));
+          return true;
+        }
+      );
+    });
+
+    it("safely serializes concurrent balance-reducing disbursements and prevents overdraft", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      // Account with exactly $100 available
+      const concurrentAccount = await prisma.financialAccount.create({
+        data: {
+          propertyId: propA.id,
+          accountName: `Concurrent Test Account ${Date.now()}`,
+          accountType: AccountType.BANK,
+          openingBalance: 100,
+          openingBalanceDate: new Date("2026-01-01"),
+          isDefault: false,
+          isActive: true,
+        },
+      });
+
+      // Two separate expenses of $80 each
+      const exp1 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Concurrent Expense 1", amount: 80 },
+        userAdminA.id
+      );
+
+      const exp2 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Concurrent Expense 2", amount: 80 },
+        userAdminA.id
+      );
+
+      // Launch two concurrent disbursements of $80 against the $100 account
+      const results = await Promise.allSettled([
+        ExpenseService.recordExpensePayment(
+          propA.id,
+          exp1.id,
+          { accountId: concurrentAccount.id, amount: 80 },
+          userAdminA.id
+        ),
+        ExpenseService.recordExpensePayment(
+          propA.id,
+          exp2.id,
+          { accountId: concurrentAccount.id, amount: 80 },
+          userAdminA.id
+        ),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      const rejected = results.filter((r) => r.status === "rejected");
+
+      // Exactly one must succeed, and one must be rejected due to insufficient funds
+      assert.strictEqual(fulfilled.length, 1, "Exactly one concurrent disbursement must succeed");
+      assert.strictEqual(rejected.length, 1, "Exactly one concurrent disbursement must be rejected");
+
+      const rejectedError = (rejected[0] as PromiseRejectedResult).reason;
+      assert.ok(rejectedError instanceof BadRequestError);
+      assert.ok(String(rejectedError.message).includes("Insufficient funds"));
+
+      // Closing balance must be exactly $20 ($100 - $80), never negative!
+      const stmt = await FinancialAccountService.getAccountStatement(propA.id, concurrentAccount.id);
+      assert.strictEqual(stmt.closingBalance, "20.00");
+    });
   });
 
   // =========================================================================
@@ -715,7 +859,7 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
       const expCheck = await ExpenseService.getExpenseById(propA.id, exp.id);
       assert.strictEqual(expCheck.paidAmount, "75.00");
 
-      // Attempting to reuse the SAME idempotency key with DIFFERENT details (amount = $80) must be rejected
+      // Attempting to reuse the SAME idempotency key with DIFFERENT details (amount = $80) must return ConflictError (409)
       await assert.rejects(
         async () => {
           await ExpenseService.recordExpensePayment(
@@ -730,11 +874,272 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
           );
         },
         (err: unknown) => {
-          assert.ok(err instanceof BadRequestError);
+          assert.ok(err instanceof ConflictError);
           assert.ok(String(err.message).includes("different details"));
           return true;
         }
       );
+    });
+
+    it("rejects idempotency key reuse with mismatched expense, account, payment method, reference, or paidAt", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads.find((h) => h.code === "STAFF_WELFARE")!;
+
+      const exp1 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Payload Compare Exp 1", amount: 300 },
+        userAdminA.id
+      );
+
+      const exp2 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Payload Compare Exp 2", amount: 300 },
+        userAdminA.id
+      );
+
+      const key = `idem-payload-${Date.now()}`;
+      const originalPayload = {
+        accountId: accountBankA.id,
+        paymentMethodId: methodBankA.id,
+        paymentMethodCode: methodBankA.code,
+        amount: 50,
+        referenceNumber: "REF-MATCH-01",
+        paidAt: "2026-06-01T10:00:00.000Z",
+        idempotencyKey: key,
+      };
+
+      // 1. Initial disbursement
+      const orig = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp1.id,
+        originalPayload,
+        userAdminA.id
+      );
+      assert.strictEqual(orig.payment.amount, "50.00");
+
+      // 2. Matching retry succeeds
+      const replay = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp1.id,
+        originalPayload,
+        userAdminA.id
+      );
+      assert.strictEqual(replay.payment.id, orig.payment.id);
+      assert.strictEqual(replay.idempotentReplay, true);
+
+      // 3. Mismatched expenseId
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp2.id, // Different expense
+            originalPayload,
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          return true;
+        }
+      );
+
+      // 4. Mismatched accountId
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp1.id,
+            { ...originalPayload, accountId: accountCashA.id }, // Different account
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          return true;
+        }
+      );
+
+      // 5. Mismatched paymentMethodId
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp1.id,
+            { ...originalPayload, paymentMethodId: methodCashA.id }, // Different method
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          return true;
+        }
+      );
+
+      // 6. Mismatched referenceNumber
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp1.id,
+            { ...originalPayload, referenceNumber: "REF-DIFFERENT" },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          return true;
+        }
+      );
+
+      // 7. Mismatched paidAt
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp1.id,
+            { ...originalPayload, paidAt: "2026-06-02T10:00:00.000Z" },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          return true;
+        }
+      );
+    });
+
+    it("prevents recreation of previously voided payment through idempotency key retry", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      const exp = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Void Replay Test", amount: 150 },
+        userAdminA.id
+      );
+
+      const voidKey = `idem-void-${Date.now()}`;
+      const payload = {
+        accountId: accountBankA.id,
+        paymentMethodCode: methodBankA.code,
+        amount: 60,
+        idempotencyKey: voidKey,
+      };
+
+      // 1. Initial payment
+      const p = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        payload,
+        userAdminA.id
+      );
+      assert.strictEqual(p.payment.status, PaymentStatus.RECORDED);
+
+      // 2. Void the payment
+      await ExpenseService.voidExpensePayment(
+        propA.id,
+        exp.id,
+        p.payment.id,
+        { voidReason: "Disbursement voided due to billing error" },
+        userAdminA.id
+      );
+
+      // 3. Retry with original idempotency key must be strictly rejected with ConflictError
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            payload,
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          assert.ok(String(err.message).includes("previously voided and cannot be replayed"));
+          return true;
+        }
+      );
+    });
+
+    it("handles concurrent idempotency requests and P2002 race conditions gracefully", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      // Scenario A: Identical payload concurrent race
+      const expA = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Concurrent Race Exp A", amount: 200 },
+        userAdminA.id
+      );
+
+      const raceKeyA = `race-idem-a-${Date.now()}`;
+      const payloadA = {
+        accountId: accountBankA.id,
+        paymentMethodCode: methodBankA.code,
+        amount: 70,
+        idempotencyKey: raceKeyA,
+      };
+
+      // Fire two identical requests simultaneously
+      const [resA1, resA2] = await Promise.all([
+        ExpenseService.recordExpensePayment(propA.id, expA.id, payloadA, userAdminA.id),
+        ExpenseService.recordExpensePayment(propA.id, expA.id, payloadA, userAdminA.id),
+      ]);
+
+      // Both must resolve without throwing, and both point to the same payment ID
+      assert.strictEqual(resA1.payment.id, resA2.payment.id);
+      assert.strictEqual(resA1.payment.amount, "70.00");
+
+      const countA = await prisma.payment.count({
+        where: { propertyId: propA.id, idempotencyKey: raceKeyA },
+      });
+      assert.strictEqual(countA, 1, "Exactly one payment must exist in DB");
+
+      // Scenario B: Conflicting concurrent requests across different expenses using the SAME key
+      const expB1 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Concurrent Race Exp B1", amount: 200 },
+        userAdminA.id
+      );
+      const expB2 = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Concurrent Race Exp B2", amount: 200 },
+        userAdminA.id
+      );
+
+      const raceKeyB = `race-idem-b-${Date.now()}`;
+
+      // Fire two concurrent requests for DIFFERENT expenses with the same idempotency key
+      const resultsB = await Promise.allSettled([
+        ExpenseService.recordExpensePayment(
+          propA.id,
+          expB1.id,
+          { accountId: accountBankA.id, amount: 40, idempotencyKey: raceKeyB },
+          userAdminA.id
+        ),
+        ExpenseService.recordExpensePayment(
+          propA.id,
+          expB2.id,
+          { accountId: accountBankA.id, amount: 40, idempotencyKey: raceKeyB },
+          userAdminA.id
+        ),
+      ]);
+
+      const fulfilledB = resultsB.filter((r) => r.status === "fulfilled");
+      const rejectedB = resultsB.filter((r) => r.status === "rejected");
+
+      assert.strictEqual(fulfilledB.length, 1, "Exactly one payment must win the race");
+      assert.strictEqual(rejectedB.length, 1, "The loser must be rejected with ConflictError");
+
+      const errB = (rejectedB[0] as PromiseRejectedResult).reason;
+      assert.ok(errB instanceof ConflictError, `Expected ConflictError, got: ${errB}`);
+      assert.ok(String(errB.message).includes("different details"));
+
+      const countB = await prisma.payment.count({
+        where: { propertyId: propA.id, idempotencyKey: raceKeyB },
+      });
+      assert.strictEqual(countB, 1, "Exactly one payment row created in DB");
     });
   });
 
