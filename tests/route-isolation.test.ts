@@ -423,6 +423,14 @@ describe("Permanent Route Isolation Sweep Test", () => {
       "src/app/api/incomes/[id]/void/route.ts",
       "src/app/api/incomes/[id]/receipts/route.ts",
       "src/app/api/incomes/[id]/receipts/[receiptId]/void/route.ts",
+      "src/app/api/expense-heads/route.ts",
+      "src/app/api/expense-heads/[id]/route.ts",
+      "src/app/api/expense-heads/seed/route.ts",
+      "src/app/api/expenses/route.ts",
+      "src/app/api/expenses/[id]/route.ts",
+      "src/app/api/expenses/[id]/void/route.ts",
+      "src/app/api/expenses/[id]/payments/route.ts",
+      "src/app/api/expenses/[id]/payments/[paymentId]/void/route.ts",
     ]);
 
     for (const f of allFiles) {

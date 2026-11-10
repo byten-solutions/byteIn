@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ExpenseStatus } from "@prisma/client";
 
 export const createExpenseHeadSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1, "Category name is required").max(100, "Category name cannot exceed 100 characters"),
   code: z
     .string()
@@ -11,6 +12,14 @@ export const createExpenseHeadSchema = z.object({
     .regex(/^[A-Z0-9_]+$/, "Code must contain only uppercase letters, numbers, and underscores"),
   description: z.string().trim().max(255).optional(),
   isActive: z.boolean().optional().default(true),
+});
+
+export const expenseHeadFilterSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
+  includeInactive: z
+    .union([z.boolean(), z.string()])
+    .transform((val) => val === true || val === "true")
+    .optional(),
 });
 
 export const updateExpenseHeadSchema = z
@@ -31,6 +40,7 @@ export const updateExpenseHeadSchema = z
   });
 
 export const createExpenseSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   expenseHeadId: z.string().trim().min(1, "Expense category is required"),
   title: z.string().trim().min(1, "Expense title is required").max(200, "Title cannot exceed 200 characters"),
   description: z.string().trim().max(500).optional(),
@@ -108,6 +118,7 @@ export const voidExpenseSchema = z.object({
 });
 
 export const expenseFilterSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   status: z.union([z.literal("ALL"), z.nativeEnum(ExpenseStatus)]).optional(),
@@ -115,4 +126,8 @@ export const expenseFilterSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   search: z.string().trim().optional(),
+  summary: z
+    .union([z.boolean(), z.string()])
+    .transform((val) => val === true || val === "true")
+    .optional(),
 });

@@ -20,7 +20,7 @@ export interface CreateExpenseHeadInput {
 
 export interface UpdateExpenseHeadInput {
   name?: string;
-  description?: string;
+  description?: string | null;
   isActive?: boolean;
 }
 
@@ -86,10 +86,10 @@ export interface CreateExpenseInput {
 export interface UpdateExpenseInput {
   expenseHeadId?: string;
   title?: string;
-  description?: string;
+  description?: string | null;
   amount?: number;
-  vendorName?: string;
-  referenceNumber?: string;
+  vendorName?: string | null;
+  referenceNumber?: string | null;
   expenseDate?: string;
 }
 
