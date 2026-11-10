@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "../src/lib/prisma";
-import { RoleName, AccountType, ExpenseStatus, PaymentStatus } from "@prisma/client";
+import { RoleName, AccountType, ExpenseStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { ExpenseHeadService, DEFAULT_EXPENSE_HEADS } from "../src/modules/expenses/expense-head.service";
 import { ExpenseService } from "../src/modules/expenses/expense.service";
 import { FinancialAccountService } from "../src/modules/financial-accounts/financial-accounts.service";
@@ -812,6 +812,10 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
 
       const idempotencyKey = `idem-test-${Date.now()}`;
 
+      // Measure account balance before initial payment
+      const stmtBefore = await FinancialAccountService.getAccountStatement(propA.id, accountBankA.id);
+      const balanceBefore = Number(stmtBefore.closingBalance);
+
       // First submission
       const res1 = await ExpenseService.recordExpensePayment(
         propA.id,
@@ -829,6 +833,11 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
       assert.strictEqual(res1.payment.amount, "75.00");
       assert.strictEqual(res1.payment.idempotencyKey, idempotencyKey);
       assert.strictEqual(res1.idempotentReplay, undefined);
+
+      // Verify financial account balance was reduced correctly
+      const stmtAfter1 = await FinancialAccountService.getAccountStatement(propA.id, accountBankA.id);
+      const balanceAfter1 = Number(stmtAfter1.closingBalance);
+      assert.strictEqual(balanceAfter1, balanceBefore - 75, "Account balance must be reduced by payment amount ($75)");
 
       // Identical retry submission with SAME idempotencyKey
       const res2 = await ExpenseService.recordExpensePayment(
@@ -848,6 +857,11 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
       assert.strictEqual(res2.payment.id, res1.payment.id);
       assert.strictEqual(res2.payment.amount, "75.00");
       assert.strictEqual(res2.idempotentReplay, true);
+
+      // Verify financial account balance is NOT deducted again on idempotent retry
+      const stmtAfter2 = await FinancialAccountService.getAccountStatement(propA.id, accountBankA.id);
+      const balanceAfter2 = Number(stmtAfter2.closingBalance);
+      assert.strictEqual(balanceAfter2, balanceAfter1, "Account balance must NOT be reduced again on idempotent retry");
 
       // Verify database has only ONE payment recorded for this key
       const count = await prisma.payment.count({
@@ -1312,6 +1326,186 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
         where: { propertyId: propA.id, idempotencyKey: raceKeyB },
       });
       assert.strictEqual(countB, 1, "Exactly one payment row created in DB");
+    });
+
+    it("recovers from PostgreSQL P2002 unique constraint race condition outside aborted transaction", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      const exp = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "P2002 Race Condition Test", amount: 300 },
+        userAdminA.id
+      );
+
+      // --- Part 1: Identical payload P2002 race recovery ---
+      const p2002Key = `race-p2002-match-${Date.now()}`;
+
+      // Pre-commit payment in database to simulate concurrent transaction winning the race
+      const committedOrig = await prisma.payment.create({
+        data: {
+          propertyId: propA.id,
+          expenseId: exp.id,
+          accountId: accountBankA.id,
+          paymentMethodCode: methodBankA.code,
+          amount: 120,
+          idempotencyKey: p2002Key,
+          status: PaymentStatus.RECORDED,
+          paidAt: new Date(),
+          createdBy: userAdminA.id,
+        },
+        include: {
+          account: { select: { accountName: true } },
+          creator: { select: { name: true } },
+        },
+      });
+
+      // Intercept prisma.$transaction to simulate race condition:
+      // step 6 (tx.payment.findFirst) returns null as if concurrent transaction had not yet committed,
+      // so tx proceeds to step 8 (tx.payment.create) where PostgreSQL throws 23505 / Prisma P2002
+      type TxFn<T> = (tx: Prisma.TransactionClient) => Promise<T>;
+      type TxOptions = { maxWait?: number; timeout?: number; isolationLevel?: Prisma.TransactionIsolationLevel };
+
+      const original$transaction = prisma.$transaction.bind(prisma);
+      let raceInterceptionActive = true;
+
+      const intercept$transaction = async function <T>(
+        fn: TxFn<T>,
+        options?: TxOptions
+      ): Promise<T> {
+        if (raceInterceptionActive) {
+          raceInterceptionActive = false;
+          return await original$transaction(async (tx) => {
+            const hijackedTx = new Proxy(tx, {
+              get(target, prop, receiver) {
+                if (prop === "payment") {
+                  return new Proxy(target.payment, {
+                    get(pTarget, pProp) {
+                      if (pProp === "findFirst") {
+                        return () => Promise.resolve(null);
+                      }
+                      return Reflect.get(pTarget, pProp);
+                    },
+                  });
+                }
+                return Reflect.get(target, prop, receiver);
+              },
+            });
+            return await fn(hijackedTx);
+          }, options);
+        }
+        return await original$transaction(fn, options);
+      };
+
+      prisma.$transaction = intercept$transaction as unknown as typeof prisma.$transaction;
+
+      try {
+        // --- Part 1: Identical payload P2002 race recovery ---
+        raceInterceptionActive = true;
+        const replayRes = await ExpenseService.recordExpensePayment(
+          propA.id,
+          exp.id,
+          {
+            accountId: accountBankA.id,
+            paymentMethodCode: methodBankA.code,
+            amount: 120,
+            idempotencyKey: p2002Key,
+          },
+          userAdminA.id
+        );
+
+        // Verification 1: P2002 recovery succeeded without 25P02 aborted transaction error
+        assert.strictEqual(replayRes.idempotentReplay, true, "Must have idempotentReplay flag");
+        assert.strictEqual(replayRes.payment.id, committedOrig.id, "Must return original payment ID");
+        assert.strictEqual(replayRes.payment.amount, "120.00");
+
+        // Verification 2: Exactly one payment row exists in DB
+        const p2002Count = await prisma.payment.count({
+          where: { propertyId: propA.id, idempotencyKey: p2002Key },
+        });
+        assert.strictEqual(p2002Count, 1, "Exactly one payment must exist in DB");
+
+        // --- Part 2: Mismatched payload P2002 race recovery produces ConflictError (409) ---
+        const p2002MismatchKey = `race-p2002-mismatch-${Date.now()}`;
+        await prisma.payment.create({
+          data: {
+            propertyId: propA.id,
+            expenseId: exp.id,
+            accountId: accountBankA.id,
+            paymentMethodCode: methodBankA.code,
+            amount: 80,
+            idempotencyKey: p2002MismatchKey,
+            status: PaymentStatus.RECORDED,
+            paidAt: new Date(),
+            createdBy: userAdminA.id,
+          },
+        });
+
+        raceInterceptionActive = true;
+        await assert.rejects(
+          async () => {
+            await ExpenseService.recordExpensePayment(
+              propA.id,
+              exp.id,
+              {
+                accountId: accountBankA.id,
+                paymentMethodCode: methodBankA.code,
+                amount: 90, // Different amount
+                idempotencyKey: p2002MismatchKey,
+              },
+              userAdminA.id
+            );
+          },
+          (err: unknown) => {
+            assert.ok(err instanceof ConflictError);
+            assert.ok(String(err.message).includes("different details"));
+            return true;
+          }
+        );
+
+        // --- Part 3: Voided payment P2002 race recovery produces ConflictError (409) ---
+        const p2002VoidKey = `race-p2002-void-${Date.now()}`;
+        await prisma.payment.create({
+          data: {
+            propertyId: propA.id,
+            expenseId: exp.id,
+            accountId: accountBankA.id,
+            paymentMethodCode: methodBankA.code,
+            amount: 50,
+            idempotencyKey: p2002VoidKey,
+            status: PaymentStatus.VOIDED,
+            voidReason: "Pre-existing voided payment",
+            voidedAt: new Date(),
+            voidedBy: userAdminA.id,
+            paidAt: new Date(),
+            createdBy: userAdminA.id,
+          },
+        });
+
+        raceInterceptionActive = true;
+        await assert.rejects(
+          async () => {
+            await ExpenseService.recordExpensePayment(
+              propA.id,
+              exp.id,
+              {
+                accountId: accountBankA.id,
+                paymentMethodCode: methodBankA.code,
+                amount: 50,
+                idempotencyKey: p2002VoidKey,
+              },
+              userAdminA.id
+            );
+          },
+          (err: unknown) => {
+            assert.ok(err instanceof ConflictError);
+            assert.ok(String(err.message).includes("previously voided and cannot be replayed"));
+            return true;
+          }
+        );
+      } finally {
+        prisma.$transaction = original$transaction;
+      }
     });
   });
 
