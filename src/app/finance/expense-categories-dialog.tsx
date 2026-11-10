@@ -257,36 +257,40 @@ export function ExpenseCategoriesDialog({
       <DialogContent className="sm:max-w-xl">
         {view === "list" ? (
           <>
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <DialogTitle>Expense Categories</DialogTitle>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSeedDefaults}
-                    disabled={seeding || loading}
-                    className="h-8 text-xs cursor-pointer"
-                  >
-                    {seeding ? (
-                      <Loader2 className="size-3.5 animate-spin mr-1.5" />
-                    ) : (
-                      <Sparkles className="size-3.5 mr-1.5 text-primary" />
-                    )}
-                    Seed Defaults
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={startCreate}
-                    disabled={loading}
-                    className="h-8 text-xs cursor-pointer"
-                  >
-                    <Plus className="size-3.5 mr-1.5" />
-                    Add Category
-                  </Button>
-                </div>
-              </div>
+            <DialogHeader className="pr-8">
+              <DialogTitle>Expense Categories</DialogTitle>
             </DialogHeader>
+
+            <div className="flex items-center justify-between gap-2 pt-1 pb-1">
+              <span className="text-xs text-muted-foreground">
+                {categories.length} {categories.length === 1 ? "category" : "categories"}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSeedDefaults}
+                  disabled={seeding || loading}
+                  className="h-8 text-xs cursor-pointer"
+                >
+                  {seeding ? (
+                    <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    <Sparkles className="size-3.5 mr-1.5 text-primary" />
+                  )}
+                  Seed Defaults
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={startCreate}
+                  disabled={loading}
+                  className="h-8 text-xs cursor-pointer"
+                >
+                  <Plus className="size-3.5 mr-1.5" />
+                  Add Category
+                </Button>
+              </div>
+            </div>
 
             <div className="py-2 min-h-[260px] max-h-[60vh] overflow-y-auto">
               {loading ? (
@@ -380,7 +384,7 @@ export function ExpenseCategoriesDialog({
         ) : (
           /* Form View: Add or Edit */
           <form onSubmit={view === "add" ? handleCreate : handleUpdate} className="space-y-4">
-            <DialogHeader>
+            <DialogHeader className="pr-8">
               <div className="flex items-center gap-2">
                 <Button
                   type="button"

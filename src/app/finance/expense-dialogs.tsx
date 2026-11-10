@@ -115,7 +115,7 @@ export function CreateExpenseDialog({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+        <DialogHeader className="pr-8">
           <DialogTitle>Record Expense</DialogTitle>
         </DialogHeader>
 
@@ -329,7 +329,7 @@ function EditExpenseDialogInner({
 
   return (
     <DialogContent className="sm:max-w-md">
-      <DialogHeader>
+      <DialogHeader className="pr-8">
         <DialogTitle>Edit Expense</DialogTitle>
       </DialogHeader>
 
@@ -593,7 +593,7 @@ function RecordExpensePaymentDialogInner({
 
   return (
     <DialogContent className="sm:max-w-md">
-      <DialogHeader>
+      <DialogHeader className="pr-8">
         <DialogTitle>Disburse Payment</DialogTitle>
       </DialogHeader>
 
@@ -831,8 +831,8 @@ export function ExpenseDetailsDialog({
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
+        <DialogHeader className="pr-8">
+          <div className="flex items-center gap-2">
             <DialogTitle className="text-base font-semibold">
               {loading ? "Expense Details" : expense?.title}
             </DialogTitle>
@@ -1067,7 +1067,7 @@ function VoidExpensePaymentDialogInner({
 
   return (
     <DialogContent className="sm:max-w-md">
-      <DialogHeader>
+      <DialogHeader className="pr-8">
         <DialogTitle>Void Payment</DialogTitle>
       </DialogHeader>
 
@@ -1218,7 +1218,7 @@ function VoidExpenseDialogInner({
 
   return (
     <DialogContent className="sm:max-w-md">
-      <DialogHeader>
+      <DialogHeader className="pr-8">
         <DialogTitle>Void Expense</DialogTitle>
       </DialogHeader>
 

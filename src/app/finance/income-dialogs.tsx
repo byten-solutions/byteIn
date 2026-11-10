@@ -968,7 +968,7 @@ export function IncomeDetailsDialog({
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-6 overflow-hidden">
-          <DialogHeader>
+          <DialogHeader className="pr-8">
             <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="text-base font-bold flex items-center gap-2">

@@ -248,38 +248,42 @@ export function IncomeCategoriesDialog({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-3xl max-h-[90vh] flex flex-col p-6 overflow-hidden">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-lg font-bold">Income Categories</DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                Manage property-specific income heads and accounting classification codes.
-              </DialogDescription>
-            </div>
-            {!isCreating && !editingCategory && (
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleSeedDefaults}
-                  className="gap-1.5 text-xs h-8 cursor-pointer"
-                  disabled={loading}
-                >
-                  <Sparkles className="size-3.5 text-amber-500" />
-                  Seed Defaults
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={startCreate}
-                  className="gap-1.5 text-xs h-8 cursor-pointer"
-                >
-                  <Plus className="size-3.5" />
-                  Add Category
-                </Button>
-              </div>
-            )}
+        <DialogHeader className="pr-8">
+          <div>
+            <DialogTitle className="text-lg font-bold">Income Categories</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+              Manage property-specific income heads and accounting classification codes.
+            </DialogDescription>
           </div>
         </DialogHeader>
+
+        {!isCreating && !editingCategory && (
+          <div className="flex items-center justify-between gap-2 pt-1 pb-1">
+            <span className="text-xs text-muted-foreground">
+              {categories.length} {categories.length === 1 ? "category" : "categories"}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSeedDefaults}
+                className="gap-1.5 text-xs h-8 cursor-pointer"
+                disabled={loading}
+              >
+                <Sparkles className="size-3.5 text-amber-500" />
+                Seed Defaults
+              </Button>
+              <Button
+                size="sm"
+                onClick={startCreate}
+                className="gap-1.5 text-xs h-8 cursor-pointer"
+              >
+                <Plus className="size-3.5" />
+                Add Category
+              </Button>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 p-3 bg-destructive/10 text-destructive text-xs rounded-lg border border-destructive/20">
