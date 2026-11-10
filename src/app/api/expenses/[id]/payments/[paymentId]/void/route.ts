@@ -19,22 +19,22 @@ export async function POST(
     const body = await req.json();
     const validated = voidExpensePaymentSchema.parse(body);
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.expense.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Expense record not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId =
+      req.nextUrl.searchParams.get("propertyId") || validated.propertyId;
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.expense.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Expense record not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      throw new BadRequestError("The specified expense does not belong to the selected property.");
     }
 
     const expense = await ExpenseService.voidExpensePayment(

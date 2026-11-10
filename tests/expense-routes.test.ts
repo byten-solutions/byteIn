@@ -794,10 +794,241 @@ describe("Phase 4 Stage 2: Expense Management API Route Handlers", () => {
   });
 
   // =========================================================================
-  // 4. Cross-Property Isolation & Super Admin Access
+  // 4. Cross-Property Isolation & Super Admin Explicit PropertyId Enforcement
   // =========================================================================
-  describe("4. Cross-Property Isolation & Super Admin Access", () => {
-    it("prevents Admin A from querying or mutating Property B's expenses", async () => {
+  describe("4. Cross-Property Isolation & Super Admin Explicit PropertyId Enforcement", () => {
+    let testExpAId: string;
+    let testExpBId: string;
+    let testHeadAId: string;
+    let testHeadBId: string;
+
+    before(async () => {
+      // Create categories and active expenses in Property A and Property B
+      const headA = await prisma.expenseHead.create({
+        data: {
+          propertyId: propA.id,
+          name: `Category Prop A ${timestamp}`,
+          code: `CAT_A_${timestamp}`,
+        },
+      });
+      testHeadAId = headA.id;
+
+      const headB = await prisma.expenseHead.create({
+        data: {
+          propertyId: propB.id,
+          name: `Category Prop B ${timestamp}`,
+          code: `CAT_B_${timestamp}`,
+        },
+      });
+      testHeadBId = headB.id;
+
+      const expA = await prisma.expense.create({
+        data: {
+          propertyId: propA.id,
+          expenseHeadId: headA.id,
+          title: `Expense Prop A ${timestamp}`,
+          amount: 500,
+          status: "PENDING",
+          createdBy: userAdminA.id,
+        },
+      });
+      testExpAId = expA.id;
+
+      const expB = await prisma.expense.create({
+        data: {
+          propertyId: propB.id,
+          expenseHeadId: headB.id,
+          title: `Expense Prop B ${timestamp}`,
+          amount: 500,
+          status: "PENDING",
+          createdBy: userAdminB.id,
+        },
+      });
+      testExpBId = expB.id;
+    });
+
+    // 4.1 Missing propertyId for Super Admin
+    it("strictly rejects Super Admin on entity GET endpoints when propertyId is missing", async () => {
+      const resExp = await ExpenseDetailRoute.GET(
+        makeReq(`http://localhost:3000/api/expenses/${testExpAId}`, "GET", tokenSuper),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resExp.status, 400);
+      const jsonExp = await resExp.json();
+      assert.ok(String(jsonExp.error).toLowerCase().includes("propertyid"));
+
+      const resHead = await ExpenseHeadDetailRoute.GET(
+        makeReq(`http://localhost:3000/api/expense-heads/${testHeadAId}`, "GET", tokenSuper),
+        { params: Promise.resolve({ id: testHeadAId }) }
+      );
+      assert.strictEqual(resHead.status, 400);
+      const jsonHead = await resHead.json();
+      assert.ok(String(jsonHead.error).toLowerCase().includes("propertyid"));
+    });
+
+    it("strictly rejects Super Admin on entity PATCH/DELETE/POST endpoints when propertyId is missing", async () => {
+      const resPatch = await ExpenseDetailRoute.PATCH(
+        makeReq(`http://localhost:3000/api/expenses/${testExpAId}`, "PATCH", tokenSuper, {
+          title: "New Title Without Property",
+        }),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resPatch.status, 400);
+      assert.ok(String((await resPatch.json()).error).toLowerCase().includes("propertyid"));
+
+      const resDelHead = await ExpenseHeadDetailRoute.DELETE(
+        makeReq(`http://localhost:3000/api/expense-heads/${testHeadAId}`, "DELETE", tokenSuper),
+        { params: Promise.resolve({ id: testHeadAId }) }
+      );
+      assert.strictEqual(resDelHead.status, 400);
+      assert.ok(String((await resDelHead.json()).error).toLowerCase().includes("propertyid"));
+
+      const resVoid = await ExpenseVoidRoute.POST(
+        makeReq(`http://localhost:3000/api/expenses/${testExpAId}/void`, "POST", tokenSuper, {
+          voidReason: "Super Admin Void Attempt",
+        }),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resVoid.status, 400);
+      assert.ok(String((await resVoid.json()).error).toLowerCase().includes("propertyid"));
+
+      const resPay = await ExpensePaymentsRoute.POST(
+        makeReq(`http://localhost:3000/api/expenses/${testExpAId}/payments`, "POST", tokenSuper, {
+          accountId: accountA.id,
+          amount: 50,
+        }),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resPay.status, 400);
+      assert.ok(String((await resPay.json()).error).toLowerCase().includes("propertyid"));
+
+      const resVoidPay = await ExpensePaymentVoidRoute.POST(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}/payments/dummy-pid/void`,
+          "POST",
+          tokenSuper,
+          { voidReason: "Super Admin Void Pay Attempt" }
+        ),
+        { params: Promise.resolve({ id: testExpAId, paymentId: "dummy-pid" }) }
+      );
+      assert.strictEqual(resVoidPay.status, 400);
+      assert.ok(String((await resVoidPay.json()).error).toLowerCase().includes("propertyid"));
+    });
+
+    // 4.2 Matching propertyId for Super Admin
+    it("allows Super Admin when explicit propertyId matches target entity property", async () => {
+      // Test Property A match
+      const resExpA = await ExpenseDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}?propertyId=${propA.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resExpA.status, 200);
+      const jsonExpA = await resExpA.json();
+      assert.strictEqual(jsonExpA.success, true);
+      assert.strictEqual(jsonExpA.expense.id, testExpAId);
+
+      const resHeadA = await ExpenseHeadDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expense-heads/${testHeadAId}?propertyId=${propA.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testHeadAId }) }
+      );
+      assert.strictEqual(resHeadA.status, 200);
+      const jsonHeadA = await resHeadA.json();
+      assert.strictEqual(jsonHeadA.success, true);
+      assert.strictEqual(jsonHeadA.expenseHead.id, testHeadAId);
+
+      // Test Property B match
+      const resExpB = await ExpenseDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpBId}?propertyId=${propB.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testExpBId }) }
+      );
+      assert.strictEqual(resExpB.status, 200);
+      const jsonExpB = await resExpB.json();
+      assert.strictEqual(jsonExpB.success, true);
+      assert.strictEqual(jsonExpB.expense.id, testExpBId);
+
+      const resHeadB = await ExpenseHeadDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expense-heads/${testHeadBId}?propertyId=${propB.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testHeadBId }) }
+      );
+      assert.strictEqual(resHeadB.status, 200);
+      const jsonHeadB = await resHeadB.json();
+      assert.strictEqual(jsonHeadB.success, true);
+      assert.strictEqual(jsonHeadB.expenseHead.id, testHeadBId);
+    });
+
+    // 4.3 Mismatched propertyId for Super Admin
+    it("rejects Super Admin when explicit propertyId does not match target entity property", async () => {
+      // testExpAId belongs to propA, but Super Admin queries with propB.id
+      const resExp = await ExpenseDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}?propertyId=${propB.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resExp.status, 400);
+      const jsonExp = await resExp.json();
+      assert.ok(String(jsonExp.error).includes("does not belong to the selected property"));
+
+      // testHeadAId belongs to propA, but Super Admin queries with propB.id
+      const resHead = await ExpenseHeadDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expense-heads/${testHeadAId}?propertyId=${propB.id}`,
+          "GET",
+          tokenSuper
+        ),
+        { params: Promise.resolve({ id: testHeadAId }) }
+      );
+      assert.strictEqual(resHead.status, 400);
+      const jsonHead = await resHead.json();
+      assert.ok(String(jsonHead.error).includes("does not belong to the selected property"));
+
+      // Attempt to patch expense in propA passing propB.id
+      const resPatch = await ExpenseDetailRoute.PATCH(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}?propertyId=${propB.id}`,
+          "PATCH",
+          tokenSuper,
+          { title: "Mismatch Attempt" }
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resPatch.status, 400);
+      assert.ok(String((await resPatch.json()).error).includes("does not belong to the selected property"));
+
+      // Attempt to disburse payment on propA expense with propB.id
+      const resPay = await ExpensePaymentsRoute.POST(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}/payments?propertyId=${propB.id}`,
+          "POST",
+          tokenSuper,
+          { accountId: accountB.id, amount: 50 }
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(resPay.status, 400);
+      assert.ok(String((await resPay.json()).error).includes("does not belong to the selected property"));
+    });
+
+    // 4.4 Admin property scoping and cross-property protection
+    it("prevents Admin A from querying or mutating Property B's expenses via query override", async () => {
       const res = await ExpensesRoute.GET(
         makeReq(
           `http://localhost:3000/api/expenses?propertyId=${propB.id}`,
@@ -813,29 +1044,49 @@ describe("Phase 4 Stage 2: Expense Management API Route Handlers", () => {
     it("prevents Admin B from querying Property A's specific expense record", async () => {
       const res = await ExpenseDetailRoute.GET(
         makeReq(
-          `http://localhost:3000/api/expenses/${createdExpenseId}`,
+          `http://localhost:3000/api/expenses/${testExpAId}`,
           "GET",
           tokenAdminB
         ),
-        { params: Promise.resolve({ id: createdExpenseId }) }
+        { params: Promise.resolve({ id: testExpAId }) }
       );
-      assert.strictEqual(res.status, 404);
+      assert.strictEqual(res.status, 400);
+      const json = await res.json();
+      assert.ok(String(json.error).includes("does not belong to the selected property"));
+    });
+
+    it("prevents Admin B from accessing Property A's expense by passing query override ?propertyId=propA", async () => {
+      const res = await ExpenseDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}?propertyId=${propA.id}`,
+          "GET",
+          tokenAdminB
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(res.status, 403);
+      const json = await res.json();
+      assert.ok(String(json.error).includes("Access denied"));
+    });
+
+    it("prevents Admin B from querying Property A's specific category", async () => {
+      const res = await ExpenseHeadDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expense-heads/${testHeadAId}`,
+          "GET",
+          tokenAdminB
+        ),
+        { params: Promise.resolve({ id: testHeadAId }) }
+      );
+      assert.strictEqual(res.status, 400);
+      const json = await res.json();
+      assert.ok(String(json.error).includes("does not belong to the selected property"));
     });
 
     it("prevents Admin A from disbursing payment using an account belonging to Property B", async () => {
-      // Create fresh expense in Property A
-      const createRes = await ExpensesRoute.POST(
-        makeReq("http://localhost:3000/api/expenses", "POST", tokenAdminA, {
-          expenseHeadId: createdExpenseHeadId,
-          title: "Cross Property Account Test",
-          amount: 100,
-        })
-      );
-      const expId = (await createRes.json()).expense.id;
-
       const res = await ExpensePaymentsRoute.POST(
         makeReq(
-          `http://localhost:3000/api/expenses/${expId}/payments`,
+          `http://localhost:3000/api/expenses/${testExpAId}/payments`,
           "POST",
           tokenAdminA,
           {
@@ -843,14 +1094,29 @@ describe("Phase 4 Stage 2: Expense Management API Route Handlers", () => {
             accountId: accountB.id, // Property B account!
           }
         ),
-        { params: Promise.resolve({ id: expId }) }
+        { params: Promise.resolve({ id: testExpAId }) }
       );
       assert.strictEqual(res.status, 400);
       const json = await res.json();
       assert.ok(String(json.error).includes("does not exist for this property"));
     });
 
-    it("allows Super Admin to explicitly query Property A and Property B", async () => {
+    it("allows Admin A to access their own Property A expense without specifying propertyId", async () => {
+      const res = await ExpenseDetailRoute.GET(
+        makeReq(
+          `http://localhost:3000/api/expenses/${testExpAId}`,
+          "GET",
+          tokenAdminA
+        ),
+        { params: Promise.resolve({ id: testExpAId }) }
+      );
+      assert.strictEqual(res.status, 200);
+      const json = await res.json();
+      assert.strictEqual(json.success, true);
+      assert.strictEqual(json.expense.id, testExpAId);
+    });
+
+    it("allows Super Admin to explicitly query Property A and Property B lists", async () => {
       const resA = await ExpensesRoute.GET(
         makeReq(
           `http://localhost:3000/api/expenses?propertyId=${propA.id}`,

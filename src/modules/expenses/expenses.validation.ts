@@ -24,6 +24,7 @@ export const expenseHeadFilterSchema = z.object({
 
 export const updateExpenseHeadSchema = z
   .object({
+    propertyId: z.string().trim().min(1).optional(),
     name: z.string().trim().min(1, "Category name cannot be empty").max(100).optional(),
     description: z.string().trim().max(255).nullable().optional(),
     isActive: z.boolean().optional(),
@@ -62,6 +63,7 @@ export const createExpenseSchema = z.object({
 });
 
 export const updateExpenseSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   expenseHeadId: z.string().trim().min(1).optional(),
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(500).nullable().optional(),
@@ -84,6 +86,7 @@ export const updateExpenseSchema = z.object({
 });
 
 export const recordExpensePaymentSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   accountId: z.string().trim().min(1, "Financial account is required"),
   paymentMethodId: z.string().trim().min(1).optional(),
   paymentMethodCode: z.string().trim().min(1).optional(),
@@ -102,6 +105,7 @@ export const recordExpensePaymentSchema = z.object({
 });
 
 export const voidExpensePaymentSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   voidReason: z
     .string()
     .trim()
@@ -110,6 +114,7 @@ export const voidExpensePaymentSchema = z.object({
 });
 
 export const voidExpenseSchema = z.object({
+  propertyId: z.string().trim().min(1).optional(),
   voidReason: z
     .string()
     .trim()
