@@ -2,16 +2,17 @@
 
 import * as React from "react"
 import { RoleName } from "@prisma/client"
-import { Wallet, CreditCard, ArrowLeftRight, Building2 } from "lucide-react"
+import { Wallet, CreditCard, ArrowLeftRight, Building2, TrendingUp } from "lucide-react"
 import { PageHeader } from "@/components/ui-kit"
 import { AccountsTab } from "./accounts-tab"
 import { MethodsTab } from "./methods-tab"
 import { TransfersTab } from "./transfers-tab"
+import { IncomeTab } from "./income-tab"
 import { cn } from "@/lib/utils"
 import type { SessionPayload } from "@/modules/auth/auth.types"
 import type { FinancialAccountWithBalanceDTO } from "@/modules/financial-accounts/financial-accounts.types"
 
-type FinanceTab = "accounts" | "methods" | "transfers"
+type FinanceTab = "accounts" | "methods" | "transfers" | "income"
 
 interface PropertyItem {
   id: string
@@ -149,6 +150,19 @@ export function FinanceView({
               <ArrowLeftRight className="size-4" />
               Account Transfers
             </button>
+
+            <button
+              onClick={() => setActiveTab("income")}
+              className={cn(
+                "flex items-center gap-2 pb-3 pt-1 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap cursor-pointer",
+                activeTab === "income"
+                  ? "border-primary text-foreground font-semibold"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+              )}
+            >
+              <TrendingUp className="size-4" />
+              Direct Income
+            </button>
           </div>
 
           {/* Tab Content Panes */}
@@ -176,6 +190,15 @@ export function FinanceView({
                 accounts={accounts}
                 refreshKey={refreshKey}
                 onTransferSuccess={handleDataChange}
+              />
+            )}
+
+            {activeTab === "income" && (
+              <IncomeTab
+                propertyId={effectivePropertyId}
+                accounts={accounts}
+                refreshKey={refreshKey}
+                onDataChange={handleDataChange}
               />
             )}
           </div>
