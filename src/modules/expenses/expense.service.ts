@@ -580,7 +580,7 @@ export class ExpenseService {
             input,
             paymentAmount,
             input.paymentMethodId,
-            input.paymentMethodCode
+            input.paymentMethodCode || (input.paymentMethodId ? undefined : "CASH")
           );
 
           if (isMatch) {

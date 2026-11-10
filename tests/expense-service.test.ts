@@ -1008,6 +1008,178 @@ describe("Phase 4 Stage 1: Expense Management Domain Services & Invariants", () 
       );
     });
 
+    it("correctly handles omitted paidAt and server defaults during retry comparison without false mismatches", async () => {
+      const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
+      const head = heads[0];
+
+      const exp = await ExpenseService.createExpense(
+        propA.id,
+        { expenseHeadId: head.id, title: "Defaults Idempotency Test", amount: 600 },
+        userAdminA.id
+      );
+
+      const keyOmitted = `idem-defaults-${Date.now()}`;
+
+      // 1. First submission: omit paidAt, paymentMethodCode, and referenceNumber
+      const orig = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        {
+          accountId: accountBankA.id,
+          amount: 100,
+          idempotencyKey: keyOmitted,
+        },
+        userAdminA.id
+      );
+
+      assert.strictEqual(orig.payment.idempotencyKey, keyOmitted);
+      assert.strictEqual(orig.payment.paymentMethodCode, "CASH", "Defaulted to CASH");
+      assert.strictEqual(orig.payment.referenceNumber, null, "Defaulted to null");
+      assert.ok(orig.payment.paidAt, "Server timestamp generated");
+      assert.strictEqual(orig.idempotentReplay, undefined);
+
+      // 2. Identical retry: also omits paidAt, paymentMethodCode, and referenceNumber
+      const replay = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        {
+          accountId: accountBankA.id,
+          amount: 100,
+          idempotencyKey: keyOmitted,
+        },
+        userAdminA.id
+      );
+
+      // Must return identical original payment with idempotentReplay: true
+      assert.strictEqual(replay.payment.id, orig.payment.id);
+      assert.strictEqual(replay.payment.paidAt, orig.payment.paidAt, "Server-generated timestamp preserved on replay");
+      assert.strictEqual(replay.idempotentReplay, true, "Must match and replay identically");
+
+      // Verify no duplicate row was created in database
+      const dbCount = await prisma.payment.count({
+        where: { propertyId: propA.id, idempotencyKey: keyOmitted },
+      });
+      assert.strictEqual(dbCount, 1, "Exactly one payment must exist in DB");
+
+      // 3. Reusing same key with explicitly supplied, different paidAt must fail with ConflictError
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: accountBankA.id,
+              amount: 100,
+              idempotencyKey: keyOmitted,
+              paidAt: "2026-05-01T00:00:00.000Z", // Explicitly supplied, different paidAt
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          assert.ok(String(err.message).includes("different details"));
+          return true;
+        }
+      );
+
+      // 4. Reusing same key with explicitly supplied, different paymentMethodCode must fail with ConflictError
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: accountBankA.id,
+              amount: 100,
+              idempotencyKey: keyOmitted,
+              paymentMethodCode: methodBankA.code, // Different from defaulted CASH
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          assert.ok(String(err.message).includes("different details"));
+          return true;
+        }
+      );
+
+      // 5. Reusing same key with explicitly supplied referenceNumber must fail with ConflictError
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: accountBankA.id,
+              amount: 100,
+              idempotencyKey: keyOmitted,
+              referenceNumber: "REF-RETRIED", // Different from defaulted null
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          assert.ok(String(err.message).includes("different details"));
+          return true;
+        }
+      );
+
+      // 6. Reverse case: when original request HAD an explicit custom paidAt, omitting paidAt on retry produces ConflictError
+      const keyExplicit = `idem-explicit-${Date.now()}`;
+      const origExplicit = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        {
+          accountId: accountBankA.id,
+          amount: 50,
+          idempotencyKey: keyExplicit,
+          paidAt: "2026-04-15T12:00:00.000Z",
+        },
+        userAdminA.id
+      );
+      assert.strictEqual(origExplicit.payment.paidAt, "2026-04-15T12:00:00.000Z");
+
+      // Matching explicit retry succeeds
+      const replayExplicit = await ExpenseService.recordExpensePayment(
+        propA.id,
+        exp.id,
+        {
+          accountId: accountBankA.id,
+          amount: 50,
+          idempotencyKey: keyExplicit,
+          paidAt: "2026-04-15T12:00:00.000Z",
+        },
+        userAdminA.id
+      );
+      assert.strictEqual(replayExplicit.payment.id, origExplicit.payment.id);
+      assert.strictEqual(replayExplicit.idempotentReplay, true);
+
+      // Retry with omitted paidAt must be rejected with ConflictError
+      await assert.rejects(
+        async () => {
+          await ExpenseService.recordExpensePayment(
+            propA.id,
+            exp.id,
+            {
+              accountId: accountBankA.id,
+              amount: 50,
+              idempotencyKey: keyExplicit,
+              // paidAt omitted
+            },
+            userAdminA.id
+          );
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof ConflictError);
+          assert.ok(String(err.message).includes("different details"));
+          return true;
+        }
+      );
+    });
+
     it("prevents recreation of previously voided payment through idempotency key retry", async () => {
       const heads = await ExpenseHeadService.listExpenseHeads(propA.id);
       const head = heads[0];
