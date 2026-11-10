@@ -219,6 +219,14 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
   })
 
   after(async () => {
+    await prisma.receipt.deleteMany({
+      where: {
+        OR: [
+          { createdBy: { in: [testStaffUser1Id, testStaffUser2Id] } },
+          { invoice: { reservation: { createdBy: { in: [testStaffUser1Id, testStaffUser2Id] } } } },
+        ],
+      },
+    })
     await prisma.payment.deleteMany({
       where: { createdBy: { in: [testStaffUser1Id, testStaffUser2Id] } },
     })
@@ -254,6 +262,12 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
     })
     await prisma.building.deleteMany({
       where: { id: testBuildingId },
+    })
+    await prisma.financialAccount.deleteMany({
+      where: { propertyId: testPropertyId },
+    })
+    await prisma.paymentMethod.deleteMany({
+      where: { propertyId: testPropertyId },
     })
     await prisma.property.deleteMany({
       where: { id: testPropertyId },

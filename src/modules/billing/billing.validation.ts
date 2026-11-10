@@ -119,6 +119,8 @@ export const recordPaymentSchema = z.object({
     .string()
     .min(1, "Payment method is required")
     .max(50),
+  paymentMethodId: z.string().trim().optional().nullable(),
+  accountId: z.string().trim().optional().nullable(),
   referenceNumber: z.string().max(100).optional().nullable(),
   idempotencyKey: z.string().max(128).optional().nullable(),
   paidAt: z.string().datetime({ offset: true }).optional().or(z.string().optional()),

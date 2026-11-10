@@ -58,9 +58,40 @@ enum InvoiceItemType {
   ADJUSTMENT
 }
 
+enum ReceiptStatus {
+  RECORDED
+  VOIDED
+}
+
 enum PaymentStatus {
   RECORDED
   VOIDED
+}
+
+enum AccountType {
+  CASH
+  BANK
+  CLEARING
+  OTHER
+}
+
+enum ExpenseStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum IncomeStatus {
+  PENDING
+  PARTIALLY_RECEIVED
+  RECEIVED
+  VOID
+}
+
+enum TransferStatus {
+  COMPLETED
+  CANCELLED
 }
 
 // --------------------------------------------------------
@@ -80,25 +111,32 @@ model Role {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  roleId       String    @map("role_id")
-  propertyId   String?   @map("property_id")
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  roleId             String    @map("role_id")
+  propertyId         String?   @map("property_id")
   status             String    @default("ACTIVE") // ACTIVE / DISABLED
   mustChangePassword Boolean   @default(false) @map("must_change_password")
   tokenVersion       Int       @default(1) @map("token_version")
   lastLoginAt        DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  role         Role          @relation(fields: [roleId], references: [id])
-  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: SetNull)
-  reservations Reservation[] @relation("CreatedReservations")
-  payments       Payment[]     @relation("RecordedPayments")
-  voidedPayments Payment[]     @relation("VoidedPayments")
-  auditLogs      AuditLog[]
+  role                   Role              @relation(fields: [roleId], references: [id])
+  property               Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  reservations           Reservation[]     @relation("CreatedReservations")
+  recordedReceipts       Receipt[]         @relation("RecordedReceipts")
+  voidedReceipts         Receipt[]         @relation("VoidedReceipts")
+  recordedOutgoingPayments Payment[]       @relation("RecordedOutgoingPayments")
+  voidedOutgoingPayments Payment[]         @relation("VoidedOutgoingPayments")
+  recordedIncomes        Income[]          @relation("RecordedIncomes")
+  voidedIncomes          Income[]          @relation("VoidedIncomes")
+  recordedExpenses       Expense[]         @relation("RecordedExpenses")
+  voidedExpenses         Expense[]         @relation("VoidedExpenses")
+  transfers              AccountTransfer[] @relation("RecordedTransfers")
+  auditLogs              AuditLog[]
 
   @@index([roleId])
   @@index([propertyId])
@@ -122,14 +160,22 @@ model Property {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  users          User[]
-  buildings      Building[]
-  rooms          Room[]
-  roomCategories RoomCategory[]
-  reservations   Reservation[]
-  invoices       Invoice[]
-  payments       Payment[]
-  customers      Customer[]
+  users             User[]
+  buildings         Building[]
+  rooms             Room[]
+  roomCategories    RoomCategory[]
+  reservations      Reservation[]
+  invoices          Invoice[]
+  receipts          Receipt[]
+  outgoingPayments  Payment[]
+  customers         Customer[]
+  financialAccounts FinancialAccount[]
+  paymentMethods    PaymentMethod[]
+  incomeHeads       IncomeHead[]
+  incomes           Income[]
+  expenseHeads      ExpenseHead[]
+  expenses          Expense[]
+  transfers         AccountTransfer[]
 
   @@map("properties")
 }
@@ -243,22 +289,23 @@ model Room {
 // --------------------------------------------------------
 
 model Customer {
-  id            String   @id @default(cuid())
-  firstName     String   @map("first_name")
-  lastName      String?  @map("last_name")
-  phone         String?
-  email         String?
-  nationality   String?
-  address       String?
-  idProofType   String?  @map("id_proof_type")
-  idProofNumber String?  @map("id_proof_number")
-  remarks       String?
-  registeredPropertyId String?   @map("registered_property_id")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  firstName            String   @map("first_name")
+  lastName             String?  @map("last_name")
+  phone                String?
+  email                String?
+  nationality          String?
+  address              String?
+  idProofType          String?  @map("id_proof_type")
+  idProofNumber        String?  @map("id_proof_number")
+  remarks              String?
+  registeredPropertyId String?  @map("registered_property_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   registeredProperty Property?     @relation(fields: [registeredPropertyId], references: [id], onDelete: SetNull)
   reservations       Reservation[]
+  invoices           Invoice[]
 
   @@index([registeredPropertyId])
   @@index([phone])
@@ -284,6 +331,7 @@ model Reservation {
   rooms    ReservationRoom[]
   invoices Invoice[]
 
+  @@unique([propertyId, id])
   @@index([propertyId, createdAt(sort: Desc)])
   @@index([propertyId, status, createdAt(sort: Desc)])
   @@index([propertyId, customerId])
@@ -296,22 +344,22 @@ model Reservation {
 }
 
 model ReservationRoom {
-  id                String           @id @default(cuid())
-  reservationId     String           @map("reservation_id")
-  roomId            String           @map("room_id")
-  roomCategoryId    String           @map("room_category_id")
-  arrivalDate       DateTime         @map("arrival_date") @db.Date
-  departureDate     DateTime         @map("departure_date") @db.Date
-  bookedNightlyRate Decimal          @map("booked_nightly_rate") @db.Decimal(10, 2)
-  adults            Int              @default(1)
-  children          Int              @default(0)
-  status            AllocationStatus @default(CONFIRMED)
+  id                 String           @id @default(cuid())
+  reservationId      String           @map("reservation_id")
+  roomId             String           @map("room_id")
+  roomCategoryId     String           @map("room_category_id")
+  arrivalDate        DateTime         @map("arrival_date") @db.Date
+  departureDate      DateTime         @map("departure_date") @db.Date
+  bookedNightlyRate  Decimal          @map("booked_nightly_rate") @db.Decimal(10, 2)
+  adults             Int              @default(1)
+  children           Int              @default(0)
+  status             AllocationStatus @default(CONFIRMED)
   checkedInAt        DateTime?        @map("checked_in_at")
   checkedOutAt       DateTime?        @map("checked_out_at")
   actualCheckoutDate DateTime?        @map("actual_checkout_date") @db.Date
   assignedAt         DateTime         @default(now()) @map("assigned_at")
-  createdAt         DateTime         @default(now()) @map("created_at")
-  updatedAt         DateTime         @updatedAt @map("updated_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
 
   reservation  Reservation   @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   room         Room          @relation(fields: [roomId], references: [id])
@@ -330,12 +378,14 @@ model ReservationRoom {
 }
 
 // --------------------------------------------------------
-// BILLING & PAYMENTS
+// BILLING & FINANCIAL MANAGEMENT
 // --------------------------------------------------------
 
 model Invoice {
   id            String        @id @default(cuid())
-  reservationId String        @map("reservation_id")
+  reservationId String?       @map("reservation_id")
+  customerId    String?       @map("customer_id")
+  customerName  String?       @map("customer_name")
   propertyId    String        @map("property_id")
   invoiceNumber String        @unique @map("invoice_number")
   subtotal      Decimal       @db.Decimal(10, 2)
@@ -348,13 +398,16 @@ model Invoice {
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
   property    Property      @relation(fields: [propertyId], references: [id])
-  reservation Reservation   @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  reservation Reservation?  @relation(fields: [propertyId, reservationId], references: [propertyId, id], onDelete: Restrict)
+  customer    Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
   items       InvoiceItem[]
-  payments    Payment[]
+  receipts    Receipt[]
 
+  @@unique([propertyId, id])
   @@index([propertyId, createdAt(sort: Desc)])
   @@index([propertyId, status, createdAt(sort: Desc)])
   @@index([reservationId])
+  @@index([customerId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@index([status, createdAt(sort: Desc)])
@@ -380,35 +433,255 @@ model InvoiceItem {
   @@map("invoice_items")
 }
 
-model Payment {
+model Receipt {
+  id                String        @id @default(cuid())
+  propertyId        String        @map("property_id")
+  invoiceId         String?       @map("invoice_id")
+  incomeId          String?       @map("income_id")
+  accountId         String        @map("account_id")
+  paymentMethodId   String?       @map("payment_method_id")
+  paymentMethodCode String        @map("payment_method_code")
+  amount            Decimal       @db.Decimal(10, 2)
+  referenceNumber   String?       @map("reference_number")
+  idempotencyKey    String?       @unique @map("idempotency_key")
+  status            ReceiptStatus @default(RECORDED)
+  paidAt            DateTime      @map("paid_at")
+  isLegacy          Boolean       @default(false) @map("is_legacy")
+  createdBy         String        @map("created_by")
+  voidReason        String?       @map("void_reason")
+  voidedAt          DateTime?     @map("voided_at")
+  voidedBy          String?       @map("voided_by")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  property      Property         @relation(fields: [propertyId], references: [id])
+  invoice       Invoice?         @relation(fields: [propertyId, invoiceId], references: [propertyId, id], onDelete: Restrict)
+  income        Income?          @relation(fields: [propertyId, incomeId], references: [propertyId, id], onDelete: Restrict)
+  account       FinancialAccount @relation(fields: [propertyId, accountId], references: [propertyId, id], onDelete: Restrict)
+  paymentMethod PaymentMethod?   @relation(fields: [propertyId, paymentMethodId], references: [propertyId, id], onDelete: Restrict)
+  creator       User             @relation("RecordedReceipts", fields: [createdBy], references: [id])
+  voider        User?            @relation("VoidedReceipts", fields: [voidedBy], references: [id])
+
+  @@unique([propertyId, id])
+  @@index([propertyId, paidAt(sort: Desc)])
+  @@index([paidAt(sort: Desc)])
+  @@index([invoiceId])
+  @@index([incomeId])
+  @@index([accountId])
+  @@index([paymentMethodId])
+  @@index([isLegacy])
+  @@index([createdBy])
+  @@index([voidedBy])
+  @@index([voidedAt])
+  @@index([invoiceId, status])
+  @@map("receipts")
+}
+
+model FinancialAccount {
+  id                 String      @id @default(cuid())
+  propertyId         String      @map("property_id")
+  accountName        String      @map("account_name")
+  accountType        AccountType @default(CASH) @map("account_type")
+  openingBalance     Decimal     @default(0) @map("opening_balance") @db.Decimal(10, 2)
+  openingBalanceDate DateTime    @default(now()) @map("opening_balance_date") @db.Date
+  isDefault          Boolean     @default(false) @map("is_default")
+  isActive           Boolean     @default(true) @map("is_active")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  property       Property          @relation(fields: [propertyId], references: [id])
+  receipts       Receipt[]
+  payments       Payment[]
+  transfersFrom  AccountTransfer[] @relation("TransfersFrom")
+  transfersTo    AccountTransfer[] @relation("TransfersTo")
+  paymentMethods PaymentMethod[]
+
+  @@unique([propertyId, id])
+  @@unique([propertyId, accountName])
+  @@index([propertyId, isActive])
+  @@map("financial_accounts")
+}
+
+model PaymentMethod {
+  id               String   @id @default(cuid())
+  propertyId       String   @map("property_id")
+  name             String
+  code             String
+  defaultAccountId String?  @map("default_account_id")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  property       Property          @relation(fields: [propertyId], references: [id])
+  defaultAccount FinancialAccount? @relation(fields: [propertyId, defaultAccountId], references: [propertyId, id], onDelete: Restrict)
+  receipts       Receipt[]
+  payments       Payment[]
+
+  @@unique([propertyId, id])
+  @@unique([propertyId, code])
+  @@index([propertyId, isActive])
+  @@map("payment_methods")
+}
+
+model IncomeHead {
+  id          String   @id @default(cuid())
+  propertyId  String   @map("property_id")
+  name        String
+  code        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id])
+  incomes  Income[]
+
+  @@unique([propertyId, id])
+  @@unique([propertyId, code])
+  @@index([propertyId, isActive])
+  @@map("income_heads")
+}
+
+model Income {
+  id             String       @id @default(cuid())
+  propertyId     String       @map("property_id")
+  incomeHeadId   String       @map("income_head_id")
+  title          String
+  description    String?
+  expectedAmount Decimal      @map("expected_amount") @db.Decimal(10, 2)
+  incomeDate     DateTime     @default(now()) @map("income_date") @db.Date
+  status         IncomeStatus @default(PENDING)
+  createdBy      String       @map("created_by")
+  voidReason     String?      @map("void_reason")
+  voidedAt       DateTime?    @map("voided_at")
+  voidedBy       String?      @map("voided_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  property   Property   @relation(fields: [propertyId], references: [id])
+  incomeHead IncomeHead @relation(fields: [propertyId, incomeHeadId], references: [propertyId, id], onDelete: Restrict)
+  creator    User       @relation("RecordedIncomes", fields: [createdBy], references: [id])
+  voider     User?      @relation("VoidedIncomes", fields: [voidedBy], references: [id])
+  receipts   Receipt[]
+
+  @@unique([propertyId, id])
+  @@index([propertyId, incomeDate(sort: Desc)])
+  @@index([propertyId, status])
+  @@index([incomeHeadId])
+  @@index([createdBy])
+  @@index([voidedBy])
+  @@map("incomes")
+}
+
+model ExpenseHead {
+  id          String   @id @default(cuid())
+  propertyId  String   @map("property_id")
+  name        String
+  code        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  property Property  @relation(fields: [propertyId], references: [id])
+  expenses Expense[]
+
+  @@unique([propertyId, id])
+  @@unique([propertyId, code])
+  @@index([propertyId, isActive])
+  @@map("expense_heads")
+}
+
+model Expense {
   id              String        @id @default(cuid())
-  invoiceId       String        @map("invoice_id")
   propertyId      String        @map("property_id")
+  expenseHeadId   String        @map("expense_head_id")
+  title           String
+  description     String?
   amount          Decimal       @db.Decimal(10, 2)
-  paymentMethod   String        @map("payment_method")
+  vendorName      String?       @map("vendor_name")
   referenceNumber String?       @map("reference_number")
-  idempotencyKey  String?       @unique @map("idempotency_key")
-  status          PaymentStatus @default(RECORDED)
-  paidAt          DateTime      @map("paid_at")
+  expenseDate     DateTime      @default(now()) @map("expense_date") @db.Date
+  status          ExpenseStatus @default(PENDING)
   createdBy       String        @map("created_by")
   voidReason      String?       @map("void_reason")
   voidedAt        DateTime?     @map("voided_at")
   voidedBy        String?       @map("voided_by")
   createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  property Property @relation(fields: [propertyId], references: [id])
-  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
-  creator  User     @relation("RecordedPayments", fields: [createdBy], references: [id])
-  voider   User?    @relation("VoidedPayments", fields: [voidedBy], references: [id])
+  property    Property    @relation(fields: [propertyId], references: [id])
+  expenseHead ExpenseHead @relation(fields: [propertyId, expenseHeadId], references: [propertyId, id], onDelete: Restrict)
+  creator     User        @relation("RecordedExpenses", fields: [createdBy], references: [id])
+  voider      User?       @relation("VoidedExpenses", fields: [voidedBy], references: [id])
+  payments    Payment[]
 
-  @@index([propertyId, paidAt(sort: Desc)])
-  @@index([paidAt(sort: Desc)])
-  @@index([invoiceId])
+  @@unique([propertyId, id])
+  @@index([propertyId, expenseDate(sort: Desc)])
+  @@index([propertyId, status])
+  @@index([expenseHeadId])
   @@index([createdBy])
-  @@index([voidedBy])
-  @@index([voidedAt])
-  @@index([invoiceId, status])
+  @@map("expenses")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  propertyId        String        @map("property_id")
+  expenseId         String        @map("expense_id")
+  accountId         String        @map("account_id")
+  paymentMethodId   String?       @map("payment_method_id")
+  paymentMethodCode String        @map("payment_method_code")
+  amount            Decimal       @db.Decimal(10, 2)
+  referenceNumber   String?       @map("reference_number")
+  status            PaymentStatus @default(RECORDED)
+  paidAt            DateTime      @default(now()) @map("paid_at")
+  createdBy         String        @map("created_by")
+  voidReason        String?       @map("void_reason")
+  voidedAt          DateTime?     @map("voided_at")
+  voidedBy          String?       @map("voided_by")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  property      Property         @relation(fields: [propertyId], references: [id])
+  expense       Expense          @relation(fields: [propertyId, expenseId], references: [propertyId, id], onDelete: Restrict)
+  account       FinancialAccount @relation(fields: [propertyId, accountId], references: [propertyId, id], onDelete: Restrict)
+  paymentMethod PaymentMethod?   @relation(fields: [propertyId, paymentMethodId], references: [propertyId, id], onDelete: Restrict)
+  creator       User             @relation("RecordedOutgoingPayments", fields: [createdBy], references: [id])
+  voider        User?            @relation("VoidedOutgoingPayments", fields: [voidedBy], references: [id])
+
+  @@unique([propertyId, id])
+  @@index([propertyId, paidAt(sort: Desc)])
+  @@index([expenseId])
+  @@index([accountId])
+  @@index([paymentMethodId])
+  @@index([createdBy])
   @@map("payments")
+}
+
+model AccountTransfer {
+  id              String         @id @default(cuid())
+  propertyId      String         @map("property_id")
+  fromAccountId   String         @map("from_account_id")
+  toAccountId     String         @map("to_account_id")
+  amount          Decimal        @db.Decimal(10, 2)
+  transferDate    DateTime       @default(now()) @map("transfer_date") @db.Date
+  description     String?
+  referenceNumber String?        @map("reference_number")
+  status          TransferStatus @default(COMPLETED)
+  createdBy       String         @map("created_by")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  property    Property         @relation(fields: [propertyId], references: [id])
+  fromAccount FinancialAccount @relation("TransfersFrom", fields: [propertyId, fromAccountId], references: [propertyId, id], onDelete: Restrict)
+  toAccount   FinancialAccount @relation("TransfersTo", fields: [propertyId, toAccountId], references: [propertyId, id], onDelete: Restrict)
+  creator     User             @relation("RecordedTransfers", fields: [createdBy], references: [id])
+
+  @@unique([propertyId, id])
+  @@index([propertyId, transferDate(sort: Desc)])
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([createdBy])
+  @@map("account_transfers")
 }
 
 // --------------------------------------------------------

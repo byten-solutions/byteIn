@@ -4,7 +4,7 @@ import {
   RoomStatus,
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
   ReservationStatus,
   AllocationStatus,
   Prisma,
@@ -30,8 +30,8 @@ async function main() {
   for (const lp of leakedProperties) {
     console.log(`Cleaning leaked test property: "${lp.name}" (${lp.id})...`);
     // Delete dependent records for this leaked property
-    await prisma.payment.deleteMany({
-      where: { invoice: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } } },
+    await prisma.receipt.deleteMany({
+      where: { propertyId: lp.id },
     });
     await prisma.invoiceItem.deleteMany({
       where: { invoice: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } } },
@@ -89,7 +89,7 @@ async function main() {
     "INV-20261011-5FDC",
     "INV-20261011-D228",
   ];
-  await prisma.payment.deleteMany({
+  await prisma.receipt.deleteMany({
     where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
   });
   await prisma.invoiceItem.deleteMany({
@@ -854,7 +854,7 @@ async function main() {
         amount: new Prisma.Decimal("3825.00"),
         paymentMethod: "UPI",
         referenceNumber: "UPI-MRIN-B139",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T10:25:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -879,7 +879,7 @@ async function main() {
         amount: new Prisma.Decimal("1800.00"),
         paymentMethod: "CARD",
         referenceNumber: "CARD-HB-6472",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-20T10:35:00.000Z"), // paidAt after invoice issuedAt
         createdBy: receptionistUser.id,
       },
@@ -918,7 +918,7 @@ async function main() {
         amount: new Prisma.Decimal("500.00"),
         paymentMethod: "CASH",
         referenceNumber: "CASH-MRIN-5FDC",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T14:05:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -943,7 +943,7 @@ async function main() {
         amount: new Prisma.Decimal("100.00"),
         paymentMethod: "CASH",
         referenceNumber: "CASH-JHB-D228",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T10:35:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -956,9 +956,13 @@ async function main() {
     });
     if (!resv) continue;
 
+    const propertyAccount = await prisma.financialAccount.findFirst({
+      where: { propertyId: resv.propertyId },
+    });
+
     const existingInvoice = await prisma.invoice.findUnique({
       where: { invoiceNumber: demo.invoiceNumber },
-      include: { payments: true, items: true },
+      include: { receipts: true, items: true },
     });
 
     if (!existingInvoice) {
@@ -976,10 +980,15 @@ async function main() {
           items: {
             create: demo.items,
           },
-          payments: {
+          receipts: {
             create: {
-              ...demo.payment,
-              propertyId: resv.propertyId,
+              accountId: propertyAccount!.id,
+              amount: demo.payment.amount,
+              paymentMethodCode: demo.payment.paymentMethod,
+              referenceNumber: demo.payment.referenceNumber,
+              status: ReceiptStatus.RECORDED,
+              paidAt: demo.payment.paidAt,
+              createdBy: demo.payment.createdBy,
             },
           },
         },
@@ -1011,9 +1020,9 @@ async function main() {
         }
       }
       // Ensure payment date
-      if (existingInvoice.payments.length > 0) {
-        await prisma.payment.update({
-          where: { id: existingInvoice.payments[0].id },
+      if (existingInvoice.receipts.length > 0) {
+        await prisma.receipt.update({
+          where: { id: existingInvoice.receipts[0].id },
           data: {
             paidAt: demo.payment.paidAt,
           },
@@ -1096,8 +1105,8 @@ async function main() {
   const totalRooms = await prisma.room.count();
   const totalCategories = await prisma.roomCategory.count();
   const totalInvoices = await prisma.invoice.count();
-  const payments = await prisma.payment.findMany({ where: { status: PaymentStatus.RECORDED } });
-  const totalCollected = payments.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+  const receipts = await prisma.receipt.findMany({ where: { status: ReceiptStatus.RECORDED } });
+  const totalCollected = receipts.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
 
   console.log(`\nFINAL DEV DB COUNTS:`);
   console.log(`rooms=${totalRooms}, categories=${totalCategories}, invoices=${totalInvoices}, total collected=${totalCollected}`);

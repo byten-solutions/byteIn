@@ -8,7 +8,7 @@ import {
   AllocationStatus,
   RoomStatus,
   InvoiceStatus,
-  PaymentStatus,
+  ReceiptStatus,
   InvoiceItemType,
 } from "@prisma/client";
 import { AuthService } from "@/modules/auth/auth.service";
@@ -40,6 +40,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
   let receptionistToken: string;
   let testCustomerId: string;
   let testPropertyId: string;
+  let testAccountId: string;
   let testCategoryId: string;
   let adminRoleId: string;
   let receptionistRoleId: string;
@@ -112,17 +113,14 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
     });
 
     // 4. Test Customer
-    let customer = await prisma.customer.findFirst();
-    if (!customer) {
-      customer = await prisma.customer.create({
-        data: {
-          firstName: "Audit",
-          lastName: "Guest",
-          phone: "9988776655",
-          email: "audit.guest@example.com",
-        },
-      });
-    }
+    const customer = await prisma.customer.create({
+      data: {
+        firstName: "Batch3",
+        lastName: "Guest",
+        phone: `99${Date.now().toString().slice(-8)}`,
+        email: `batch3.guest.${Date.now()}.${Math.floor(Math.random() * 10000)}@example.com`,
+      },
+    });
     testCustomerId = customer.id;
 
     // 5. Test Property & Category & Room
@@ -136,6 +134,22 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       });
     }
     testPropertyId = property.id;
+
+    let account = await prisma.financialAccount.findFirst({
+      where: { propertyId: testPropertyId },
+    });
+    if (!account) {
+      account = await prisma.financialAccount.create({
+        data: {
+          propertyId: testPropertyId,
+          accountName: "Main Operating Cash Drawer",
+          accountType: "CASH",
+          isDefault: true,
+          isActive: true,
+        },
+      });
+    }
+    testAccountId = account.id;
 
     let category = await prisma.roomCategory.findFirst({
       where: { basePrice: { gte: 3000 } },
@@ -223,22 +237,22 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               itemType: InvoiceItemType.ROOM_CHARGE,
             },
           },
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 1000,
-              paymentMethod: "CASH",
+              paymentMethodCode: "CASH",
               referenceNumber: "CASH-SAME-01",
-              status: PaymentStatus.RECORDED,
+              status: ReceiptStatus.RECORDED,
               paidAt: today,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { payments: true },
+        include: { receipts: true },
       });
 
-      const payment = inv.payments[0]!;
+      const payment = inv.receipts[0]!;
 
       // Receptionist voids payment recorded today with reason
       const req = new NextRequest(
@@ -261,8 +275,8 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       const json = await res.json();
       assert.equal(json.success, true);
 
-      const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
-      assert.equal(checkPayment?.status, PaymentStatus.VOIDED);
+      const checkPayment = await prisma.receipt.findUnique({ where: { id: payment.id } });
+      assert.equal(checkPayment?.status, ReceiptStatus.VOIDED);
       assert.equal(checkPayment?.voidReason, "Customer requested card refund");
       assert.ok(checkPayment?.voidedAt);
       assert.equal(checkPayment?.voidedBy, receptionistUserId);
@@ -290,21 +304,21 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           taxTotal: 0,
           discountTotal: 0,
           grandTotal: 1000,
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 500,
-              paymentMethod: "CASH",
-              status: PaymentStatus.RECORDED,
+              paymentMethodCode: "CASH",
+              status: ReceiptStatus.RECORDED,
               paidAt: today,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { payments: true },
+        include: { receipts: true },
       });
 
-      const payment = inv.payments[0]!;
+      const payment = inv.receipts[0]!;
 
       // 1. Missing body/reason entirely
       const reqMissing = new NextRequest(
@@ -374,22 +388,22 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               itemType: InvoiceItemType.ROOM_CHARGE,
             },
           },
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 1000,
-              paymentMethod: "CASH",
+              paymentMethodCode: "CASH",
               referenceNumber: "CASH-OLD-01",
-              status: PaymentStatus.RECORDED,
+              status: ReceiptStatus.RECORDED,
               paidAt: yesterday,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { payments: true },
+        include: { receipts: true },
       });
 
-      const payment = inv.payments[0]!;
+      const payment = inv.receipts[0]!;
 
       // Receptionist tries to void past-day payment
       const req = new NextRequest(
@@ -416,8 +430,8 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       );
 
       // Payment must remain RECORDED
-      const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
-      assert.equal(checkPayment?.status, PaymentStatus.RECORDED);
+      const checkPayment = await prisma.receipt.findUnique({ where: { id: payment.id } });
+      assert.equal(checkPayment?.status, ReceiptStatus.RECORDED);
     });
 
     it("allows administrator to void an older payment recorded on a past business day", async () => {
@@ -453,22 +467,22 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               itemType: InvoiceItemType.ROOM_CHARGE,
             },
           },
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 1000,
-              paymentMethod: "CASH",
+              paymentMethodCode: "CASH",
               referenceNumber: "CASH-ADM-01",
-              status: PaymentStatus.RECORDED,
+              status: ReceiptStatus.RECORDED,
               paidAt: pastDay,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { payments: true },
+        include: { receipts: true },
       });
 
-      const payment = inv.payments[0]!;
+      const payment = inv.receipts[0]!;
 
       // Admin voids past-day payment with reason
       const req = new NextRequest(
@@ -488,8 +502,8 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
       });
 
       assert.equal(res.status, 200, "Past-day payment void by administrator must succeed with HTTP 200");
-      const checkPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
-      assert.equal(checkPayment?.status, PaymentStatus.VOIDED);
+      const checkPayment = await prisma.receipt.findUnique({ where: { id: payment.id } });
+      assert.equal(checkPayment?.status, ReceiptStatus.VOIDED);
       assert.equal(checkPayment?.voidReason, "Admin approved older ledger reversal");
       assert.equal(checkPayment?.voidedBy, adminUserId);
     });
@@ -520,22 +534,22 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
           taxTotal: 0,
           discountTotal: 0,
           grandTotal: 1500,
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 1500,
-              paymentMethod: "CASH",
+              paymentMethodCode: "CASH",
               referenceNumber: "CASH-SHIFT-01",
-              status: PaymentStatus.RECORDED,
+              status: ReceiptStatus.RECORDED,
               paidAt: pastShift,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { payments: true },
+        include: { receipts: true },
       });
 
-      const payment = inv.payments[0]!;
+      const payment = inv.receipts[0]!;
 
       // 2. Query past shift collection report BEFORE the void
       const reportPastBefore = await ReportsService.getShiftCollections(pastShiftIso);
@@ -1291,18 +1305,18 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               itemType: InvoiceItemType.ROOM_CHARGE,
             },
           },
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 500,
-              paymentMethod: "CASH",
-              status: PaymentStatus.RECORDED,
+              paymentMethodCode: "CASH",
+              status: ReceiptStatus.RECORDED,
               paidAt: today,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { items: true, payments: true },
+        include: { items: true, receipts: true },
       });
 
       const itemId = inv.items[0]!.id;
@@ -1448,18 +1462,18 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
               itemType: InvoiceItemType.ROOM_CHARGE,
             },
           },
-          payments: {
+          receipts: {
             create: {
-              propertyId: testPropertyId,
+              accountId: testAccountId,
               amount: 500,
-              paymentMethod: "CASH",
-              status: PaymentStatus.RECORDED,
+              paymentMethodCode: "CASH",
+              status: ReceiptStatus.RECORDED,
               paidAt: today,
               createdBy: receptionistUserId,
             },
           },
         },
-        include: { items: true, payments: true },
+        include: { items: true, receipts: true },
       });
 
       // Attempt to ADD an extra charge item (allowed)
@@ -1510,6 +1524,11 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
   });
 
   after(async () => {
+    // Cleanup temporary customer
+    if (testCustomerId) {
+      await prisma.customer.delete({ where: { id: testCustomerId } }).catch(() => {});
+    }
+
     // Cleanup temporary users created by Batch 3 tests
     await prisma.user.deleteMany({
       where: {

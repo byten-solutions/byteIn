@@ -232,6 +232,12 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
       where: { reservationId: res3.id },
       data: { status: AllocationStatus.CANCELLED },
     })
+
+    // Set Res 1 & Res 2 allocations to CHECKED_OUT for historical occupancy calculation
+    await prisma.reservationRoom.updateMany({
+      where: { reservationId: { in: [res1.id, res2.id] } },
+      data: { status: AllocationStatus.CHECKED_OUT },
+    })
   })
 
   after(async () => {
@@ -242,8 +248,13 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
       },
     })
 
-    await prisma.payment.deleteMany({
-      where: { createdBy: testStaffUserId },
+    await prisma.receipt.deleteMany({
+      where: {
+        OR: [
+          { createdBy: testStaffUserId },
+          { invoice: { reservation: { createdBy: testStaffUserId } } },
+        ],
+      },
     })
 
     await prisma.invoiceItem.deleteMany({
@@ -288,6 +299,14 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
 
     await prisma.building.deleteMany({
       where: { id: testBuildingId },
+    })
+
+    await prisma.financialAccount.deleteMany({
+      where: { propertyId: testPropertyId },
+    })
+
+    await prisma.paymentMethod.deleteMany({
+      where: { propertyId: testPropertyId },
     })
 
     await prisma.property.deleteMany({

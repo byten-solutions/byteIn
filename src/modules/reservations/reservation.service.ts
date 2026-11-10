@@ -6,7 +6,7 @@ import {
   ReservationStatus,
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { BillingService } from "../billing/billing.service";
@@ -806,7 +806,7 @@ export class ReservationService {
         },
         invoices: {
           include: {
-            payments: { where: { status: PaymentStatus.RECORDED } },
+            receipts: { where: { status: ReceiptStatus.RECORDED } },
           },
         },
       },
@@ -840,7 +840,7 @@ export class ReservationService {
 
     // Policy check: Cancelling with recorded payments requires void/refund or ADMIN
     const recordedPaymentsCount = (reservation.invoices || []).reduce(
-      (sum, inv) => sum + (inv.payments?.length || 0),
+      (sum, inv) => sum + (inv.receipts?.length || 0),
       0
     );
 
@@ -899,13 +899,13 @@ export class ReservationService {
           },
         });
         const invIds = (reservation.invoices || []).map((i) => i.id);
-        await tx.payment.updateMany({
+        await tx.receipt.updateMany({
           where: {
             invoiceId: { in: invIds },
-            status: PaymentStatus.RECORDED,
+            status: ReceiptStatus.RECORDED,
           },
           data: {
-            status: PaymentStatus.VOIDED,
+            status: ReceiptStatus.VOIDED,
           },
         });
       }
@@ -1084,7 +1084,7 @@ export class ReservationService {
             status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID] },
           },
           include: {
-            payments: { where: { status: PaymentStatus.RECORDED } },
+            receipts: { where: { status: ReceiptStatus.RECORDED } },
             items: true,
           },
         });
@@ -1142,7 +1142,7 @@ export class ReservationService {
               newSubtotal.sub(activeInvoice.discountTotal).add(activeInvoice.taxTotal)
             );
 
-            const totalPaid = activeInvoice.payments.reduce(
+            const totalPaid = activeInvoice.receipts.reduce(
               (sum, p) => sum.add(p.amount),
               new Prisma.Decimal(0)
             );
@@ -1276,7 +1276,7 @@ export class ReservationService {
           status: { in: [InvoiceStatus.DRAFT, InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID] },
         },
         include: {
-          payments: { where: { status: PaymentStatus.RECORDED } },
+          receipts: { where: { status: ReceiptStatus.RECORDED } },
           items: true,
         },
       });
@@ -1317,7 +1317,7 @@ export class ReservationService {
           newSubtotal.sub(activeInvoice.discountTotal).add(activeInvoice.taxTotal)
         );
 
-        const totalPaid = activeInvoice.payments.reduce(
+        const totalPaid = activeInvoice.receipts.reduce(
           (sum, p) => sum.add(p.amount),
           new Prisma.Decimal(0)
         );

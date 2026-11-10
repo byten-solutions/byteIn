@@ -3,7 +3,7 @@ import {
   ReservationStatus,
   AllocationStatus,
   InvoiceStatus,
-  PaymentStatus,
+  ReceiptStatus,
   InvoiceItemType,
   RoomStatus,
 } from "@prisma/client"
@@ -367,9 +367,10 @@ export class ReportsService {
         SELECT
           COUNT(*)::int as payment_count,
           COALESCE(SUM(amount), 0) as total_collected
-        FROM payments
+        FROM receipts
         WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
           AND status = 'RECORDED'
+          AND invoice_id IS NOT NULL
           ${payPropertySql}
       ),
       out_summary AS (
@@ -379,7 +380,7 @@ export class ReportsService {
         FROM invoices inv
         LEFT JOIN LATERAL (
           SELECT SUM(amount) as paid
-          FROM payments
+          FROM receipts
           WHERE invoice_id = inv.id AND status = 'RECORDED'
         ) p ON true
         WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
@@ -400,14 +401,15 @@ export class ReportsService {
       ),
       method_summary AS (
         SELECT
-          payment_method::text as method,
+          payment_method_code::text as method,
           COUNT(*)::int as count,
           COALESCE(SUM(amount), 0) as amount
-        FROM payments
+        FROM receipts
         WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
           AND status = 'RECORDED'
+          AND invoice_id IS NOT NULL
           ${payPropertySql}
-        GROUP BY payment_method
+        GROUP BY payment_method_code
       ),
       daily_inv AS (
         SELECT
@@ -423,9 +425,10 @@ export class ReportsService {
         SELECT
           to_char(paid_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day_key,
           SUM(amount) as collected
-        FROM payments
+        FROM receipts
         WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
           AND status = 'RECORDED'
+          AND invoice_id IS NOT NULL
           ${payPropertySql}
         GROUP BY 1
       ),
@@ -463,9 +466,10 @@ export class ReportsService {
             ) inv ON inv.property_id = p.id
             LEFT JOIN (
               SELECT property_id, SUM(amount) as total_collected
-              FROM payments
+              FROM receipts
               WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
                 AND status = 'RECORDED'
+                AND invoice_id IS NOT NULL
               GROUP BY property_id
             ) pay ON pay.property_id = p.id
             ORDER BY p.name ASC
@@ -870,7 +874,7 @@ export class ReportsService {
             COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
             GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
           FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
+          LEFT JOIN receipts p ON p.invoice_id = i.id
           WHERE i.reservation_id = res.id
             AND i.status != 'VOID'
           GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
@@ -951,7 +955,7 @@ export class ReportsService {
             COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)::text AS "totalPaid",
             GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0))::text AS "balanceDue"
           FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
+          LEFT JOIN receipts p ON p.invoice_id = i.id
           WHERE i.reservation_id IN (${Prisma.join(resIds)})
             AND i.status != 'VOID'
           GROUP BY i.id, i.reservation_id, i.invoice_number, i.grand_total, i.created_at
@@ -1054,7 +1058,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1080,7 +1084,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1107,7 +1111,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1133,7 +1137,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1154,7 +1158,7 @@ export class ReportsService {
 
       if (inv) {
         grandTotal = inv.grandTotal.toFixed(2)
-        const paidDec = inv.payments.reduce(
+        const paidDec = inv.receipts.reduce(
           (sum, p) => sum.add(p.amount),
           new Prisma.Decimal(0)
         )
@@ -1575,14 +1579,14 @@ export class ReportsService {
         SELECT
           p.id as payment_id,
           p.amount,
-          p.payment_method,
+          p.payment_method_code as payment_method,
           CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END as effective_staff_id,
           CASE 
             WHEN p.status = 'RECORDED' THEN p.amount
             WHEN p.status = 'VOIDED' AND p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} THEN -p.amount
             ELSE p.amount
           END as effective_amount
-        FROM payments p
+        FROM receipts p
         WHERE (
           (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
           OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
@@ -1682,7 +1686,7 @@ export class ReportsService {
       amount: Prisma.Decimal
       payment_method: string
       reference_number: string | null
-      status: PaymentStatus
+      status: ReceiptStatus
       paid_at: Date
       voided_at: Date | null
       void_reason: string | null
@@ -1701,7 +1705,7 @@ export class ReportsService {
         p.id as payment_id,
         p.invoice_id,
         p.amount,
-        p.payment_method::text,
+        p.payment_method_code::text as payment_method,
         p.reference_number,
         p.status,
         p.paid_at,
@@ -1722,7 +1726,7 @@ export class ReportsService {
           JOIN rooms rm ON rm.id = rr.room_id
           WHERE rr.reservation_id = r.id
         ) as room_numbers
-      FROM payments p
+      FROM receipts p
       JOIN users u ON u.id = p.created_by
       LEFT JOIN users vu ON vu.id = p.voided_by
       JOIN invoices inv ON inv.id = p.invoice_id
@@ -1739,7 +1743,7 @@ export class ReportsService {
     `
 
     const transactions: PaymentTransactionDTO[] = txRows.map((tx) => {
-      const isVoid = tx.status === PaymentStatus.VOIDED
+      const isVoid = tx.status === ReceiptStatus.VOIDED
       const effectiveUser = isVoid && tx.voided_by ? tx.voided_by : tx.created_by
       const effectiveUserName = isVoid ? (tx.voider_name || tx.creator_name || "System Staff") : (tx.creator_name || "System Staff")
       const guestName = tx.first_name ? `${tx.first_name} ${tx.last_name || ""}`.trim() : "Direct Folio"
@@ -1817,7 +1821,7 @@ export class ReportsService {
           FROM invoices i
           LEFT JOIN LATERAL (
             SELECT SUM(amount) AS paid 
-            FROM payments 
+            FROM receipts 
             WHERE invoice_id = i.id AND status = 'RECORDED'
           ) p ON true
           LEFT JOIN LATERAL (
@@ -1940,7 +1944,7 @@ export class ReportsService {
       JOIN customers c ON c.id = r.customer_id
       LEFT JOIN LATERAL (
         SELECT SUM(amount) AS paid 
-        FROM payments 
+        FROM receipts 
         WHERE invoice_id = i.id AND status = 'RECORDED'
       ) p ON true
       LEFT JOIN LATERAL (

@@ -266,14 +266,14 @@ describe("Multi-Hotel Isolation & Access Control Tests", () => {
   after(async () => {
     // Clean up created entities safely
     if (reservationAId) {
-      await prisma.payment.deleteMany({ where: { invoice: { reservationId: reservationAId } } });
+      await prisma.receipt.deleteMany({ where: { invoice: { reservationId: reservationAId } } });
       await prisma.invoiceItem.deleteMany({ where: { invoice: { reservationId: reservationAId } } });
       await prisma.invoice.deleteMany({ where: { reservationId: reservationAId } });
       await prisma.reservationRoom.deleteMany({ where: { reservationId: reservationAId } });
       await prisma.reservation.deleteMany({ where: { id: reservationAId } });
     }
     if (reservationBId) {
-      await prisma.payment.deleteMany({ where: { invoice: { reservationId: reservationBId } } });
+      await prisma.receipt.deleteMany({ where: { invoice: { reservationId: reservationBId } } });
       await prisma.invoiceItem.deleteMany({ where: { invoice: { reservationId: reservationBId } } });
       await prisma.invoice.deleteMany({ where: { reservationId: reservationBId } });
       await prisma.reservationRoom.deleteMany({ where: { reservationId: reservationBId } });
@@ -757,7 +757,7 @@ describe("Multi-Hotel Isolation & Access Control Tests", () => {
       assert.equal(custDetails.id, customerC.id);
 
       // Clean up Customer C booking and room
-      await prisma.payment.deleteMany({ where: { invoice: { reservationId: resCA.id } } });
+      await prisma.receipt.deleteMany({ where: { invoice: { reservationId: resCA.id } } });
       await prisma.invoiceItem.deleteMany({ where: { invoice: { reservationId: resCA.id } } });
       await prisma.invoice.deleteMany({ where: { reservationId: resCA.id } });
       await prisma.reservationRoom.deleteMany({ where: { reservationId: resCA.id } });
@@ -787,13 +787,13 @@ describe("Multi-Hotel Isolation & Access Control Tests", () => {
       assert.equal(Number(invDrift[0]?.count ?? 0), 0, "No invoice property drift permitted");
     });
 
-    it("invariant drift check: all payments have property_id matching invoice.property_id", async () => {
+    it("invariant drift check: all receipts have property_id matching invoice.property_id", async () => {
       const payDrift = await prisma.$queryRaw<Array<{ count: bigint }>>`
-        SELECT count(*)::bigint as count FROM payments p
-        JOIN invoices i ON p.invoice_id = i.id
-        WHERE p.property_id != i.property_id;
+        SELECT count(*)::bigint as count FROM receipts r
+        JOIN invoices i ON r.invoice_id = i.id
+        WHERE r.property_id != i.property_id;
       `;
-      assert.equal(Number(payDrift[0]?.count ?? 0), 0, "No payment property drift permitted");
+      assert.equal(Number(payDrift[0]?.count ?? 0), 0, "No receipt property drift permitted");
     });
 
     it("cache isolation: write in hotel A does not invalidate or corrupt hotel B cached summaries", async () => {

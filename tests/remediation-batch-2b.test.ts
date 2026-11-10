@@ -19,7 +19,7 @@ import {
   AllocationStatus,
   RoomStatus,
   InvoiceStatus,
-  PaymentStatus,
+  ReceiptStatus,
   InvoiceItemType,
 } from "@prisma/client";
 
@@ -27,6 +27,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
   let adminToken: string;
   let receptionistToken: string;
   let testPropertyId: string;
+  let testAccountId: string;
   let testCategoryId: string;
   let testCustomerId: string;
   let _adminUserId: string;
@@ -54,9 +55,13 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     _adminUserId = adminUser.id;
     receptionistUserId = receptionistUser.id;
 
+    const property = await prisma.property.findFirst();
+    assert.ok(property);
+    testPropertyId = property.id;
+
     await prisma.user.updateMany({
       where: { id: { in: [adminUser.id, receptionistUser.id] } },
-      data: { mustChangePassword: false },
+      data: { mustChangePassword: false, propertyId: testPropertyId },
     });
 
     adminToken = await AuthService.createSessionToken({
@@ -64,6 +69,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
       email: adminUser.email,
       name: adminUser.name,
       role: RoleName.ADMIN,
+      propertyId: testPropertyId,
     });
 
     receptionistToken = await AuthService.createSessionToken({
@@ -71,11 +77,14 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
       email: receptionistUser.email,
       name: receptionistUser.name,
       role: RoleName.RECEPTIONIST,
+      propertyId: testPropertyId,
     });
 
-    const property = await prisma.property.findFirst();
-    assert.ok(property);
-    testPropertyId = property.id;
+    const account = await prisma.financialAccount.findFirst({
+      where: { propertyId: testPropertyId },
+    });
+    assert.ok(account);
+    testAccountId = account.id;
 
     const category = await prisma.roomCategory.findFirst({
       where: { propertyId: testPropertyId },
@@ -117,8 +126,8 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
   }
 
   after(async () => {
-    // Cleanup created payments, invoice items, invoices, allocations, reservations, rooms, customers
-    await prisma.payment.deleteMany({
+    // Cleanup created receipts, invoice items, invoices, allocations, reservations, rooms, customers
+    await prisma.receipt.deleteMany({
       where: {
         invoice: {
           reservation: {
@@ -477,12 +486,12 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
             lineTotal: 2000,
           },
         },
-        payments: {
+        receipts: {
           create: {
-            propertyId: testPropertyId,
+            accountId: testAccountId,
             amount: 1000,
-            paymentMethod: "CASH",
-            status: PaymentStatus.RECORDED,
+            paymentMethodCode: "CASH",
+            status: ReceiptStatus.RECORDED,
             paidAt: new Date(),
             createdBy: receptionistUserId,
           },
@@ -786,12 +795,12 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
             lineTotal: 4000,
           },
         },
-        payments: {
+        receipts: {
           create: {
-            propertyId: testPropertyId,
+            accountId: testAccountId,
             amount: 2500,
-            paymentMethod: "CREDIT_CARD",
-            status: PaymentStatus.RECORDED,
+            paymentMethodCode: "CARD",
+            status: ReceiptStatus.RECORDED,
             paidAt: new Date(),
             createdBy: receptionistUserId,
           },
@@ -1195,19 +1204,19 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
             itemType: InvoiceItemType.ROOM_CHARGE,
           },
         },
-        payments: {
+        receipts: {
           create: {
-            propertyId: testPropertyId,
+            accountId: testAccountId,
             amount: 1500,
-            paymentMethod: "CASH",
+            paymentMethodCode: "CASH",
             referenceNumber: "CASH-ADMCAN-01",
-            status: PaymentStatus.RECORDED,
+            status: ReceiptStatus.RECORDED,
             createdBy: receptionistUserId,
             paidAt: new Date(),
           },
         },
       },
-      include: { payments: true },
+      include: { receipts: true },
     });
 
     // Admin cancels reservation
@@ -1230,10 +1239,10 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
     const refreshedRes = await prisma.reservation.findUnique({ where: { id: reservation.id } });
     assert.equal(refreshedRes?.status, ReservationStatus.CANCELLED);
 
-    // Invoice remains PARTIALLY_PAID (not voided) and payment remains RECORDED as credit balance
+    // Invoice remains PARTIALLY_PAID (not voided) and receipt remains RECORDED as credit balance
     const refreshedInv = await prisma.invoice.findUnique({
       where: { id: invoice.id },
-      include: { payments: true },
+      include: { receipts: true },
     });
     assert.ok(refreshedInv);
     assert.equal(
@@ -1242,8 +1251,8 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
       "Invoice with recorded payments must retain its status when cancelled by admin"
     );
     assert.equal(
-      refreshedInv.payments[0]?.status,
-      PaymentStatus.RECORDED,
+      refreshedInv.receipts[0]?.status,
+      ReceiptStatus.RECORDED,
       "Payment must remain RECORDED as guest credit balance"
     );
   });

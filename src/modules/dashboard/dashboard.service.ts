@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { RoomStatus, ReservationStatus, PaymentStatus } from "@prisma/client";
+import { RoomStatus, ReservationStatus, ReceiptStatus } from "@prisma/client";
 
 export interface HotelDashboardStats {
   total: number;
@@ -117,9 +117,9 @@ export class DashboardService {
       prisma.reservation.count({
         where: { status: ReservationStatus.CONFIRMED },
       }),
-      prisma.payment.aggregate({
+      prisma.receipt.aggregate({
         _sum: { amount: true },
-        where: { status: PaymentStatus.RECORDED },
+        where: { status: ReceiptStatus.RECORDED },
       }),
     ]);
 

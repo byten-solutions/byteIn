@@ -4,7 +4,7 @@ import {
   RoomStatus,
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
   ReservationStatus,
   AllocationStatus,
   Prisma,
@@ -284,6 +284,21 @@ async function main() {
       phone: `+91 ${randomInt(80, 99)} ${randomInt(4000, 4999)} ${randomInt(1000, 9999)}`,
       email: `reservations@${p.code.toLowerCase()}.byteninn.com`,
       status: "ACTIVE",
+    })),
+  });
+
+  const accountByProperty = new Map<string, string>();
+  for (const p of properties) {
+    accountByProperty.set(p.id, generateId("acc"));
+  }
+  await prisma.financialAccount.createMany({
+    data: properties.map((p) => ({
+      id: accountByProperty.get(p.id)!,
+      propertyId: p.id,
+      accountName: "Main Operating Drawer",
+      accountType: "CASH",
+      isDefault: true,
+      isActive: true,
     })),
   });
 
@@ -716,10 +731,11 @@ async function main() {
     id: string;
     invoiceId: string;
     propertyId: string;
+    accountId: string;
     amount: Prisma.Decimal;
     paymentMethod: string;
     referenceNumber: string;
-    status: PaymentStatus;
+    status: ReceiptStatus;
     paidAt: Date;
     createdBy: string;
     createdAt: Date;
@@ -910,16 +926,17 @@ async function main() {
         });
       }
 
-      // 4. Create Payments
+      // 4. Create Payments / Receipts
       if (invStatus === InvoiceStatus.PAID) {
         allPayments.push({
           id: generateId("pay"),
           invoiceId: invId,
           propertyId: room.propertyId,
+          accountId: accountByProperty.get(room.propertyId)!,
           amount: grandTotal,
           paymentMethod: randomChoice(["CREDIT_CARD", "UPI", "BANK_TRANSFER", "CASH"]),
           referenceNumber: `TXN-${randomInt(10000000, 99999999)}`,
-          status: PaymentStatus.RECORDED,
+          status: ReceiptStatus.RECORDED,
           paidAt: departureDate,
           createdBy: receptionistUser.id,
           createdAt: departureDate,
@@ -930,10 +947,11 @@ async function main() {
           id: generateId("pay"),
           invoiceId: invId,
           propertyId: room.propertyId,
+          accountId: accountByProperty.get(room.propertyId)!,
           amount: advanceAmount,
           paymentMethod: randomChoice(["CREDIT_CARD", "UPI"]),
           referenceNumber: `DEP-${randomInt(10000000, 99999999)}`,
-          status: PaymentStatus.RECORDED,
+          status: ReceiptStatus.RECORDED,
           paidAt: bookingCreatedAt,
           createdBy: receptionistUser.id,
           createdAt: bookingCreatedAt,
@@ -1020,15 +1038,16 @@ async function main() {
     });
   });
 
-  // Insert Payments
-  await insertChunks("Payments", allPayments, CONFIG.CHUNK_SIZE, async (chunk) => {
-    await prisma.payment.createMany({
+  // Insert Receipts
+  await insertChunks("Receipts", allPayments, CONFIG.CHUNK_SIZE, async (chunk) => {
+    await prisma.receipt.createMany({
       data: chunk.map((p) => ({
         id: p.id,
         invoiceId: p.invoiceId,
         propertyId: p.propertyId,
+        accountId: p.accountId,
         amount: p.amount,
-        paymentMethod: p.paymentMethod,
+        paymentMethodCode: p.paymentMethod,
         referenceNumber: p.referenceNumber,
         status: p.status,
         paidAt: p.paidAt,

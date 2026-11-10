@@ -5,7 +5,7 @@ import { scopedCached, invalidateScoped } from "@/lib/scoped-cache";
 import {
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
   RoleName,
   Prisma,
 } from "@prisma/client";
@@ -30,7 +30,7 @@ type InvoiceWithRelations = Prisma.InvoiceGetPayload<{
       };
     };
     items: true;
-    payments: {
+    receipts: {
       include: {
         creator: {
           select: { name: true; role: true };
@@ -38,7 +38,9 @@ type InvoiceWithRelations = Prisma.InvoiceGetPayload<{
       };
     };
   };
-}>;
+}> & {
+  customer?: Prisma.CustomerGetPayload<Prisma.CustomerDefaultArgs> | null;
+};
 
 export class BillingService {
   /**
@@ -82,7 +84,7 @@ export class BillingService {
       >`
         SELECT
           COALESCE((SELECT SUM(grand_total) FROM invoices WHERE status != 'VOID' ${inv}), 0)::text AS "totalInvoiced",
-          COALESCE((SELECT SUM(amount) FROM payments WHERE status = 'RECORDED' ${pay}), 0)::text AS "totalCollected"
+          COALESCE((SELECT SUM(amount) FROM receipts WHERE status = 'RECORDED' AND invoice_id IS NOT NULL ${pay}), 0)::text AS "totalCollected"
       `;
 
       const totalInvoicedDec = new Prisma.Decimal(rows[0]?.totalInvoiced || "0");
@@ -124,8 +126,9 @@ export class BillingService {
    * Formats a raw Prisma Invoice record into an InvoiceDetailDTO with calculated monetary balances.
    */
   private static formatInvoiceDetail(invoice: InvoiceWithRelations): InvoiceDetailDTO {
-    const validPayments = (invoice.payments || []).filter(
-      (p) => p.status === PaymentStatus.RECORDED
+    const receiptsList = invoice.receipts || [];
+    const validPayments = receiptsList.filter(
+      (p) => p.status === ReceiptStatus.RECORDED
     );
     const totalPaidDec = validPayments.reduce(
       (sum: Prisma.Decimal, p) => sum.add(p.amount),
@@ -139,7 +142,32 @@ export class BillingService {
 
     const customerName = invoice.reservation?.customer
       ? `${invoice.reservation.customer.firstName} ${invoice.reservation.customer.lastName || ""}`.trim()
-      : "Guest";
+      : invoice.customer
+      ? `${invoice.customer.firstName} ${invoice.customer.lastName || ""}`.trim()
+      : invoice.customerName || "Guest";
+
+    const customerEmail = invoice.reservation?.customer?.email || invoice.customer?.email || null;
+    const customerPhone = invoice.reservation?.customer?.phone || invoice.customer?.phone || null;
+
+    const formattedPayments = receiptsList.map((receipt) => ({
+      id: receipt.id,
+      invoiceId: receipt.invoiceId || invoice.id,
+      amount: new Prisma.Decimal(receipt.amount).toFixed(2),
+      paymentMethod: receipt.paymentMethodCode,
+      paymentMethodId: receipt.paymentMethodId,
+      accountId: receipt.accountId,
+      referenceNumber: receipt.referenceNumber,
+      status: receipt.status,
+      paidAt: receipt.paidAt.toISOString(),
+      createdBy: receipt.createdBy,
+      creatorName: receipt.creator
+        ? `${receipt.creator.name} (${receipt.creator.role?.name || "Staff"})`
+        : undefined,
+      voidReason: receipt.voidReason,
+      voidedAt: receipt.voidedAt ? receipt.voidedAt.toISOString() : null,
+      voidedBy: receipt.voidedBy,
+      createdAt: receipt.createdAt.toISOString(),
+    }));
 
     return {
       id: invoice.id,
@@ -147,10 +175,10 @@ export class BillingService {
       invoiceNumber: invoice.invoiceNumber,
       reservationId: invoice.reservationId,
       reservationNo: invoice.reservation?.reservationNo || "",
-      customerId: invoice.reservation?.customerId || "",
+      customerId: invoice.reservation?.customerId || invoice.customerId || "",
       customerName,
-      customerEmail: invoice.reservation?.customer?.email || null,
-      customerPhone: invoice.reservation?.customer?.phone || null,
+      customerEmail,
+      customerPhone,
       subtotal: new Prisma.Decimal(invoice.subtotal).toFixed(2),
       discountTotal: new Prisma.Decimal(invoice.discountTotal).toFixed(2),
       taxTotal: new Prisma.Decimal(invoice.taxTotal).toFixed(2),
@@ -172,20 +200,8 @@ export class BillingService {
         itemType: item.itemType,
         createdAt: item.createdAt.toISOString(),
       })),
-      payments: (invoice.payments || []).map((payment) => ({
-        id: payment.id,
-        invoiceId: payment.invoiceId,
-        amount: new Prisma.Decimal(payment.amount).toFixed(2),
-        paymentMethod: payment.paymentMethod,
-        referenceNumber: payment.referenceNumber,
-        status: payment.status,
-        paidAt: payment.paidAt.toISOString(),
-        createdBy: payment.createdBy,
-        creatorName: payment.creator
-          ? `${payment.creator.name} (${payment.creator.role?.name || "Staff"})`
-          : undefined,
-        createdAt: payment.createdAt.toISOString(),
-      })),
+      payments: formattedPayments,
+      receipts: formattedPayments,
     };
   }
 
@@ -193,7 +209,9 @@ export class BillingService {
     id: string;
     propertyId: string;
     invoiceNumber: string;
-    reservationId: string;
+    reservationId: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
     subtotal: Prisma.Decimal;
     discountTotal: Prisma.Decimal;
     taxTotal: Prisma.Decimal;
@@ -212,14 +230,20 @@ export class BillingService {
         phone: string | null;
       } | null;
     } | null;
-    payments: Array<{
+    customer?: {
+      firstName: string;
+      lastName: string | null;
+      email: string | null;
+      phone: string | null;
+    } | null;
+    receipts: Array<{
       id: string;
       amount: Prisma.Decimal;
-      status: PaymentStatus;
+      status: ReceiptStatus;
     }>;
   }): InvoiceDetailDTO {
-    const validPayments = (invoice.payments || []).filter(
-      (p) => p.status === PaymentStatus.RECORDED
+    const validPayments = (invoice.receipts || []).filter(
+      (p) => p.status === ReceiptStatus.RECORDED
     );
     const totalPaidDec = validPayments.reduce(
       (sum: Prisma.Decimal, p) => sum.add(p.amount),
@@ -233,7 +257,12 @@ export class BillingService {
 
     const customerName = invoice.reservation?.customer
       ? `${invoice.reservation.customer.firstName} ${invoice.reservation.customer.lastName || ""}`.trim()
-      : "Guest";
+      : invoice.customer
+      ? `${invoice.customer.firstName} ${invoice.customer.lastName || ""}`.trim()
+      : invoice.customerName || "Guest";
+
+    const customerEmail = invoice.reservation?.customer?.email || invoice.customer?.email || null;
+    const customerPhone = invoice.reservation?.customer?.phone || invoice.customer?.phone || null;
 
     return {
       id: invoice.id,
@@ -241,10 +270,10 @@ export class BillingService {
       invoiceNumber: invoice.invoiceNumber,
       reservationId: invoice.reservationId,
       reservationNo: invoice.reservation?.reservationNo || "",
-      customerId: invoice.reservation?.customerId || "",
+      customerId: invoice.reservation?.customerId || invoice.customerId || "",
       customerName,
-      customerEmail: invoice.reservation?.customer?.email || null,
-      customerPhone: invoice.reservation?.customer?.phone || null,
+      customerEmail,
+      customerPhone,
       subtotal: new Prisma.Decimal(invoice.subtotal).toFixed(2),
       discountTotal: new Prisma.Decimal(invoice.discountTotal).toFixed(2),
       taxTotal: new Prisma.Decimal(invoice.taxTotal).toFixed(2),
@@ -257,6 +286,7 @@ export class BillingService {
       updatedAt: invoice.updatedAt.toISOString(),
       items: [],
       payments: [],
+      receipts: [],
     };
   }
 
@@ -271,6 +301,9 @@ export class BillingService {
   ): Promise<InvoiceDetailDTO> {
     const invoice = await prisma.$transaction(async (tx) => {
       // 1. Fetch reservation and verify existence
+      if (!input.reservationId) {
+        throw new BadRequestError("Reservation ID is required");
+      }
       const reservation = await tx.reservation.findUnique({
         where: { id: input.reservationId },
         include: {
@@ -389,7 +422,7 @@ export class BillingService {
             },
           },
           items: true,
-          payments: {
+          receipts: {
             include: {
               creator: {
                 select: { name: true, role: true },
@@ -456,7 +489,7 @@ export class BillingService {
         items: {
           orderBy: { createdAt: "asc" },
         },
-        payments: {
+        receipts: {
           include: {
             creator: {
               select: { name: true, role: true },
@@ -498,7 +531,7 @@ export class BillingService {
         items: {
           orderBy: { createdAt: "asc" },
         },
-        payments: {
+        receipts: {
           include: {
             creator: {
               select: { name: true, role: true },
@@ -618,8 +651,8 @@ export class BillingService {
               },
             },
           },
-          payments: {
-            where: { status: PaymentStatus.RECORDED },
+          receipts: {
+            where: { status: ReceiptStatus.RECORDED },
             select: {
               id: true,
               amount: true,
@@ -665,7 +698,7 @@ export class BillingService {
         where: { id: invoiceId },
         include: {
           items: true,
-          payments: true,
+          receipts: true,
         },
       });
 
@@ -717,9 +750,9 @@ export class BillingService {
         newSubtotal.sub(invoice.discountTotal).add(invoice.taxTotal)
       );
 
-      // Recalculate status against existing recorded payments
-      const totalPaid = (invoice.payments || [])
-        .filter((p) => p.status === PaymentStatus.RECORDED)
+      // Recalculate status against existing recorded receipts
+      const totalPaid = (invoice.receipts || [])
+        .filter((p) => p.status === ReceiptStatus.RECORDED)
         .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
 
       let newStatus = invoice.status;
@@ -742,8 +775,9 @@ export class BillingService {
         },
         include: {
           reservation: { include: { customer: true } },
+          customer: true,
           items: true,
-          payments: {
+          receipts: {
             include: { creator: { select: { name: true, role: true } } },
           },
         },
@@ -801,7 +835,7 @@ export class BillingService {
 
       const invoice = await tx.invoice.findUnique({
         where: { id: invoiceId },
-        include: { items: true, payments: true },
+        include: { items: true, receipts: true },
       });
 
       if (!invoice) {
@@ -812,8 +846,8 @@ export class BillingService {
         throw new BadRequestError("Cannot edit items on a voided invoice");
       }
 
-      const hasPayments = (invoice.payments || []).some(
-        (p) => p.status === PaymentStatus.RECORDED
+      const hasPayments = (invoice.receipts || []).some(
+        (p) => p.status === ReceiptStatus.RECORDED
       );
       if (hasPayments) {
         throw new BadRequestError(
@@ -872,8 +906,8 @@ export class BillingService {
         newSubtotal.sub(invoice.discountTotal).add(invoice.taxTotal)
       );
 
-      const totalPaid = (invoice.payments || [])
-        .filter((p) => p.status === PaymentStatus.RECORDED)
+      const totalPaid = (invoice.receipts || [])
+        .filter((p) => p.status === ReceiptStatus.RECORDED)
         .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
 
       let newStatus = invoice.status;
@@ -896,8 +930,9 @@ export class BillingService {
         },
         include: {
           reservation: { include: { customer: true } },
+          customer: true,
           items: true,
-          payments: {
+          receipts: {
             include: { creator: { select: { name: true, role: true } } },
           },
         },
@@ -940,7 +975,7 @@ export class BillingService {
 
       const invoice = await tx.invoice.findUnique({
         where: { id: invoiceId },
-        include: { items: true, payments: true },
+        include: { items: true, receipts: true },
       });
 
       if (!invoice) {
@@ -951,8 +986,8 @@ export class BillingService {
         throw new BadRequestError("Cannot remove items from a voided invoice");
       }
 
-      const hasPayments = (invoice.payments || []).some(
-        (p) => p.status === PaymentStatus.RECORDED
+      const hasPayments = (invoice.receipts || []).some(
+        (p) => p.status === ReceiptStatus.RECORDED
       );
       if (hasPayments) {
         throw new BadRequestError(
@@ -983,8 +1018,8 @@ export class BillingService {
         newSubtotal.sub(invoice.discountTotal).add(invoice.taxTotal)
       );
 
-      const totalPaid = (invoice.payments || [])
-        .filter((p) => p.status === PaymentStatus.RECORDED)
+      const totalPaid = (invoice.receipts || [])
+        .filter((p) => p.status === ReceiptStatus.RECORDED)
         .reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
 
       let newStatus = invoice.status;
@@ -1007,8 +1042,9 @@ export class BillingService {
         },
         include: {
           reservation: { include: { customer: true } },
+          customer: true,
           items: true,
-          payments: {
+          receipts: {
             include: { creator: { select: { name: true, role: true } } },
           },
         },
@@ -1065,8 +1101,9 @@ export class BillingService {
         },
         include: {
           reservation: { include: { customer: true } },
+          customer: true,
           items: true,
-          payments: {
+          receipts: {
             include: { creator: { select: { name: true, role: true } } },
           },
         },
@@ -1107,15 +1144,16 @@ export class BillingService {
   }> {
     // Fast-path: Check Idempotency Key before opening transaction lock (ADV-BIL-04)
     if (input.idempotencyKey) {
-      const existingPayment = await prisma.payment.findUnique({
+      const existingPayment = await prisma.receipt.findUnique({
         where: { idempotencyKey: input.idempotencyKey.trim() },
         include: {
           creator: { select: { name: true, role: true } },
           invoice: {
             include: {
               reservation: { include: { customer: true } },
+              customer: true,
               items: true,
-              payments: {
+              receipts: {
                 include: { creator: { select: { name: true, role: true } } },
               },
             },
@@ -1123,15 +1161,15 @@ export class BillingService {
         },
       });
 
-      if (existingPayment) {
+      if (existingPayment && existingPayment.invoice) {
         if (propertyId && existingPayment.propertyId !== propertyId) {
           throw new NotFoundError("Invoice not found");
         }
         const formattedInvoice = this.formatInvoiceDetail(existingPayment.invoice);
-        const customer = existingPayment.invoice.reservation?.customer;
+        const customer = existingPayment.invoice.reservation?.customer || existingPayment.invoice.customer;
         const customerName = customer
           ? `${customer.firstName} ${customer.lastName || ""}`.trim()
-          : "Guest";
+          : existingPayment.invoice.customerName || "Guest";
 
         const roleName = existingPayment.creator?.role?.name || "Staff";
         const receipt: PaymentReceiptDTO = {
@@ -1143,7 +1181,7 @@ export class BillingService {
           customerEmail: customer?.email || null,
           customerPhone: customer?.phone || null,
           amountPaid: new Prisma.Decimal(existingPayment.amount).toFixed(2),
-          paymentMethod: existingPayment.paymentMethod,
+          paymentMethod: existingPayment.paymentMethodCode,
           referenceNumber: existingPayment.referenceNumber,
           paidAt: existingPayment.paidAt.toISOString(),
           recordedByName: existingPayment.creator
@@ -1182,8 +1220,8 @@ export class BillingService {
             issuedAt: true,
             invoiceNumber: true,
             reservationId: true,
-            payments: {
-              where: { status: PaymentStatus.RECORDED },
+            receipts: {
+              where: { status: ReceiptStatus.RECORDED },
               select: { amount: true },
             },
           },
@@ -1202,7 +1240,7 @@ export class BillingService {
         }
 
         const grandTotal = new Prisma.Decimal(invoice.grandTotal);
-        const existingPaid = (invoice.payments || []).reduce(
+        const existingPaid = (invoice.receipts || []).reduce(
           (sum, p) => sum.add(p.amount),
           new Prisma.Decimal(0)
         );
@@ -1224,7 +1262,7 @@ export class BillingService {
 
         // Secondary idempotency check inside transaction to prevent race conditions
         if (input.idempotencyKey) {
-          const racePayment = await tx.payment.findUnique({
+          const racePayment = await tx.receipt.findUnique({
             where: { idempotencyKey: input.idempotencyKey.trim() },
             select: { id: true },
           });
@@ -1238,18 +1276,88 @@ export class BillingService {
 
         const now = input.paidAt ? new Date(input.paidAt) : new Date();
 
-        // 1. Create Payment record
-        const payment = await tx.payment.create({
+        // Resolve financial account
+        let targetAccountId = input.accountId?.trim() || null;
+        if (targetAccountId) {
+          const acc = await tx.financialAccount.findFirst({
+            where: { id: targetAccountId, propertyId: invoice.propertyId },
+            select: { id: true, isActive: true },
+          });
+          if (!acc) {
+            throw new BadRequestError(
+              "The specified financial account does not exist or belongs to another property."
+            );
+          }
+          if (!acc.isActive) {
+            throw new BadRequestError("The specified financial account is inactive.");
+          }
+        } else {
+          const defaultAcc =
+            (await tx.financialAccount.findFirst({
+              where: { propertyId: invoice.propertyId, isDefault: true, isActive: true },
+              select: { id: true },
+            })) ||
+            (await tx.financialAccount.findFirst({
+              where: { propertyId: invoice.propertyId, isActive: true },
+              select: { id: true },
+            }));
+          if (!defaultAcc) {
+            const fallbackAcc = await tx.financialAccount.create({
+              data: {
+                propertyId: invoice.propertyId,
+                accountName: "Operating Account",
+                accountType: "CASH",
+                isDefault: true,
+                isActive: true,
+              },
+              select: { id: true },
+            });
+            targetAccountId = fallbackAcc.id;
+          } else {
+            targetAccountId = defaultAcc.id;
+          }
+        }
+
+        const methodCode = input.paymentMethod.toUpperCase().trim();
+        let targetMethodId = input.paymentMethodId?.trim() || null;
+        if (targetMethodId) {
+          const pm = await tx.paymentMethod.findFirst({
+            where: { id: targetMethodId, propertyId: invoice.propertyId },
+            select: { id: true, isActive: true, code: true },
+          });
+          if (!pm) {
+            throw new BadRequestError(
+              "The specified payment method does not exist or belongs to another property."
+            );
+          }
+          if (!pm.isActive) {
+            throw new BadRequestError("The specified payment method is inactive.");
+          }
+        } else {
+          const matchedMethod = await tx.paymentMethod.findFirst({
+            where: { propertyId: invoice.propertyId, code: methodCode, isActive: true },
+            select: { id: true },
+          });
+          if (matchedMethod) {
+            targetMethodId = matchedMethod.id;
+          }
+        }
+
+        // 1. Create Receipt record
+        const payment = await tx.receipt.create({
           data: {
             invoiceId,
             propertyId: invoice.propertyId,
             amount: paymentAmount,
-            paymentMethod: input.paymentMethod.toUpperCase().trim(),
+            accountId: targetAccountId,
+            paymentMethodId: targetMethodId || null,
+            paymentMethodCode: methodCode,
             referenceNumber: input.referenceNumber?.trim() || null,
             idempotencyKey: input.idempotencyKey?.trim() || null,
-            status: PaymentStatus.RECORDED,
+            status: ReceiptStatus.RECORDED,
             paidAt: now,
             createdBy: staffUserId,
+            isLegacy: false,
           },
         });
 
@@ -1280,14 +1388,14 @@ export class BillingService {
         await tx.auditLog.create({
           data: {
             userId: staffUserId,
-            entityType: "Payment",
+            entityType: "Receipt",
             entityId: payment.id,
-            action: "PAYMENT_RECORDED",
+            action: "RECEIPT_RECORDED",
             newData: {
               invoiceId,
               invoiceNumber: invoice.invoiceNumber,
               amount: paymentAmount.toString(),
-              paymentMethod: payment.paymentMethod,
+              paymentMethod: payment.paymentMethodCode,
               newInvoiceStatus: newStatus,
               newTotalPaid: newTotalPaid.toString(),
               remainingBalance: newRemainingBalance.toString(),
@@ -1362,7 +1470,7 @@ export class BillingService {
 
     const result = await prisma.$transaction(
       async (tx) => {
-        const payment = await tx.payment.findUnique({
+        const payment = await tx.receipt.findUnique({
           where: { id: paymentId },
           include: {
             invoice: {
@@ -1372,6 +1480,7 @@ export class BillingService {
                     customer: true,
                   },
                 },
+                customer: true,
               },
             },
           },
@@ -1389,7 +1498,7 @@ export class BillingService {
           throw new BadRequestError("Payment does not belong to the specified invoice");
         }
 
-        if (payment.status === PaymentStatus.VOIDED) {
+        if (payment.status === ReceiptStatus.VOIDED) {
           throw new BadRequestError("Payment is already voided");
         }
 
@@ -1411,23 +1520,27 @@ export class BillingService {
           }
         }
 
+        if (!payment.invoiceId) {
+          throw new BadRequestError("Cannot void payment not linked to an invoice via this method");
+        }
+
         await tx.$queryRaw`SELECT "id" FROM "invoices" WHERE "id" = ${payment.invoiceId} FOR UPDATE`;
 
         const now = new Date();
-        await tx.payment.update({
+        await tx.receipt.update({
           where: { id: paymentId },
           data: {
-            status: PaymentStatus.VOIDED,
+            status: ReceiptStatus.VOIDED,
             voidReason,
             voidedAt: now,
             voidedBy: staffUserId,
           },
         });
 
-        const remainingPayments = await tx.payment.findMany({
+        const remainingPayments = await tx.receipt.findMany({
           where: {
             invoiceId: payment.invoiceId,
-            status: PaymentStatus.RECORDED,
+            status: ReceiptStatus.RECORDED,
           },
         });
 
@@ -1436,7 +1549,7 @@ export class BillingService {
           new Prisma.Decimal(0)
         );
 
-        const grandTotal = new Prisma.Decimal(payment.invoice.grandTotal);
+        const grandTotal = new Prisma.Decimal(payment.invoice?.grandTotal || 0);
 
         let newStatus: InvoiceStatus;
         if (newTotalPaid.greaterThanOrEqualTo(grandTotal)) {
@@ -1452,8 +1565,9 @@ export class BillingService {
           data: { status: newStatus },
           include: {
             reservation: { include: { customer: true } },
+            customer: true,
             items: true,
-            payments: {
+            receipts: {
               include: { creator: { select: { name: true, role: true } } },
             },
           },
@@ -1462,15 +1576,15 @@ export class BillingService {
         await tx.auditLog.create({
           data: {
             userId: staffUserId,
-            entityType: "Payment",
+            entityType: "Receipt",
             entityId: paymentId,
-            action: "PAYMENT_VOIDED",
+            action: "RECEIPT_VOIDED",
             oldData: {
               amount: payment.amount.toString(),
-              status: PaymentStatus.RECORDED,
+              status: ReceiptStatus.RECORDED,
             },
             newData: {
-              status: PaymentStatus.VOIDED,
+              status: ReceiptStatus.VOIDED,
               voidReason,
               voidedAt: now.toISOString(),
               voidedBy: staffUserId,

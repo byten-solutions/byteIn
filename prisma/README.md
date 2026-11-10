@@ -58,7 +58,12 @@ npx prisma migrate status
   - `reservation_rooms.booked_nightly_rate`
   - `invoices.subtotal`, `discount_total`, `tax_total`, `grand_total`
   - `invoice_items.unit_price`, `line_total`
-  - `payments.amount`
+  - `receipts.amount` (all incoming money)
+  - `payments.amount` (all outgoing money)
+  - `incomes.amount`
+  - `expenses.amount`
+  - `account_transfers.amount`
+  - `financial_accounts.opening_balance`
 - **Never use JavaScript `Number` or floating-point types** for financial calculations to prevent precision and rounding errors.
 - Always calculate balances and totals using the Prisma `Decimal` object methods or server-side decimal utilities.
 
@@ -66,20 +71,38 @@ npx prisma migrate status
 
 ## 5. Referential Integrity & Indexing Rules
 
-- **Foreign Keys**: Every foreign key must be indexed for query performance (e.g., `customer_id`, `room_id`, `reservation_id`, `invoice_id`).
+- **Foreign Keys**: Every foreign key must be indexed for query performance (e.g., `customer_id`, `room_id`, `reservation_id`, `invoice_id`, `account_id`, `payment_method_id`).
+- **Composite Multi-Property Isolation**: Financial entities enforce property isolation at the PostgreSQL constraint level using composite unique indexes and composite foreign keys:
+  - `receipts (property_id, invoice_id)` -> `invoices (property_id, id)`
+  - `receipts (property_id, income_id)` -> `incomes (property_id, id)`
+  - `receipts (property_id, account_id)` -> `financial_accounts (property_id, id)`
+  - `receipts (property_id, payment_method_id)` -> `payment_methods (property_id, id)`
+  - `payments (property_id, expense_id)` -> `expenses (property_id, id)`
+  - `payments (property_id, account_id)` -> `financial_accounts (property_id, id)`
+  - `payments (property_id, payment_method_id)` -> `payment_methods (property_id, id)`
+  - `account_transfers (property_id, from_account_id)` -> `financial_accounts (property_id, id)`
+  - `account_transfers (property_id, to_account_id)` -> `financial_accounts (property_id, id)`
 - **Unique Constraints**:
   - `users.email` (unique)
   - `reservations.reservation_no` (unique)
   - `invoices.invoice_number` (unique)
-  - `payments.idempotency_key` (unique nullable, preventing duplicate payments)
-  - Room numbers must be unique within their physical scope (e.g., `(building_id, room_no)`).
+  - `receipts.idempotency_key` (unique nullable, preventing duplicate receipts)
+  - `payments.idempotency_key` (unique nullable, preventing duplicate outgoing payments)
+  - Room numbers must be unique within their physical scope (`(building_id, room_no)`).
 - **Deletion Safety**: Financial and booking records strictly forbid cascading deletions (`onDelete: Restrict`):
   - `ReservationRoom.reservation` (`onDelete: Restrict`)
   - `InvoiceItem.invoice` (`onDelete: Restrict`)
   - `InvoiceItem.reservationRoom` (`onDelete: Restrict`)
   - `Invoice.reservation` (`onDelete: Restrict`)
-  - `Payment.invoice` (`onDelete: Restrict`)
-  - This prevents accidental deletion of reservations or invoices from wiping ledger and transaction history.
+  - `Receipt.invoice` (`onDelete: Restrict`)
+  - `Receipt.financialAccount` (`onDelete: Restrict`)
+  - `Payment.expense` (`onDelete: Restrict`)
+  - `Payment.financialAccount` (`onDelete: Restrict`)
+  - This prevents accidental deletion of reservations, invoices, or accounts from wiping ledger and transaction history.
+- **Database Check Constraints**:
+  - `chk_receipts_target_exclusive`: `invoice_id` and `income_id` are mutually exclusive.
+  - `chk_transfers_accounts_different`: `from_account_id <> to_account_id`.
+  - `chk_transfers_positive_amount`, `chk_payments_positive_amount`, `chk_receipts_positive_amount`: amounts must be strictly positive (`> 0`).
 
 ---
 
