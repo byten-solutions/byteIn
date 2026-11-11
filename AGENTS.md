@@ -138,6 +138,7 @@ Every AI agent and software engineer must adhere strictly to the conventions det
 4. **React & Next.js App Router**:
    - Server Components by default. Use `"use client"` only when interactive state, hooks, or browser APIs are required.
    - Keep UI components focused and thin; extract complex dialogs and table rows into separate focused components.
+   - Follow summary-first ergonomics with progressive disclosure: present immediate operational essentials clearly, keeping exhaustive breakdowns, secondary metadata, and transaction histories accessible via dedicated detail views rather than congested overviews or dialogs. Adhere to the interface archetypes defined in `docs/UI_UX_GUIDELINES.md`.
    - Preserve existing branding, theme tokens, Base UI primitives, and Tailwind CSS v4 styling.
 
 5. **Backend Architecture & Service Boundaries**:

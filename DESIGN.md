@@ -140,11 +140,16 @@ The palette operates in the OKLCH color space for perceptually uniform contrast:
 
 ### Do's
 - Always format currency, dates, invoice numbers, and room numbers with `font-mono tabular-nums`.
+- Design summary-first: show what users need to know first; reveal secondary details, itemized breakdowns, and transaction histories on demand via dedicated detail views (`/entity/[id]`).
+- Curate overview KPI cards based on operational significance and available screen space.
+- Preserve high tabular scanning density for room numbers, guest names, dates, amounts, and status badges in Listing tables.
 - Maintain contrast >= 4.5:1 for body copy and >= 3:1 for large display elements.
 - Keep operational actions reachable within 1–2 clicks from the main dispatch matrix.
 - Ensure light and dark mode parity across all views.
 
 ### Don'ts
+- ❌ Do NOT crowd overview screens or dialogs with secondary metadata, exhaustive breakdowns, or redundant micro-stats.
+- ❌ Do NOT embed running ledgers, past transaction histories, or multi-tab mini-apps inside modal dialogs.
 - ❌ Do NOT use gradient text.
 - ❌ Do NOT place kicker or eyebrow labels above headings.
 - ❌ Do NOT use same-size nested cards.

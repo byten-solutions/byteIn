@@ -35,7 +35,15 @@ Activate this skill whenever:
 - Is TypeScript strictness maintained with zero `any` types?
 - Are unused imports, variables, or unhandled promises absent?
 
-### D. Verification & Regression Protection
+### D. Frontend, UI Ergonomics & Progressive Disclosure
+- **Interface Archetype Discipline**: Does the component match its designated archetype (*Overview*, *Listing*, *Detail*, or *Dialog*) per `docs/UI_UX_GUIDELINES.md` §1.1?
+- **Information Overload & Missing Drill-Downs**: Are detailed transaction histories, full itemizations, or audit logs placed on dedicated detail views (`/entity/[id]`) rather than congesting overview screens?
+- **Modal Hygiene**: Is the dialog focused on a single transactional action? Does it avoid nested tables, running ledgers, redundant helper copy, and overcrowded button bars? Is there any risk of button/text overlap?
+- **KPI & Card Restraint**: Are KPI cards curated for high operational impact without crowding the view or repeating data visible in the primary table?
+- **Operational Scanning Preservation**: Are primary front-desk scanning columns (rooms, guest names, stay dates, amounts, status badges) fully preserved in tabular views without unnecessary decorative wrappers or nested cards?
+- **Drill-Down Navigation**: Do preview lists provide clear "View All" or detail links to dedicated records?
+
+### E. Verification & Regression Protection
 - Did `npm run validate` run with zero errors?
 - Are new automated tests present proving both happy paths and edge/adversarial cases?
 - Is living documentation updated if contracts or schemas changed?
@@ -47,7 +55,7 @@ Categorize all review findings strictly by severity:
 | :--- | :--- | :--- |
 | **BLOCKER / CRITICAL** | Security bypass, data loss, concurrency race condition, build breakage, or unhandled exception. | Must fix before merge/commit. |
 | **HIGH** | Missing server authorization, unvalidated input, floating-point money math, stale token access, or missing regression test. | Must fix before merge/commit. |
-| **MEDIUM** | Inefficient query, unpaginated response, missing UI feedback state, or code duplication across modules. | Should fix or formally defer. |
+| **MEDIUM** | Inefficient query, unpaginated response, missing UI feedback state, UI information overload / congested modal, missing drill-down, or code duplication across modules. | Should fix or formally defer. |
 | **LOW / NIT** | Minor naming inconsistency, comment typo, or non-critical formatting improvement. | Optional cleanup. |
 
 ## 4. Review Report Format

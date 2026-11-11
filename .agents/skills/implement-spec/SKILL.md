@@ -20,6 +20,9 @@ Before writing any code:
 2. Data Contracts & Prisma Schema: [docs/byteInn_Database_Design_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Database_Design_v1.md) and `prisma/schema.prisma`
 3. Request Flows & Module Logic: [docs/byteInn_Low_Level_Architecture_v1.md](file:///Users/apple/Byten/byteInn/docs/byteInn_Low_Level_Architecture_v1.md)
 4. Coding Standards: [docs/CODING_STANDARDS.md](file:///Users/apple/Byten/byteInn/docs/CODING_STANDARDS.md)
+5. Design System & Frontend Guidelines (when creating or modifying UI):
+   - Primary Specification: [docs/UI_UX_GUIDELINES.md](file:///Users/apple/Byten/byteInn/docs/UI_UX_GUIDELINES.md)
+   - Specialist Runbook: Activate [.agents/skills/design-system/SKILL.md](file:///Users/apple/Byten/byteInn/.agents/skills/design-system/SKILL.md)
 
 ## 3. Mandatory V1 Architectural Invariants
 - **Modular Monolith**: All backend code resides in `src/modules/<feature>/` and `src/app/api/...`. No external microservices or background queues.
@@ -42,7 +45,9 @@ Before writing any code:
    - Invoke domain service method.
    - Wrap error responses with `handleApiError(error)`.
 3. **Frontend Integration**:
-   - Create or update thin UI components consuming the API.
+   - Determine interface archetype (*Overview*, *Listing*, *Detail*, *Dialog*) per `docs/UI_UX_GUIDELINES.md` §1.1.
+   - Implement summary-first layouts with progressive disclosure; keep dialogs single-purpose and clean without embedded ledgers or button overlap.
+   - Preserve high-density operational columns in data tables for front-desk scanning.
    - Ensure backend-first pagination (`paginationQuerySchema`), search, and filtering.
 4. **Verification**:
    - Write automated tests in `tests/<feature>.test.ts`.
