@@ -87,7 +87,11 @@ npx prisma migrate status
   - `reservations.reservation_no` (unique)
   - `invoices.invoice_number` (unique)
   - `receipts.idempotency_key` (unique nullable, preventing duplicate receipts)
-  - `payments.idempotency_key` (unique nullable, preventing duplicate outgoing payments)
+  - `payments (property_id, idempotency_key)` (unique composite nullable index `payments_property_id_idempotency_key_key`, preventing duplicate outgoing disbursements per property)
+  - `financial_accounts (property_id, account_name)` (unique per property)
+  - `payment_methods (property_id, code)` (unique per property)
+  - `income_heads (property_id, code)` (unique per property)
+  - `expense_heads (property_id, code)` (unique per property)
   - Room numbers must be unique within their physical scope (`(building_id, room_no)`).
 - **Deletion Safety**: Financial and booking records strictly forbid cascading deletions (`onDelete: Restrict`):
   - `ReservationRoom.reservation` (`onDelete: Restrict`)
@@ -95,9 +99,16 @@ npx prisma migrate status
   - `InvoiceItem.reservationRoom` (`onDelete: Restrict`)
   - `Invoice.reservation` (`onDelete: Restrict`)
   - `Receipt.invoice` (`onDelete: Restrict`)
-  - `Receipt.financialAccount` (`onDelete: Restrict`)
+  - `Receipt.income` (`onDelete: Restrict`)
+  - `Receipt.account` (`onDelete: Restrict`)
+  - `Receipt.paymentMethod` (`onDelete: Restrict`)
+  - `Income.incomeHead` (`onDelete: Restrict`)
   - `Payment.expense` (`onDelete: Restrict`)
-  - `Payment.financialAccount` (`onDelete: Restrict`)
+  - `Payment.account` (`onDelete: Restrict`)
+  - `Payment.paymentMethod` (`onDelete: Restrict`)
+  - `Expense.expenseHead` (`onDelete: Restrict`)
+  - `AccountTransfer.fromAccount` (`onDelete: Restrict`)
+  - `AccountTransfer.toAccount` (`onDelete: Restrict`)
   - This prevents accidental deletion of reservations, invoices, or accounts from wiping ledger and transaction history.
 - **Database Check Constraints**:
   - `chk_receipts_target_exclusive`: `invoice_id` and `income_id` are mutually exclusive.

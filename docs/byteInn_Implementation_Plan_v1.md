@@ -96,6 +96,34 @@ Use clearly defined calculation rules for each report; do not treat room price, 
 - Production Dockerfile and docker-compose.yml orchestration (`DEP-002`)
 - Automated GitHub Actions CI workflow for test & build validation (`DEP-001`)
 
+### Financial Management Initiative — Phase 1: Database Foundation & Schema (Completed)
+- Designed and applied versioned Prisma migrations for financial entities: `financial_accounts`, `account_transfers`, `payment_methods`, `receipts`, `payments`, `income_heads`, `incomes`, `expense_heads`, and `expenses`.
+- Enforced PostgreSQL database check constraints: `chk_receipts_target_exclusive`, `chk_transfers_accounts_different`, positive amount checks (`amount > 0`).
+- Enforced composite foreign keys for property isolation: `(property_id, account_id)`, `(property_id, invoice_id)`, `(property_id, expense_id)`, `(property_id, from_account_id)`, etc.
+- Added unique indexes on `idempotency_key` across `receipts` and `payments`.
+- Migrated existing legacy invoice payments into unified `receipts` ledger with full backward compatibility.
+
+### Financial Management Initiative — Phase 2: Financial Accounts & Fund Transfers (Completed)
+- Domain services, validation schemas, and thin route handlers for `/api/financial-accounts` and `/api/account-transfers`.
+- Dynamic account statement generation calculating closing balance from baseline `opening_balance_date`.
+- Double-entry internal transfers with atomic serialization (`SELECT ... FOR UPDATE`), overdraft protection, and check constraint validation.
+- Financial Accounts management UI within `/finance`.
+
+### Financial Management Initiative — Phase 3: Direct Income Management (Completed)
+- Domain services, validation, and route handlers for `/api/income-heads` and `/api/incomes`.
+- Default income category heads seeding (`BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`) and custom category management.
+- Direct revenue recording with itemized receipt collection, idempotency replay, and account liquid balance updates.
+- Controlled two-stage voiding: active income cannot be voided directly without voiding individual receipts first.
+- Direct Income frontend UI with view switcher, receipts dialogs, and balance tracking.
+
+### Financial Management Initiative — Phase 4: Expense Management (Completed)
+- Domain services, validation, and route handlers for `/api/expense-heads` and `/api/expenses`.
+- Six approved default expense heads: `UTILITIES`, `MAINTENANCE`, `SUPPLIES`, `FOOD_BEVERAGE`, `STAFF_WELFARE`, and `MISC_EXPENSE`.
+- Expense disbursement with liquid account balance deduction, atomic overdraft prevention (`SELECT ... FOR UPDATE`), and insufficient funds rejection.
+- Idempotency key comparison with omitted server defaults support and PostgreSQL `23505` (Prisma `P2002`) race condition recovery outside aborted transactions.
+- Controlled two-stage voiding: an expense with active disbursements cannot be voided directly; voiding a disbursement immediately refunds the account balance and dynamically rolls back expense status.
+- Polished, responsive Expense Management UI in `/finance` with category management dialogs, payment modal, and details modal.
+
 ## 5. Key Data Model Rules
 
 - `reservations` represents the overall booking and its primary customer, booking number, status, notes, and creator.

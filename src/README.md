@@ -19,6 +19,13 @@ src/
 │   │   ├── reservations/  # Reservation endpoints (/api/reservations, /api/reservations/[id])
 │   │   ├── room-allocations/# Allocation check-in and check-out endpoints
 │   │   ├── invoices/      # Billing & payment endpoints (/api/invoices, items, payments, void)
+│   │   ├── financial-accounts/# Financial account endpoints (/api/financial-accounts, statements)
+│   │   ├── account-transfers/# Fund transfer endpoints (/api/account-transfers)
+│   │   ├── payment-methods/  # Payment method endpoints (/api/payment-methods)
+│   │   ├── income-heads/     # Income category endpoints (/api/income-heads, seed)
+│   │   ├── incomes/          # Direct income & receipts endpoints (/api/incomes, receipts, void)
+│   │   ├── expense-heads/    # Expense category endpoints (/api/expense-heads, seed)
+│   │   ├── expenses/         # Expense & disbursement endpoints (/api/expenses, payments, void)
 │   │   ├── reports/       # Operational & financial reports (/api/reports/occupancy, revenue, reservations, etc.)
 │   │   ├── users/         # Staff & user management endpoints (/api/users, /api/users/[id])
 │   │   ├── roles/         # Role listing endpoint filtered by actor hierarchy (/api/roles)
@@ -27,6 +34,7 @@ src/
 │   ├── rooms/             # Room Inventory & Status Board (/rooms)
 │   ├── reservations/      # Reservation list, detail, and booking view (/reservations)
 │   ├── billing/           # Invoices, payments, receipts, and print views (/billing)
+│   ├── finance/           # Financial Management: Accounts, Transfers, Income, Expenses (/finance)
 │   ├── reports/           # Dedicated Operational & Financial Reports view (/reports)
 │   ├── users/             # Staff & User Management view (/users)
 │   ├── login/             # Login view (/login)
@@ -54,6 +62,10 @@ src/
 │   ├── rooms/             # RoomService, RoomCategoryService, AmenityService, and validations
 │   ├── reservations/      # ReservationService, validations, and types
 │   ├── billing/           # BillingService, invoice calculation, receipts, and validations
+│   ├── financial-accounts/# FinancialAccountService, AccountTransferService, types, validations
+│   ├── income/            # IncomeService, IncomeHeadService, types, validations
+│   ├── expenses/          # ExpenseService, ExpenseHeadService, types, validations
+│   ├── payment-methods/   # PaymentMethodService, types, validations
 │   └── reports/           # ReportsService (Daily Operations, Availability Tape Chart, Shift Collections, Receivables Aging, Occupancy, ADR, RevPAR, Revenue)
 └── README.md              # Source architecture guide
 ```
@@ -73,6 +85,21 @@ The backend API is implemented as **Next.js App Router Route Handlers** within t
   - `GET /api/reports/occupancy?startDate=...&endDate=...`: Occupancy %, total room revenue, ADR, RevPAR, and room category performance.
   - `GET /api/reports/revenue?startDate=...&endDate=...`: Room charges, extra charges, taxes, discounts, net invoiced vs collected.
   - `GET /api/reports/reservations?startDate=...&endDate=...`: Status distribution, total allocations, and average stay length.
+- **Financial Management Endpoints**:
+  - `GET, POST /api/financial-accounts`: List accounts (with dynamic balances) and create new liquid accounts.
+  - `GET /api/financial-accounts/[id]/statement?startDate=...&endDate=...`: Itemized account ledger statement.
+  - `GET, POST /api/account-transfers`: List and execute double-entry atomic internal fund transfers.
+  - `GET, POST /api/payment-methods`: List and manage payment methods with default account mappings.
+  - `GET, POST /api/income-heads`, `POST /api/income-heads/seed`: Income category heads and seeding defaults.
+  - `GET, POST /api/incomes`: List and record direct hotel revenue items.
+  - `POST /api/incomes/[id]/receipts`: Record inward payment receipts against direct income with idempotency.
+  - `POST /api/incomes/[id]/receipts/[receiptId]/void`: Void individual receipts and reverse account balances.
+  - `POST /api/incomes/[id]/void`: Void direct income (guarded by zero-active-receipts rule).
+  - `GET, POST /api/expense-heads`, `POST /api/expense-heads/seed`: Expense category heads and seeding 6 approved defaults.
+  - `GET, POST /api/expenses`: List and record operational expenses.
+  - `POST /api/expenses/[id]/payments`: Disburse expense payments with overdraft protection and idempotency race recovery.
+  - `POST /api/expenses/[id]/payments/[paymentId]/void`: Void individual disbursement and restore account balance.
+  - `POST /api/expenses/[id]/void`: Void expense (guarded by zero-active-payments rule).
 - **Thin Route Handlers**: Route handlers are strictly responsible for:
   1. Extracting and validating request parameters / JSON payloads.
   2. Verifying user authentication and role authorization (`ADMIN` vs `RECEPTIONIST`).

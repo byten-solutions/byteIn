@@ -63,6 +63,10 @@ src/
     reservations/
     check-in-out/
     billing/
+    financial-accounts/
+    income/
+    expenses/
+    payment-methods/
     reports/
     audit/
   lib/
@@ -124,6 +128,34 @@ V1 can support one or multiple properties within the same installation. Do not i
 - Track the invoice total, amount paid, and outstanding balance.
 - Record refunds explicitly if refunds are supported; do not silently delete or rewrite payment records.
 - Preserve the agreed rate saved on each room allocation. Later changes to the room category's default price must not change existing bookings.
+
+### Financial Accounts & Fund Transfers
+- Property cash drawers, operating banks, and digital wallets with baseline `opening_balance` and `opening_balance_date`.
+- Dynamic liquid balance calculation:
+  $$\text{Closing Balance} = \text{Opening Balance} + \sum \text{Receipts}_{\text{RECORDED}} - \sum \text{Payments}_{\text{RECORDED}} + \sum \text{TransfersIn}_{\text{COMPLETED}} - \sum \text{TransfersOut}_{\text{COMPLETED}}$$
+  Transactions prior to `opening_balance_date` are strictly excluded from current balance calculations.
+- Atomic internal transfers between accounts: double-entry balance movements serialized via `FOR UPDATE` on `financial_accounts`, validating sufficient source balance and enforcing distinct source/destination accounts (`from_account_id <> to_account_id`).
+- Account statements itemize all incoming receipts, outgoing payments, and transfers within a specified date window.
+
+### Direct Income Management
+- Capture non-reservation hotel revenue streams (events, banquet dining, laundry, parking, day use).
+- Property-scoped category heads (`income_heads`) with seedable defaults (`BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`). Custom categories can be added and toggled active/inactive.
+- Lifecycle: `PENDING` -> `PARTIALLY_RECEIVED` -> `RECEIVED` -> `VOIDED`.
+- Inward money recorded as `receipts` linked to target `financial_accounts`. Supports client `idempotency_key` preventing duplicate submissions.
+- Two-stage voiding: an active income with recorded receipts cannot be voided directly; receipts must be voided individually first, reversing account balances and rolling back parent income status.
+
+### Expense Management
+- Track hotel operating expenditures (utilities, maintenance, supplies, food/beverage stock, staff welfare, administrative expenses).
+- Property-scoped category heads (`expense_heads`) with 6 approved default codes: `UTILITIES`, `MAINTENANCE`, `SUPPLIES`, `FOOD_BEVERAGE`, `STAFF_WELFARE`, and `MISC_EXPENSE`.
+- Lifecycle: `PENDING` -> `PARTIALLY_PAID` -> `PAID` -> `VOIDED`.
+- Outgoing disbursements recorded as `payments` linked to source `financial_accounts`.
+- Overdraft protection: serializes via `FOR UPDATE` on financial accounts and rejects disbursements exceeding available funds.
+- Idempotency & P2002 race recovery: compares full payload details and handles server defaults; catches PostgreSQL `23505` unique constraint races (Prisma `P2002`) and recovers via clean fallback lookup outside aborted transactions.
+- Controlled two-stage voiding: an expense with active disbursements cannot be voided directly; voiding an individual disbursement immediately refunds the account balance and dynamically recalculates expense status.
+
+### Payment Methods
+- Accepted tender types (`CASH`, `CARD`, `UPI`, `BANK_TRANSFER`) mapped to default financial accounts.
+- Active/inactive status controls; referential integrity prevents deleting methods tied to historical receipts or payments.
 
 ### Reports
 PMS operational and financial reporting suite:
@@ -222,6 +254,28 @@ Use REST endpoints grouped by feature. Exact endpoint names can be finalized dur
 /room-allocations/:id/check-out
 /invoices
 /invoices/:id/payments
+/financial-accounts
+/financial-accounts/:id
+/financial-accounts/:id/statement
+/account-transfers
+/payment-methods
+/payment-methods/:id
+/income-heads
+/income-heads/seed
+/income-heads/:id
+/incomes
+/incomes/:id
+/incomes/:id/receipts
+/incomes/:id/receipts/:receiptId/void
+/incomes/:id/void
+/expense-heads
+/expense-heads/seed
+/expense-heads/:id
+/expenses
+/expenses/:id
+/expenses/:id/payments
+/expenses/:id/payments/:paymentId/void
+/expenses/:id/void
 /reports
 /audit-logs
 ```
@@ -240,6 +294,7 @@ app/
   reservations/
   check-in-out/
   billing/
+  finance/
   reports/
   users/
 components/

@@ -29,7 +29,16 @@ Customer ── Reservation ── ReservationRoom ── Room
                                   └── RoomCategory
 
 Reservation ── Invoice ── InvoiceItem
-                          └── Payment
+                          └── Receipt (Inward Money)
+
+Property ── FinancialAccount ── AccountTransfer (From/To)
+                 │
+                 ├── PaymentMethod
+                 ├── Receipt (Inward Money)
+                 └── Payment (Outward Disbursements)
+
+IncomeHead ── Income ── Receipt
+ExpenseHead ── Expense ── Payment
 
 User ── AuditLog
 ```
@@ -253,24 +262,179 @@ For V1, use one invoice per reservation unless the business requires separate in
 
 Store the billed amounts on invoice items so later changes to room prices do not alter issued invoices.
 
-### 3.15 payments
+### 3.15 receipts (Inward Money / Collections)
 
 | Column | Type / notes |
 |---|---|
 | id | Primary key |
-| invoice_id | FK to invoices.id (`onDelete: Restrict`) |
-| amount | Required positive Decimal |
-| payment_method | Cash / card / UPI / bank transfer, as supported |
-| reference_number | Optional |
-| idempotency_key | Optional unique string (`@unique @map("idempotency_key")`) preventing duplicate payment submission |
-| status | `RECORDED`, `VOIDED` or equivalent |
+| property_id | FK to properties.id |
+| invoice_id | Nullable FK to invoices (mutually exclusive with income_id) (`onDelete: Restrict`) |
+| income_id | Nullable FK to incomes (mutually exclusive with invoice_id) (`onDelete: Restrict`) |
+| account_id | FK to financial_accounts.id (`onDelete: Restrict`) |
+| payment_method_id | Nullable FK to payment_methods.id (`onDelete: Restrict`) |
+| payment_method_code | Required code string (`CASH`, `CARD`, `UPI`, `BANK_TRANSFER`) |
+| amount | Required positive Decimal(10, 2) (`chk_receipts_positive_amount`) |
+| reference_number | Optional string |
+| idempotency_key | Optional unique string (`@unique @map("idempotency_key")`) preventing duplicate receipts |
+| status | `RECORDED` or `VOIDED` (`ReceiptStatus`) |
 | paid_at | Required timestamp |
+| is_legacy | Boolean flag indicating migration from earlier payment records |
 | created_by | FK to users.id |
+| void_reason | Optional string explaining voiding |
+| voided_at | Nullable timestamp |
+| voided_by | Nullable FK to users.id |
 | created_at | Timestamp |
 
-Allow multiple payment records against one invoice. Derive outstanding balance from invoice total minus valid payments, accounting for refunds/voids according to the finalized policy. Referential integrity strictly prevents cascading deletions (`onDelete: Restrict`) across `payments`, `invoice_items`, `invoices`, and `reservation_rooms`.
+Unified inward money ledger. Enforces check constraint `chk_receipts_target_exclusive` ensuring exactly one of `invoice_id` or `income_id` is set.
 
-### 3.16 audit_logs
+### 3.16 financial_accounts
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| account_name | Required string, unique per property (`@@unique([propertyId, accountName])`) |
+| account_type | `BANK`, `CASH`, or `WALLET` (`AccountType`) |
+| opening_balance | Required Decimal(10, 2), default 0.00 |
+| opening_balance_date | Required date (`@db.Date`), baseline anchor for liquid calculations |
+| is_default | Boolean flag (one default per property) |
+| is_active | Boolean lifecycle flag |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Liquid ledger accounts for cash drawers, operating banks, and digital wallets.
+
+### 3.17 account_transfers
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| from_account_id | FK to financial_accounts.id (`onDelete: Restrict`) |
+| to_account_id | FK to financial_accounts.id (`onDelete: Restrict`) |
+| amount | Required positive Decimal(10, 2) (`chk_transfers_positive_amount`) |
+| transfer_date | Required date (`@db.Date`) |
+| description | Optional string |
+| reference_number | Optional string |
+| status | `COMPLETED` or `REVERSED` (`TransferStatus`) |
+| created_by | FK to users.id |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Double-entry internal fund movements. Enforces check constraint `chk_transfers_accounts_different` (`from_account_id <> to_account_id`).
+
+### 3.18 payment_methods
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| name | Required string |
+| code | Required string, unique per property (`@@unique([propertyId, code])`) |
+| default_account_id | Nullable FK to financial_accounts.id (`onDelete: Restrict`) |
+| is_active | Boolean lifecycle flag |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+### 3.19 income_heads
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| name | Required string |
+| code | Required string, unique per property (`@@unique([propertyId, code])`) |
+| description | Optional string |
+| is_active | Boolean lifecycle flag |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Direct revenue categories. Seedable defaults: `BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`.
+
+### 3.20 incomes
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| income_head_id | FK to income_heads.id (`onDelete: Restrict`) |
+| title | Required string |
+| description | Optional string |
+| expected_amount | Required positive Decimal(10, 2) |
+| income_date | Required date (`@db.Date`) |
+| status | `PENDING`, `PARTIALLY_RECEIVED`, `RECEIVED`, or `VOIDED` (`IncomeStatus`) |
+| created_by | FK to users.id |
+| void_reason | Optional string |
+| voided_at | Nullable timestamp |
+| voided_by | Nullable FK to users.id |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Direct non-reservation hotel revenue items.
+
+### 3.21 expense_heads
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| name | Required string |
+| code | Required string, unique per property (`@@unique([propertyId, code])`) |
+| description | Optional string |
+| is_active | Boolean lifecycle flag |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Operational expense categories. Six approved defaults: `UTILITIES`, `MAINTENANCE`, `SUPPLIES`, `FOOD_BEVERAGE`, `STAFF_WELFARE`, and `MISC_EXPENSE`.
+
+### 3.22 expenses
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| expense_head_id | FK to expense_heads.id (`onDelete: Restrict`) |
+| title | Required string |
+| description | Optional string |
+| amount | Required positive Decimal(10, 2) |
+| vendor_name | Optional string |
+| reference_number | Optional string |
+| expense_date | Required date (`@db.Date`) |
+| status | `PENDING`, `PARTIALLY_PAID`, `PAID`, or `VOIDED` (`ExpenseStatus`) |
+| created_by | FK to users.id |
+| void_reason | Optional string |
+| voided_at | Nullable timestamp |
+| voided_by | Nullable FK to users.id |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Operational hotel expense records.
+
+### 3.23 payments (Outward Money / Disbursements)
+
+| Column | Type / notes |
+|---|---|
+| id | Primary key |
+| property_id | FK to properties.id |
+| expense_id | FK to expenses.id (`onDelete: Restrict`) |
+| account_id | FK to financial_accounts.id (`onDelete: Restrict`) |
+| payment_method_id | Nullable FK to payment_methods.id (`onDelete: Restrict`) |
+| payment_method_code | Required code string (`CASH`, `CARD`, `UPI`, `BANK_TRANSFER`) |
+| amount | Required positive Decimal(10, 2) (`chk_payments_positive_amount`) |
+| reference_number | Optional string |
+| idempotency_key | Optional string, unique per property (`@@unique([propertyId, idempotencyKey])`) |
+| status | `RECORDED` or `VOIDED` (`PaymentStatus`) |
+| paid_at | Required timestamp |
+| created_by | FK to users.id |
+| void_reason | Optional string |
+| voided_at | Nullable timestamp |
+| voided_by | Nullable FK to users.id |
+| created_at | Timestamp |
+| updated_at | Timestamp |
+
+Outgoing disbursement ledger for operational expenses.
+
+### 3.24 audit_logs
 
 | Column | Type / notes |
 |---|---|
@@ -283,7 +447,7 @@ Allow multiple payment records against one invoice. Derive outstanding balance f
 | new_data | Nullable JSON |
 | created_at | Timestamp |
 
-Record important actions: reservation creation/modification/cancellation, room assignment, check-in/out, invoice changes, payments, and refunds.
+Record important actions: reservation creation/modification/cancellation, room assignment, check-in/out, invoice changes, receipts, expenses, outgoing payments, account transfers, and category changes.
 
 ## 4. Status Rules
 
@@ -303,17 +467,50 @@ Track check-in and check-out independently on `reservation_rooms`. Reservation s
 
 Room status represents physical condition/occupancy, not whether the room has a future reservation. Booking availability is calculated for the requested dates.
 
+### Financial Status Lifecycles
+
+#### Incomes (`IncomeStatus`)
+- `PENDING`: Income recorded, zero receipts collected against expected amount.
+- `PARTIALLY_RECEIVED`: Sum of recorded receipts is greater than zero but less than expected amount.
+- `RECEIVED`: Sum of recorded receipts is greater than or equal to expected amount.
+- `VOIDED`: Direct income cancelled (only permitted when zero active receipts exist).
+
+#### Expenses (`ExpenseStatus`)
+- `PENDING`: Expense approved, zero disbursements paid against expense amount.
+- `PARTIALLY_PAID`: Sum of recorded payments is greater than zero but less than expense amount.
+- `PAID`: Sum of recorded payments is greater than or equal to expense amount.
+- `VOIDED`: Expense cancelled (only permitted when zero active payments exist).
+
+#### Receipts & Payments (`ReceiptStatus` / `PaymentStatus`)
+- `RECORDED`: Valid transaction active on ledger, counted in financial account balances.
+- `VOIDED`: Transaction voided with mandatory `void_reason`, excluded from ledger balances.
+
+#### Account Transfers (`TransferStatus`)
+- `COMPLETED`: Fund transfer executed atomically between source and destination accounts.
+- `REVERSED`: Transfer reversed with balance restoration.
+
 ## 5. Indexes and Integrity
 
 At minimum:
 - Unique index on `users.email`.
 - Unique index on `reservations.reservation_no`.
 - Unique index on `invoices.invoice_number`.
-- Unique room number index for the selected scope.
-- Index foreign keys and common search fields such as customer phone, reservation status, allocation dates, room ID, invoice status and payment invoice ID.
-- Use foreign keys and appropriate delete rules. Avoid cascading deletion of financial records.
-- Use Decimal for currency.
-- Use transactions for creating a multi-room reservation and its allocations, and for recording payments and updating invoice state.
+- Unique room number index for the selected scope (`building_id`, `room_no`).
+- Unique composite index on `financial_accounts(property_id, account_name)`.
+- Unique composite index on `payment_methods(property_id, code)`.
+- Unique composite index on `income_heads(property_id, code)`.
+- Unique composite index on `expense_heads(property_id, code)`.
+- Unique index on `receipts(idempotency_key)`.
+- Unique composite index on `payments(property_id, idempotency_key)`.
+- Composite primary keys / unique constraints `(property_id, id)` on all property-scoped tables to support composite foreign key isolation.
+- Index foreign keys and common search fields: `customer_id`, `room_id`, `reservation_id`, `invoice_id`, `account_id`, `payment_method_id`, `expense_id`, `income_id`, `paid_at`, `status`.
+- Database check constraints:
+  - `chk_receipts_target_exclusive`: exactly one of `invoice_id` or `income_id` is set.
+  - `chk_transfers_accounts_different`: `from_account_id <> to_account_id`.
+  - `chk_receipts_positive_amount`, `chk_payments_positive_amount`, `chk_transfers_positive_amount`: amounts must be `> 0`.
+- Referential integrity strictly prevents cascading deletions (`onDelete: Restrict`) across `receipts`, `payments`, `account_transfers`, `expenses`, `incomes`, `financial_accounts`, `invoices`, and `reservations`.
+- Use Decimal(10, 2) for all currency and ledger figures.
+- Use PostgreSQL transactions (`SELECT ... FOR UPDATE`) for multi-step operations (booking, payment recording, balance reduction, account transfers, voiding).
 - Consider a PostgreSQL exclusion constraint on the room ID and date range for active allocations if implemented cleanly with the chosen schema; otherwise use a transaction/locking approach that reliably prevents concurrent overlapping bookings.
 
 ## 6. Important Business Rules

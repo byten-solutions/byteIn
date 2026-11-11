@@ -16,99 +16,8 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding byteInn database...");
 
-  // 0. Clean up leaked test data (e.g. temporary properties or test fixtures)
-  const leakedProperties = await prisma.property.findMany({
-    where: {
-      name: { not: "byteInn Grand Hotel" },
-    },
-    include: {
-      buildings: true,
-      rooms: true,
-    },
-  });
-
-  for (const lp of leakedProperties) {
-    console.log(`Cleaning leaked test property: "${lp.name}" (${lp.id})...`);
-    // Delete dependent records for this leaked property
-    await prisma.receipt.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.invoiceItem.deleteMany({
-      where: { invoice: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } } },
-    });
-    await prisma.invoice.deleteMany({
-      where: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } },
-    });
-    await prisma.reservationRoom.deleteMany({
-      where: { room: { propertyId: lp.id } },
-    });
-    await prisma.room.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.roomCategoryAmenity.deleteMany({
-      where: { roomCategory: { propertyId: lp.id } },
-    });
-    await prisma.roomCategory.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.floor.deleteMany({
-      where: { building: { propertyId: lp.id } },
-    });
-    await prisma.building.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.property.delete({
-      where: { id: lp.id },
-    });
-  }
-
-  // Also clean any leaked buildings under any property (such as "Main Tower")
-  const leakedBuildings = await prisma.building.findMany({
-    where: {
-      name: { notIn: ["Main Wing", "West Wing"] },
-    },
-  });
-  for (const lb of leakedBuildings) {
-    console.log(`Cleaning leaked building: "${lb.name}" (${lb.id})...`);
-    await prisma.room.deleteMany({ where: { buildingId: lb.id } });
-    await prisma.floor.deleteMany({ where: { buildingId: lb.id } });
-    await prisma.building.delete({ where: { id: lb.id } });
-  }
-
-  // Clean non-canonical reservations and customers left over from temporary test seeds
-  const CANONICAL_RESERVATION_NOS = [
-    "RES-20261011-B139",
-    "RES-20261011-6472",
-    "RES-20261011-5FDC",
-    "RES-20261011-D228",
-    "RES-20261011-253D",
-  ];
-  const CANONICAL_INVOICE_NUMBERS = [
-    "INV-20261011-B139",
-    "INV-20261011-6472",
-    "INV-20261011-5FDC",
-    "INV-20261011-D228",
-  ];
-  await prisma.receipt.deleteMany({
-    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
-  });
-  await prisma.invoiceItem.deleteMany({
-    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
-  });
-  await prisma.invoice.deleteMany({
-    where: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } },
-  });
-  await prisma.reservationRoom.deleteMany({
-    where: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } },
-  });
-  await prisma.reservation.deleteMany({
-    where: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } },
-  });
-  await prisma.customer.deleteMany({
-    where: {
-      phone: { notIn: ["+91 98765 43210", "+91 98765 43211", "+91 98765 43212", "+91 98765 43213"] },
-    },
-  });
+  // 0. Seed initialization
+  console.log("Ensuring byteInn Grand Hotel demo fixtures...");
 
   // 1. Seed Roles
   const adminRole = await prisma.role.upsert({
@@ -198,6 +107,23 @@ async function main() {
     });
   }
   console.log(`Property ensured: ${property.name} (${property.id})`);
+
+  // Ensure default financial account for the property
+  let propertyAccount = await prisma.financialAccount.findFirst({
+    where: { propertyId: property.id, isDefault: true },
+  });
+  if (!propertyAccount) {
+    propertyAccount = await prisma.financialAccount.create({
+      data: {
+        propertyId: property.id,
+        accountName: "Main Operating Drawer",
+        accountType: "CASH",
+        openingBalance: 10000,
+        isDefault: true,
+        isActive: true,
+      },
+    });
+  }
 
   // 4. Seed Buildings (Main Wing & West Wing)
   let mainWing = await prisma.building.findFirst({
