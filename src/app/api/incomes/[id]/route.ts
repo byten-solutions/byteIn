@@ -17,22 +17,26 @@ export async function GET(
     );
     const { id } = await params;
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.income.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Income record not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.income.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Income record not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified income does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError("Income record not found");
     }
 
     const income = await IncomeService.getIncomeById(propertyId, id);
@@ -56,22 +60,26 @@ export async function PATCH(
     const body = await req.json();
     const validated = updateIncomeSchema.parse(body);
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.income.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Income record not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.income.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Income record not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified income does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError("Income record not found");
     }
 
     const income = await IncomeService.updateIncome(

@@ -431,7 +431,7 @@ export function IncomeTab({
                           size="sm"
                           onClick={() => setDetailIncomeId(item.id)}
                           className="h-7 px-2 text-xs cursor-pointer"
-                          title="View Details & Receipt Ledger"
+                          title="View Details & Collections"
                         >
                           Details
                         </Button>

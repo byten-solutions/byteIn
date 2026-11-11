@@ -129,17 +129,18 @@ V1 can support one or multiple properties within the same installation. Do not i
 - Record refunds explicitly if refunds are supported; do not silently delete or rewrite payment records.
 - Preserve the agreed rate saved on each room allocation. Later changes to the room category's default price must not change existing bookings.
 
-### Financial Accounts & Fund Transfers
+### Financial Accounts & Cash Management
+- byteInn implements account-based cash management with internal account transfers, maintaining liquid account balances across cash drawers, bank accounts, and digital wallets, rather than a full double-entry general ledger.
 - Property cash drawers, operating banks, and digital wallets with baseline `opening_balance` and `opening_balance_date`.
 - Dynamic liquid balance calculation:
   $$\text{Closing Balance} = \text{Opening Balance} + \sum \text{Receipts}_{\text{RECORDED}} - \sum \text{Payments}_{\text{RECORDED}} + \sum \text{TransfersIn}_{\text{COMPLETED}} - \sum \text{TransfersOut}_{\text{COMPLETED}}$$
   Transactions prior to `opening_balance_date` are strictly excluded from current balance calculations.
-- Atomic internal transfers between accounts: double-entry balance movements serialized via `FOR UPDATE` on `financial_accounts`, validating sufficient source balance and enforcing distinct source/destination accounts (`from_account_id <> to_account_id`).
+- Atomic internal account transfers: balance movements serialized via `FOR UPDATE` on `financial_accounts`, validating sufficient source balance and enforcing distinct source/destination accounts (`from_account_id <> to_account_id`).
 - Account statements itemize all incoming receipts, outgoing payments, and transfers within a specified date window.
 
 ### Direct Income Management
-- Capture non-reservation hotel revenue streams (events, banquet dining, laundry, parking, day use).
-- Property-scoped category heads (`income_heads`) with seedable defaults (`BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`). Custom categories can be added and toggled active/inactive.
+- Capture direct non-invoice hotel revenue streams (travel desk commissions, scrap & asset disposal, currency exchange commissions, bank interest, sundry direct receipts). Hall, banquet, laundry, and restaurant revenue remain service-invoice revenue under billing.
+- Property-scoped category heads (`income_heads`) with the 5 approved default codes: `COMMISSION`, `SCRAP_ASSET_SALE`, `FOREX_COMMISSION`, `INTEREST`, and `OTHER_DIRECT_INCOME`. Custom categories can be added and toggled active/inactive.
 - Lifecycle: `PENDING` -> `PARTIALLY_RECEIVED` -> `RECEIVED` -> `VOIDED`.
 - Inward money recorded as `receipts` linked to target `financial_accounts`. Supports client `idempotency_key` preventing duplicate submissions.
 - Two-stage voiding: an active income with recorded receipts cannot be voided directly; receipts must be voided individually first, reversing account balances and rolling back parent income status.

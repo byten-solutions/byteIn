@@ -101,17 +101,17 @@ Use clearly defined calculation rules for each report; do not treat room price, 
 - Enforced PostgreSQL database check constraints: `chk_receipts_target_exclusive`, `chk_transfers_accounts_different`, positive amount checks (`amount > 0`).
 - Enforced composite foreign keys for property isolation: `(property_id, account_id)`, `(property_id, invoice_id)`, `(property_id, expense_id)`, `(property_id, from_account_id)`, etc.
 - Added unique indexes on `idempotency_key` across `receipts` and `payments`.
-- Migrated existing legacy invoice payments into unified `receipts` ledger with full backward compatibility.
+- Migrated existing legacy invoice payments into unified `receipts` records with full backward compatibility.
 
-### Financial Management Initiative — Phase 2: Financial Accounts & Fund Transfers (Completed)
+### Financial Management Initiative — Phase 2: Financial Accounts & Cash Management (Completed)
 - Domain services, validation schemas, and thin route handlers for `/api/financial-accounts` and `/api/account-transfers`.
-- Dynamic account statement generation calculating closing balance from baseline `opening_balance_date`.
-- Double-entry internal transfers with atomic serialization (`SELECT ... FOR UPDATE`), overdraft protection, and check constraint validation.
+- Dynamic account statement generation calculating closing liquid balance from baseline `opening_balance_date`.
+- Internal account transfers with atomic serialization (`SELECT ... FOR UPDATE`), overdraft protection, and check constraint validation (account-based cash management, not a general ledger).
 - Financial Accounts management UI within `/finance`.
 
 ### Financial Management Initiative — Phase 3: Direct Income Management (Completed)
 - Domain services, validation, and route handlers for `/api/income-heads` and `/api/incomes`.
-- Default income category heads seeding (`BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`) and custom category management.
+- Default income category heads seeding (5 approved codes: `COMMISSION`, `SCRAP_ASSET_SALE`, `FOREX_COMMISSION`, `INTEREST`, `OTHER_DIRECT_INCOME`) and custom category management. Hall, laundry, and restaurant revenue remain service-invoice revenue under billing.
 - Direct revenue recording with itemized receipt collection, idempotency replay, and account liquid balance updates.
 - Controlled two-stage voiding: active income cannot be voided directly without voiding individual receipts first.
 - Direct Income frontend UI with view switcher, receipts dialogs, and balance tracking.

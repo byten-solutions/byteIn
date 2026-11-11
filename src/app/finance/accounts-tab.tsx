@@ -347,7 +347,7 @@ export function AccountsTab({
                           size="sm"
                           onClick={() => setStatementAccount(account)}
                           className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                          title="View Statement Ledger"
+                          title="View Account Statement"
                         >
                           <FileText className="size-3.5 mr-1" /> Statement
                         </Button>

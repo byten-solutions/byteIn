@@ -109,7 +109,7 @@ npx prisma migrate status
   - `Expense.expenseHead` (`onDelete: Restrict`)
   - `AccountTransfer.fromAccount` (`onDelete: Restrict`)
   - `AccountTransfer.toAccount` (`onDelete: Restrict`)
-  - This prevents accidental deletion of reservations, invoices, or accounts from wiping ledger and transaction history.
+  - This prevents accidental deletion of reservations, invoices, or accounts from wiping cash management records and transaction history.
 - **Database Check Constraints**:
   - `chk_receipts_target_exclusive`: `invoice_id` and `income_id` are mutually exclusive.
   - `chk_transfers_accounts_different`: `from_account_id <> to_account_id`.

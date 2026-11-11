@@ -279,6 +279,16 @@ describe("Phase 3 Stage 2: Income Management API Route Handlers", () => {
             { params: Promise.resolve({ id: "dummy-id" }) }
           ),
         () =>
+          IncomeDetailRoute.PATCH(
+            makeReq(
+              "http://localhost:3000/api/incomes/dummy-id",
+              "PATCH",
+              tokenRecepA,
+              { title: "Updated Title" }
+            ),
+            { params: Promise.resolve({ id: "dummy-id" }) }
+          ),
+        () =>
           IncomeVoidRoute.POST(
             makeReq(
               "http://localhost:3000/api/incomes/dummy-id/void",
@@ -287,6 +297,35 @@ describe("Phase 3 Stage 2: Income Management API Route Handlers", () => {
               { voidReason: "Test" }
             ),
             { params: Promise.resolve({ id: "dummy-id" }) }
+          ),
+        () =>
+          IncomeReceiptsRoute.POST(
+            makeReq(
+              "http://localhost:3000/api/incomes/dummy-id/receipts",
+              "POST",
+              tokenRecepA,
+              {
+                amount: 50,
+                accountId: "dummy-account",
+                paymentMethod: "CASH",
+              }
+            ),
+            { params: Promise.resolve({ id: "dummy-id" }) }
+          ),
+        () =>
+          IncomeReceiptVoidRoute.POST(
+            makeReq(
+              "http://localhost:3000/api/incomes/dummy-id/receipts/dummy-rec/void",
+              "POST",
+              tokenRecepA,
+              { voidReason: "Test" }
+            ),
+            {
+              params: Promise.resolve({
+                id: "dummy-id",
+                receiptId: "dummy-rec",
+              }),
+            }
           ),
       ];
 

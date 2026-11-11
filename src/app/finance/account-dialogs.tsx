@@ -436,7 +436,7 @@ function AccountStatementContent({
               Account Statement — {account.accountName}
             </DialogTitle>
             <DialogDescription>
-              Itemized running ledger of receipts, payments, and inter-account transfers.
+              Itemized running statement of receipts, payments, and inter-account transfers.
             </DialogDescription>
           </div>
           <div className="text-right">
@@ -481,7 +481,7 @@ function AccountStatementContent({
           className="h-8 text-xs font-medium"
         >
           {loading ? <Loader2 className="size-3 animate-spin mr-1" /> : null}
-          Filter Ledger
+          Filter Statement
         </Button>
       </div>
 
@@ -497,7 +497,7 @@ function AccountStatementContent({
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground gap-2 text-xs">
             <Loader2 className="size-5 animate-spin text-primary" />
-            <span>Calculating running balance ledger...</span>
+            <span>Calculating running balance...</span>
           </div>
         ) : statement ? (
           <>
@@ -537,7 +537,7 @@ function AccountStatementContent({
               </div>
             </div>
 
-            {/* Transactions Ledger */}
+            {/* Transactions Statement */}
             {statement.items.length === 0 ? (
               <div className="text-center py-12 border rounded-lg border-dashed border-border/80 text-muted-foreground text-xs">
                 No recorded transactions found for this account within the selected dates.

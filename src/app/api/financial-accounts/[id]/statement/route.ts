@@ -19,22 +19,26 @@ export async function GET(
     const searchParams = Object.fromEntries(req.nextUrl.searchParams.entries());
     const query = accountStatementQuerySchema.parse(searchParams);
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.financialAccount.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError(`Financial account with ID '${id}' not found.`);
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.financialAccount.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError(`Financial account with ID '${id}' not found.`);
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified financial account does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError(`Financial account with ID '${id}' not found.`);
     }
 
     const statement = await FinancialAccountService.getAccountStatement(

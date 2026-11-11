@@ -87,10 +87,10 @@ The backend API is implemented as **Next.js App Router Route Handlers** within t
   - `GET /api/reports/reservations?startDate=...&endDate=...`: Status distribution, total allocations, and average stay length.
 - **Financial Management Endpoints**:
   - `GET, POST /api/financial-accounts`: List accounts (with dynamic balances) and create new liquid accounts.
-  - `GET /api/financial-accounts/[id]/statement?startDate=...&endDate=...`: Itemized account ledger statement.
-  - `GET, POST /api/account-transfers`: List and execute double-entry atomic internal fund transfers.
+  - `GET /api/financial-accounts/[id]/statement?startDate=...&endDate=...`: Itemized account transaction statement.
+  - `GET, POST /api/account-transfers`: List and execute atomic internal fund transfers between accounts (account-based cash management, not a general ledger).
   - `GET, POST /api/payment-methods`: List and manage payment methods with default account mappings.
-  - `GET, POST /api/income-heads`, `POST /api/income-heads/seed`: Income category heads and seeding defaults.
+  - `GET, POST /api/income-heads`, `POST /api/income-heads/seed`: Income category heads and seeding 5 approved defaults (`COMMISSION`, `SCRAP_ASSET_SALE`, `FOREX_COMMISSION`, `INTEREST`, `OTHER_DIRECT_INCOME`).
   - `GET, POST /api/incomes`: List and record direct hotel revenue items.
   - `POST /api/incomes/[id]/receipts`: Record inward payment receipts against direct income with idempotency.
   - `POST /api/incomes/[id]/receipts/[receiptId]/void`: Void individual receipts and reverse account balances.

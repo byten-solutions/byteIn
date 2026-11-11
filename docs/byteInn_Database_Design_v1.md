@@ -285,7 +285,7 @@ Store the billed amounts on invoice items so later changes to room prices do not
 | voided_by | Nullable FK to users.id |
 | created_at | Timestamp |
 
-Unified inward money ledger. Enforces check constraint `chk_receipts_target_exclusive` ensuring exactly one of `invoice_id` or `income_id` is set.
+Unified inward money records. Enforces check constraint `chk_receipts_target_exclusive` ensuring exactly one of `invoice_id` or `income_id` is set.
 
 ### 3.16 financial_accounts
 
@@ -302,7 +302,7 @@ Unified inward money ledger. Enforces check constraint `chk_receipts_target_excl
 | created_at | Timestamp |
 | updated_at | Timestamp |
 
-Liquid ledger accounts for cash drawers, operating banks, and digital wallets.
+Liquid accounts for cash drawers, operating banks, and digital wallets. byteInn uses account-based cash management with internal account transfers, not a general ledger.
 
 ### 3.17 account_transfers
 
@@ -321,7 +321,7 @@ Liquid ledger accounts for cash drawers, operating banks, and digital wallets.
 | created_at | Timestamp |
 | updated_at | Timestamp |
 
-Double-entry internal fund movements. Enforces check constraint `chk_transfers_accounts_different` (`from_account_id <> to_account_id`).
+Internal fund transfers between accounts. Enforces check constraint `chk_transfers_accounts_different` (`from_account_id <> to_account_id`).
 
 ### 3.18 payment_methods
 
@@ -349,7 +349,7 @@ Double-entry internal fund movements. Enforces check constraint `chk_transfers_a
 | created_at | Timestamp |
 | updated_at | Timestamp |
 
-Direct revenue categories. Seedable defaults: `BANQUET`, `LAUNDRY`, `RESTAURANT`, `MISC_INCOME`.
+Direct revenue categories. Seedable default codes: `COMMISSION`, `SCRAP_ASSET_SALE`, `FOREX_COMMISSION`, `INTEREST`, and `OTHER_DIRECT_INCOME`. Hall, laundry, and restaurant revenue remain service-invoice revenue under billing.
 
 ### 3.20 incomes
 
@@ -432,7 +432,7 @@ Operational hotel expense records.
 | created_at | Timestamp |
 | updated_at | Timestamp |
 
-Outgoing disbursement ledger for operational expenses.
+Outgoing disbursement records for operational expenses.
 
 ### 3.24 audit_logs
 
@@ -482,8 +482,8 @@ Room status represents physical condition/occupancy, not whether the room has a 
 - `VOIDED`: Expense cancelled (only permitted when zero active payments exist).
 
 #### Receipts & Payments (`ReceiptStatus` / `PaymentStatus`)
-- `RECORDED`: Valid transaction active on ledger, counted in financial account balances.
-- `VOIDED`: Transaction voided with mandatory `void_reason`, excluded from ledger balances.
+- `RECORDED`: Valid transaction active on account, counted in financial account balances.
+- `VOIDED`: Transaction voided with mandatory `void_reason`, excluded from account balances.
 
 #### Account Transfers (`TransferStatus`)
 - `COMPLETED`: Fund transfer executed atomically between source and destination accounts.
@@ -509,7 +509,7 @@ At minimum:
   - `chk_transfers_accounts_different`: `from_account_id <> to_account_id`.
   - `chk_receipts_positive_amount`, `chk_payments_positive_amount`, `chk_transfers_positive_amount`: amounts must be `> 0`.
 - Referential integrity strictly prevents cascading deletions (`onDelete: Restrict`) across `receipts`, `payments`, `account_transfers`, `expenses`, `incomes`, `financial_accounts`, `invoices`, and `reservations`.
-- Use Decimal(10, 2) for all currency and ledger figures.
+- Use Decimal(10, 2) for all currency and financial figures.
 - Use PostgreSQL transactions (`SELECT ... FOR UPDATE`) for multi-step operations (booking, payment recording, balance reduction, account transfers, voiding).
 - Consider a PostgreSQL exclusion constraint on the room ID and date range for active allocations if implemented cleanly with the chosen schema; otherwise use a transaction/locking approach that reliably prevents concurrent overlapping bookings.
 

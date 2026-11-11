@@ -434,7 +434,7 @@ export class FinancialAccountService {
   }
 
   /**
-   * Get an itemized statement ledger for an account.
+   * Get an itemized statement for an account.
    * Strictly observes openingBalanceDate: any transaction prior to openingBalanceDate is excluded.
    */
   static async getAccountStatement(

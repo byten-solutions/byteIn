@@ -17,22 +17,26 @@ export async function GET(
     );
     const { id } = await params;
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.incomeHead.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Income category not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.incomeHead.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Income category not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified income category does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError("Income category not found");
     }
 
     const incomeHead = await IncomeHeadService.getIncomeHeadById(propertyId, id);
@@ -56,22 +60,26 @@ export async function PATCH(
     const body = await req.json();
     const validated = updateIncomeHeadSchema.parse(body);
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.incomeHead.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Income category not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.incomeHead.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Income category not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified income category does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError("Income category not found");
     }
 
     const incomeHead = await IncomeHeadService.updateIncomeHead(
@@ -98,22 +106,26 @@ export async function DELETE(
     );
     const { id } = await params;
 
-    let propertyId = req.nextUrl.searchParams.get("propertyId");
-    if (session.role === RoleName.SUPER_ADMIN && !propertyId) {
-      const existing = await prisma.incomeHead.findUnique({
-        where: { id },
-        select: { propertyId: true },
-      });
-      if (!existing) {
-        throw new NotFoundError("Income category not found");
-      }
-      propertyId = existing.propertyId;
-    } else {
-      propertyId = resolveScope(session, propertyId);
-    }
-
+    const requestedPropertyId = req.nextUrl.searchParams.get("propertyId");
+    const propertyId = resolveScope(session, requestedPropertyId);
     if (!propertyId) {
       throw new BadRequestError("Property ID is required.");
+    }
+
+    const existing = await prisma.incomeHead.findUnique({
+      where: { id },
+      select: { propertyId: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("Income category not found");
+    }
+    if (existing.propertyId !== propertyId) {
+      if (session.role === RoleName.SUPER_ADMIN) {
+        throw new BadRequestError(
+          "The specified income category does not belong to the selected property."
+        );
+      }
+      throw new NotFoundError("Income category not found");
     }
 
     const result = await IncomeHeadService.deleteOrDeactivateIncomeHead(

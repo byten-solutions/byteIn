@@ -718,7 +718,7 @@ export function VoidReceiptDialog({
             Void Collection Receipt
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            Voiding receipt of <span className="font-bold text-foreground">${receipt.amount}</span> ({receipt.accountName}). This will automatically reverse the financial account ledger balance.
+            Voiding receipt of <span className="font-bold text-foreground">${receipt.amount}</span> ({receipt.accountName}). This will automatically reverse the financial account balance.
           </DialogDescription>
         </DialogHeader>
 

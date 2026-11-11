@@ -292,6 +292,16 @@ describe("Phase 4 Stage 2: Expense Management API Route Handlers", () => {
             { params: Promise.resolve({ id: "dummy-id" }) }
           ),
         () =>
+          ExpenseDetailRoute.PATCH(
+            makeReq(
+              "http://localhost:3000/api/expenses/dummy-id",
+              "PATCH",
+              tokenRecepA,
+              { title: "Updated Expense Title" }
+            ),
+            { params: Promise.resolve({ id: "dummy-id" }) }
+          ),
+        () =>
           ExpenseVoidRoute.POST(
             makeReq(
               "http://localhost:3000/api/expenses/dummy-id/void",
