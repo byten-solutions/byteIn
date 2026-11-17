@@ -601,7 +601,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     // Check receivables report before cancel
     const reqRepBefore = new NextRequest("http://localhost/api/reports/receivables", {
-      headers: { cookie: `byteinn_session=${receptionistToken}` },
+      headers: { cookie: `byteinn_session=${adminToken}` },
     });
     const resRepBefore = await receivablesReportRoute(reqRepBefore);
     const jsonRepBefore = await resRepBefore.json();
@@ -633,7 +633,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     // Check receivables report after cancel
     const reqRepAfter = new NextRequest("http://localhost/api/reports/receivables", {
-      headers: { cookie: `byteinn_session=${receptionistToken}` },
+      headers: { cookie: `byteinn_session=${adminToken}` },
     });
     const resRepAfter = await receivablesReportRoute(reqRepAfter);
     const jsonRepAfter = await resRepAfter.json();
@@ -932,7 +932,7 @@ describe("Batch 2b: Lifecycle Billing, Room Change Realignment & Date Rules", ()
 
     // Verify receivables report shows only $1000 balance for this invoice, not $4000
     const reqRep = new NextRequest("http://localhost/api/reports/receivables", {
-      headers: { cookie: `byteinn_session=${receptionistToken}` },
+      headers: { cookie: `byteinn_session=${adminToken}` },
     });
     const resRep = await receivablesReportRoute(reqRep);
     const jsonRep = await resRep.json();

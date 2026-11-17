@@ -283,7 +283,7 @@ export function AccountsTab({
           />
         }
       >
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
+        <div className="rounded-xl border border-border bg-card overflow-x-auto">
           <Table className="text-xs">
             <TableHeader>
               <TableRow className="bg-muted/40">
@@ -346,7 +346,7 @@ export function AccountsTab({
                           variant="ghost"
                           size="sm"
                           onClick={() => setStatementAccount(account)}
-                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground inline-flex items-center cursor-pointer"
                           title="View Account Statement"
                         >
                           <FileText className="size-3.5 mr-1" /> Statement

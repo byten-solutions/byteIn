@@ -51,18 +51,20 @@ export function IncomeTab({
   accounts,
   refreshKey,
   onDataChange,
+  initialIncomeId,
 }: {
   propertyId: string
   accounts: FinancialAccountWithBalanceDTO[]
   refreshKey: number
   onDataChange: () => void
+  initialIncomeId?: string
 }) {
   const [incomes, setIncomes] = React.useState<IncomeDTO[]>([])
   const [categories, setCategories] = React.useState<IncomeHeadDTO[]>([])
   const [paymentMethods, setPaymentMethods] = React.useState<PaymentMethodDTO[]>([])
   const [totalCount, setTotalCount] = React.useState(0)
   const [page, setPage] = React.useState(1)
-  const [limit] = React.useState(20)
+  const [limit, setLimit] = React.useState(20)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -78,7 +80,9 @@ export function IncomeTab({
   const [isCategoriesOpen, setIsCategoriesOpen] = React.useState(false)
   const [editingIncome, setEditingIncome] = React.useState<IncomeDTO | null>(null)
   const [collectingIncome, setCollectingIncome] = React.useState<IncomeDTO | null>(null)
-  const [detailIncomeId, setDetailIncomeId] = React.useState<string | null>(null)
+  const [detailIncomeId, setDetailIncomeId] = React.useState<string | null>(
+    initialIncomeId || null
+  )
   const [voidingIncome, setVoidingIncome] = React.useState<IncomeDTO | null>(null)
 
   // Fetch Categories & Payment Methods
@@ -368,9 +372,10 @@ export function IncomeTab({
             }
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
+          <div className="overflow-x-auto max-h-[540px] overflow-y-auto rounded-lg border border-border/70">
+            <Table>
+              <TableHeader className="sticky top-0 bg-muted/95 backdrop-blur z-10">
+                <TableRow className="hover:bg-transparent">
                 <TableHead className="text-xs">Date</TableHead>
                 <TableHead className="text-xs">Income Title & Category</TableHead>
                 <TableHead className="text-xs text-right">Expected</TableHead>
@@ -478,15 +483,21 @@ export function IncomeTab({
               })}
             </TableBody>
           </Table>
+          </div>
         )}
 
-        {totalCount > limit && (
+        {totalCount > 0 && (
           <PaginationFooter
             total={totalCount}
             page={page}
             limit={limit}
+            pageSizeOptions={[10, 25, 50, 100]}
             syncUrl={false}
             onPageChange={setPage}
+            onLimitChange={(newLimit) => {
+              setLimit(newLimit)
+              setPage(1)
+            }}
           />
         )}
       </DataTableShell>

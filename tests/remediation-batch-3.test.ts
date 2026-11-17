@@ -12,7 +12,7 @@ import {
   InvoiceItemType,
 } from "@prisma/client";
 import { AuthService } from "@/modules/auth/auth.service";
-import { getHotelTodayDateUtc } from "@/lib/date";
+import { getHotelTodayDateUtc, getHotelTodayDate } from "@/lib/date";
 
 // Route handlers
 import { POST as voidPaymentRoute } from "@/app/api/invoices/[id]/payments/[paymentId]/void/route";
@@ -574,7 +574,7 @@ describe("Batch 3: User Administration, Void Windows, Password Lifecycle & Conce
 
       // 5. Query today's shift report:
       // The void MUST be attributed to today's shift where it happened!
-      const voidDateIso = new Date().toISOString().split("T")[0]!;
+      const voidDateIso = getHotelTodayDate();
       const reportToday = await ReportsService.getShiftCollections(voidDateIso);
       const voidTx = reportToday.transactions.find(
         (t) => t.paymentId === payment.id && Number(t.amount) < 0

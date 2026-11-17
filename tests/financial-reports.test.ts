@@ -11,6 +11,7 @@ import { ReportsService } from "../src/modules/reports/reports.service"
 import { ReservationService } from "../src/modules/reservations/reservation.service"
 import { BillingService } from "../src/modules/billing/billing.service"
 import { CheckInOutService } from "../src/modules/check-in-out/check-in-out.service"
+import { getHotelTodayDate } from "../src/lib/date"
 
 describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", () => {
   let testStaffUser1Id: string
@@ -24,7 +25,7 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
   let customer1Id: string
   let customer2Id: string
 
-  const todayIso = new Date().toISOString().split("T")[0]!
+  const todayIso = getHotelTodayDate()
 
   before(async () => {
     // 1. Two Staff Users for shift comparison
@@ -333,5 +334,28 @@ describe("PMS Financial Reports Tests (Shift Collections & Receivables Aging)", 
     assert.ok(departedOnlyReport.items.every((i) => !i.isGuestInHouse))
     assert.ok(departedOnlyReport.items.some((i) => i.customerId === customer2Id))
     assert.ok(!departedOnlyReport.items.some((i) => i.customerId === customer1Id))
+  })
+
+  it("should generate unified cash flow & financial performance data with daily breakdown for visual graph and textual representation", async () => {
+    const report = await ReportsService.getCashFlowReport({
+      propertyId: testPropertyId,
+      startDate: todayIso,
+      endDate: todayIso,
+    })
+
+    assert.ok(report)
+    assert.equal(report.startDate, todayIso)
+    assert.equal(report.endDate, todayIso)
+    assert.ok(parseFloat(report.totalInflows) >= 450)
+    assert.ok(Array.isArray(report.dailyBreakdown))
+    assert.equal(report.dailyBreakdown.length, 1)
+    assert.equal(report.dailyBreakdown[0].date, todayIso)
+    assert.ok(parseFloat(report.dailyBreakdown[0].inflows) >= 450)
+
+    // Verify textual representation structures
+    assert.ok(Array.isArray(report.inflowSources))
+    assert.ok(report.inflowSources.some((s) => s.source === "GUEST_INVOICE"))
+    assert.ok(Array.isArray(report.outflowCategories))
+    assert.ok(Array.isArray(report.accountSummaries))
   })
 })

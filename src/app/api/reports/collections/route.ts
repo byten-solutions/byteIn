@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RoleName } from "@prisma/client"
-import { requireAuth, resolveScope } from "@/lib/auth-guard"
+import { requireAuth, resolveReportScope } from "@/lib/auth-guard"
 import { handleApiError } from "@/lib/errors"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { collectionsReportSchema } from "@/modules/reports/reports.validation"
@@ -16,16 +16,17 @@ export async function GET(req: NextRequest) {
 
       const query = collectionsReportSchema.parse({
         date: searchParams.get("date") || undefined,
-        startDate: searchParams.get("startDate") || undefined,
-        endDate: searchParams.get("endDate") || undefined,
+        startDate: searchParams.get("startDate") || searchParams.get("from") || undefined,
+        endDate: searchParams.get("endDate") || searchParams.get("to") || undefined,
         staffUserId: searchParams.get("staffUserId") || undefined,
         propertyId: searchParams.get("propertyId") || undefined,
         page: searchParams.get("page") || undefined,
         limit: searchParams.get("limit") || undefined,
       })
 
-      const effectivePropertyId =
-        resolveScope(session, query.propertyId, { allowSuperAdminGlobal: true }) ?? undefined
+      const effectivePropertyId = await resolveReportScope(session, query.propertyId)
+
+      const isReceptionist = session.role === RoleName.RECEPTIONIST
 
       const report = await ReportsService.getShiftCollections(
         query.date,
@@ -33,7 +34,11 @@ export async function GET(req: NextRequest) {
         query.endDate,
         query.staffUserId,
         effectivePropertyId,
-        { page: query.page, limit: query.limit }
+        {
+          page: query.page,
+          limit: query.limit,
+          onlyInvoiceReceipts: isReceptionist,
+        }
       )
 
       return NextResponse.json({ success: true, data: report })

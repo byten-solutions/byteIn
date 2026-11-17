@@ -13,6 +13,7 @@ import { reportDateRangeSchema } from "../src/modules/reports/reports.validation
 import { ReservationService } from "../src/modules/reservations/reservation.service"
 import { BillingService } from "../src/modules/billing/billing.service"
 import { enforceRole } from "../src/lib/auth-guard"
+import { getHotelTodayDate } from "../src/lib/date"
 import type { SessionPayload } from "../src/modules/auth/auth.types"
 
 describe("Phase 7: Operational & Financial Reporting Tests", () => {
@@ -352,15 +353,24 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
       )
     })
 
-    it("should reject date ranges exceeding 366 days", () => {
+    it("should accept date ranges exceeding 366 days (e.g. multi-year range from 2024 to 2026)", () => {
+      const parsed = reportDateRangeSchema.parse({
+        startDate: "2024-01-01",
+        endDate: "2026-11-17",
+      })
+      assert.strictEqual(parsed.startDate, "2024-01-01")
+      assert.strictEqual(parsed.endDate, "2026-11-17")
+    })
+
+    it("should reject date ranges exceeding maximum allowed range (10 years / 3660 days)", () => {
       assert.throws(
         () => {
           reportDateRangeSchema.parse({
-            startDate: "2025-01-01",
-            endDate: "2026-06-01", // > 500 days
+            startDate: "2010-01-01",
+            endDate: "2025-01-01", // > 14 years
           })
         },
-        /Date range cannot exceed 366 days/
+        /Date range cannot exceed 3660 days/
       )
     })
   })
@@ -453,7 +463,7 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
   describe("3. Revenue versus Collections Report (REP-005)", () => {
     it("should distinguish invoiced revenue from collections recorded", async () => {
       // Date range covers today (when tests created invoices and payments)
-      const todayIso = new Date().toISOString().split("T")[0]
+      const todayIso = getHotelTodayDate()
       const report = await ReportsService.getRevenueReport({
         startDate: todayIso,
         endDate: todayIso,
@@ -515,7 +525,7 @@ describe("Phase 7: Operational & Financial Reporting Tests", () => {
 
       await BillingService.voidPayment(receipt.paymentId, testStaffUserId)
 
-      const todayIso = new Date().toISOString().split("T")[0]
+      const todayIso = getHotelTodayDate()
       const report = await ReportsService.getRevenueReport({
         startDate: todayIso,
         endDate: todayIso,

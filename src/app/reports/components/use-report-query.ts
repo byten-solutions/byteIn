@@ -2,7 +2,33 @@
 
 import * as React from "react"
 
-const sessionCache = new Map<string, unknown>()
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+// 30 seconds freshness window: prevents stale financial figures while supporting snappy navigation
+const REPORT_CACHE_TTL_MS = 30_000
+const sessionCache = new Map<string, CacheEntry<unknown>>()
+
+function getCachedData<T>(key: string): T | null {
+  const entry = sessionCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.timestamp > REPORT_CACHE_TTL_MS) {
+    sessionCache.delete(key)
+    return null
+  }
+  return entry.data as T
+}
+
+function setCachedData<T>(key: string, data: T): void {
+  // Cap cache size to 50 entries
+  if (sessionCache.size >= 50) {
+    const oldestKey = sessionCache.keys().next().value
+    if (oldestKey) sessionCache.delete(oldestKey)
+  }
+  sessionCache.set(key, { data, timestamp: Date.now() })
+}
 
 export function clearReportSessionCache(endpointPrefix?: string) {
   if (!endpointPrefix) {
@@ -59,16 +85,28 @@ export function useReportQuery<T>({
   const cacheKey = `${endpoint}${queryParams ? `?${queryParams}` : ""}`
 
   const [data, setData] = React.useState<T | null>(() => {
-    if (sessionCache.has(cacheKey)) {
-      return sessionCache.get(cacheKey) as T
-    }
-    return null
+    return getCachedData<T>(cacheKey)
   })
-  const [isLoading, setIsLoading] = React.useState<boolean>(false)
+  const [isLoading, setIsLoading] = React.useState<boolean>(() => {
+    return getCachedData<T>(cacheKey) === null
+  })
   const [error, setError] = React.useState<string | null>(null)
   const [localRefresh, setLocalRefresh] = React.useState<number>(0)
 
+  // Immediately synchronize data and loading state when cacheKey changes (adjusting state during render)
+  const [prevCacheKey, setPrevCacheKey] = React.useState(cacheKey)
+  if (prevCacheKey !== cacheKey) {
+    setPrevCacheKey(cacheKey)
+    const cached = getCachedData<T>(cacheKey)
+    setData(cached)
+    setError(null)
+    if (cached === null) {
+      setIsLoading(true)
+    }
+  }
+
   const abortControllerRef = React.useRef<AbortController | null>(null)
+  const requestIdRef = React.useRef<number>(0)
   const lastFetchedTriggerRef = React.useRef<number>(refreshTrigger)
   const lastFetchedLocalRef = React.useRef<number>(localRefresh)
 
@@ -81,18 +119,24 @@ export function useReportQuery<T>({
     lastFetchedTriggerRef.current = refreshTrigger
     lastFetchedLocalRef.current = localRefresh
 
-    if (!isGlobalRefresh && !isLocalRefresh && sessionCache.has(cacheKey)) {
-      setData(sessionCache.get(cacheKey) as T)
-      setIsLoading(false)
-      setError(null)
-      return
+    // Check valid freshness cache unless explicitly refreshed
+    if (!isGlobalRefresh && !isLocalRefresh) {
+      const cached = getCachedData<T>(cacheKey)
+      if (cached !== null) {
+        setData(cached)
+        setIsLoading(false)
+        setError(null)
+        return
+      }
     }
 
+    // Cancel any previous in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
     const controller = new AbortController()
     abortControllerRef.current = controller
+    const currentRequestId = ++requestIdRef.current
 
     setIsLoading(true)
     setError(null)
@@ -107,50 +151,55 @@ export function useReportQuery<T>({
         throw new Error(errJson?.error || `Request failed with status ${res.status}`)
       }
       const json = await res.json()
+
+      // Discard stale responses from out-of-order execution
+      if (currentRequestId !== requestIdRef.current) {
+        return
+      }
+
       if (json && typeof json === "object" && "success" in json) {
         if (!json.success) {
           throw new Error(json.error || "Failed to load report data")
         }
-        sessionCache.set(cacheKey, json.data)
+        setCachedData(cacheKey, json.data)
         setData(json.data as T)
       } else {
-        sessionCache.set(cacheKey, json)
+        setCachedData(cacheKey, json)
         setData(json as T)
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         return
       }
-      const msg = err instanceof Error ? err.message : "Failed to load report"
-      setError(msg)
+      if (currentRequestId === requestIdRef.current) {
+        const msg = err instanceof Error ? err.message : "Failed to load report"
+        setError(msg)
+      }
     } finally {
-      if (abortControllerRef.current === controller) {
+      if (currentRequestId === requestIdRef.current && abortControllerRef.current === controller) {
         setIsLoading(false)
       }
     }
   }, [cacheKey, enabled, refreshTrigger, localRefresh])
 
   React.useEffect(() => {
+    let isMounted = true
     if (!enabled) return
 
-    const isGlobalRefresh = refreshTrigger !== lastFetchedTriggerRef.current
-    const isLocalRefresh = localRefresh !== lastFetchedLocalRef.current
-
-    if (!isGlobalRefresh && !isLocalRefresh && sessionCache.has(cacheKey)) {
-      setData(sessionCache.get(cacheKey) as T)
-      setIsLoading(false)
-      setError(null)
-      return
+    const run = async () => {
+      await Promise.resolve()
+      if (!isMounted) return
+      await fetchData()
     }
-
-    fetchData()
+    void run()
 
     return () => {
+      isMounted = false
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
     }
-  }, [cacheKey, enabled, refreshTrigger, localRefresh, fetchData])
+  }, [enabled, fetchData])
 
   const refetch = React.useCallback(() => {
     sessionCache.delete(cacheKey)

@@ -11,6 +11,7 @@ import {
 import { scopedCached, invalidateScoped } from "@/lib/scoped-cache"
 import { prisma } from "@/lib/prisma"
 import { BadRequestError } from "@/lib/errors"
+import { MAX_REPORT_RANGE_DAYS } from "@/modules/reports/reports.validation"
 import type {
   ReportFilterDTO,
   OccupancyReportDTO,
@@ -60,8 +61,8 @@ export class ReportsService {
       throw new BadRequestError("endDate must be on or after startDate")
     }
     const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const totalDays = diffDays + 1
@@ -309,8 +310,8 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const invPropertySql = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty
@@ -545,8 +546,8 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const propertyFilterSql = propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty
@@ -1428,8 +1429,8 @@ export class ReportsService {
     const startObj = new Date(`${effectiveStart}T00:00:00.000Z`)
     const endObj = new Date(`${effectiveEnd}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const propertyFilterSql = propertyId ? Prisma.sql`AND p.property_id = ${propertyId}` : Prisma.empty
@@ -1911,8 +1912,8 @@ export class ReportsService {
       const s = new Date(`${startDate}T00:00:00.000Z`).getTime()
       const e = new Date(`${endDate}T23:59:59.999Z`).getTime()
       const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-      if (diffDays > 366) {
-        throw new BadRequestError("Date range cannot exceed 366 days")
+      if (diffDays > MAX_REPORT_RANGE_DAYS) {
+        throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
       }
     }
 

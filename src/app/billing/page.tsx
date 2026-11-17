@@ -18,7 +18,7 @@ export default async function BillingPage(props: {
   }
 
   const searchParams = props.searchParams ? await props.searchParams : undefined
-  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true })
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true, safeFallback: true })
 
   const page = searchParams?.page ? parseInt(searchParams.page, 10) : 1
   const limit = searchParams?.limit ? parseInt(searchParams.limit, 10) : DEFAULT_PAGE_SIZE

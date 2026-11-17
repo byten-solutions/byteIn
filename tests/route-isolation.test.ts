@@ -371,6 +371,7 @@ describe("Permanent Route Isolation Sweep Test", () => {
       "src/app/api/buildings/[id]/floors/route.ts": "Building floors management",
       "src/app/api/users/route.ts": "Platform user management",
       "src/app/api/users/[id]/route.ts": "User administration",
+      "src/app/api/dashboard/financial-activity/route.ts": "Covered with complete RBAC and cross-property isolation in tests/financial-activity-timeline.test.ts",
     };
 
     const COVERED_ROUTES = new Set<string>([
@@ -409,6 +410,14 @@ describe("Permanent Route Isolation Sweep Test", () => {
       "src/app/api/reports/collections/route.ts",
       "src/app/api/reports/receivables/route.ts",
       "src/app/api/reports/discounts/route.ts",
+      "src/app/api/reports/cash-flow/route.ts",
+      "src/app/api/reports/expense/route.ts",
+      "src/app/api/reports/guests/route.ts",
+      "src/app/api/reports/income/route.ts",
+      "src/app/api/reports/monthly-performance/route.ts",
+      "src/app/api/reports/property-summary/route.ts",
+      "src/app/api/reports/revenue-vs-expense/route.ts",
+      "src/app/api/reports/room-performance/route.ts",
       "src/app/api/financial-accounts/route.ts",
       "src/app/api/financial-accounts/[id]/route.ts",
       "src/app/api/financial-accounts/[id]/statement/route.ts",

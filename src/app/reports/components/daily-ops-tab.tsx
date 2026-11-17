@@ -3,10 +3,6 @@
 import * as React from "react"
 import Link from "next/link"
 import {
-  CalendarCheck,
-  Clock,
-  BedDouble,
-  AlertCircle,
   ExternalLink,
   Search,
   Printer,
@@ -15,8 +11,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { StatCard, StatusBadge, PaginationFooter } from "@/components/ui-kit"
+import { StatusBadge, PaginationFooter } from "@/components/ui-kit"
 import { cn } from "@/lib/utils"
 import type {
   DailyOperationsCountsDTO,
@@ -25,6 +20,7 @@ import type {
 } from "@/modules/reports/reports.types"
 import { useReportQuery } from "./use-report-query"
 import { ReportSectionError, StatCardsSkeleton, TableSkeleton } from "./report-section-shell"
+import { ReportMetricBand, ReportRatioBar } from "./charts"
 
 type OpsSubTab = "arrivals" | "departures" | "in-house" | "overdue"
 
@@ -41,7 +37,7 @@ export function DailyOpsTab({
   propertyId,
   refreshTrigger = 0,
 }: DailyOpsTabProps) {
-  const [opsDate, setOpsDate] = React.useState<string>(initialTodayDate)
+  const opsDate = initialTodayDate
 
   const normalizeInitialSubTab = (subtab: string): OpsSubTab => {
     if (subtab === "in_house") return "in-house"
@@ -60,6 +56,13 @@ export function DailyOpsTab({
   const [debouncedQ, setDebouncedQ] = React.useState<string>("")
   const [page, setPage] = React.useState<number>(1)
   const [limit, setLimit] = React.useState<number>(25)
+
+  // Reset page to 1 when date changes
+  const [prevDate, setPrevDate] = React.useState<string>(initialTodayDate)
+  if (prevDate !== initialTodayDate) {
+    setPrevDate(initialTodayDate)
+    setPage(1)
+  }
 
   // Print mode state
   const [isPrinting, setIsPrinting] = React.useState<boolean>(false)
@@ -148,36 +151,10 @@ export function DailyOpsTab({
   const total = printData ? printData.total : listData?.total || 0
 
   return (
-    <div className="space-y-6">
-      {/* Date & Search Control Bar */}
-      <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
+    <div className="space-y-4 sm:space-y-4.5">
+      {/* Search & Actions Control Bar */}
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 sm:p-3.5 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <div className="flex flex-wrap items-center gap-3">
-          <Label htmlFor="opsDate" className="whitespace-nowrap font-medium text-xs">
-            Shift Date:
-          </Label>
-          <Input
-            id="opsDate"
-            type="date"
-            value={opsDate}
-            onChange={(e) => {
-              setOpsDate(e.target.value)
-              setPage(1)
-            }}
-            className="w-40 text-xs"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const today = new Date().toISOString().split("T")[0]!
-              setOpsDate(today)
-              setPage(1)
-            }}
-            className="h-8 text-xs"
-          >
-            Today
-          </Button>
-
           {/* Search Input (guest name, reservation #, room #) */}
           <div className="relative w-56 sm:w-64">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
@@ -218,7 +195,7 @@ export function DailyOpsTab({
         </div>
       </div>
 
-      {/* 1. Four KPI Badges / Stat Cards */}
+      {/* 1. Operational Dispatch Metric Band & Turnaround Progress */}
       {isCountsLoading && !countsData ? (
         <StatCardsSkeleton count={4} />
       ) : countsError && !countsData ? (
@@ -228,31 +205,53 @@ export function DailyOpsTab({
           onRetry={refetchCounts}
         />
       ) : countsData ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <StatCard
-            label="Expected Arrivals"
-            value={countsData.arrivals}
-            subtext={`${countsData.checkedInArrivals} already checked in`}
-            icon={<CalendarCheck className="size-4" />}
+        <div className="space-y-4">
+          <ReportMetricBand
+            metrics={[
+              {
+                label: "Expected Arrivals",
+                value: countsData.arrivals,
+                subtext: `${countsData.checkedInArrivals} already checked in`,
+              },
+              {
+                label: "Expected Departures",
+                value: countsData.departures,
+                subtext: `${countsData.checkedOutDepartures} checked out`,
+              },
+              {
+                label: "In-House Guests",
+                value: countsData.inHouse,
+                tone: "success",
+                subtext: "Active in-house rooms",
+              },
+              {
+                label: "Pending / Overdue",
+                value: countsData.overdue,
+                tone: countsData.overdue > 0 ? "danger" : "default",
+                subtext: countsData.overdue > 0 ? "Requires desk follow-up" : "Zero pending arrivals",
+              },
+            ]}
           />
-          <StatCard
-            label="Expected Departures"
-            value={countsData.departures}
-            subtext={`${countsData.checkedOutDepartures} checked out`}
-            icon={<Clock className="size-4" />}
-          />
-          <StatCard
-            label="In-House Guests"
-            value={countsData.inHouse}
-            subtext="Active staying guests"
-            icon={<BedDouble className="size-4" />}
-          />
-          <StatCard
-            label="Pending / No-Shows"
-            value={countsData.overdue}
-            subtext="Overdue check-ins"
-            icon={<AlertCircle className="size-4" />}
-          />
+
+          {/* Operational Progress Ratios */}
+          {(countsData.arrivals > 0 || countsData.departures > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-xl border border-border/80 bg-card p-4 shadow-2xs">
+              <ReportRatioBar
+                label="Arrivals Dispatch Progress"
+                segments={[
+                  { label: "Checked In", value: countsData.checkedInArrivals, color: "#10b981" },
+                  { label: "Pending", value: Math.max(0, countsData.arrivals - countsData.checkedInArrivals), color: "#3b82f6" },
+                ]}
+              />
+              <ReportRatioBar
+                label="Departures Dispatch Progress"
+                segments={[
+                  { label: "Checked Out", value: countsData.checkedOutDepartures, color: "#64748b" },
+                  { label: "Pending", value: Math.max(0, countsData.departures - countsData.checkedOutDepartures), color: "#f59e0b" },
+                ]}
+              />
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -382,11 +381,11 @@ export function DailyOpsTab({
             />
           </div>
         ) : (
-          <div>
-            <div className="overflow-x-auto">
+          <div className="space-y-3">
+            <div className="overflow-x-auto max-h-[540px] overflow-y-auto rounded-lg border border-border/70">
               <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40 text-xs font-medium text-muted-foreground">
+                <thead className="sticky top-0 bg-muted/95 backdrop-blur z-10">
+                  <tr className="border-b border-border text-xs font-medium text-muted-foreground">
                     <th className="px-4 py-3">Room</th>
                     <th className="px-4 py-3">Guest</th>
                     <th className="px-4 py-3">Dates & Stay</th>
@@ -455,7 +454,7 @@ export function DailyOpsTab({
             </div>
 
             {/* Pagination Footer (when not in full print mode) */}
-            {!printData && total > 10 && (
+            {!printData && total > 0 && (
               <div className="p-3 border-t border-border">
                 <PaginationFooter
                   page={page}
@@ -466,6 +465,8 @@ export function DailyOpsTab({
                     setLimit(newLimit)
                     setPage(1)
                   }}
+                  pageSizeOptions={[10, 25, 50, 100]}
+                  syncUrl={false}
                 />
               </div>
             )}

@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+export const MAX_REPORT_RANGE_DAYS = 3660 // Allows up to 10 years of multi-year financial & historical trend analysis
+
 export function isValidISODateString(val: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(val.trim())
   if (!match) return false
@@ -47,10 +49,10 @@ export const reportDateRangeSchema = z
       const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
       const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
       const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-      return diffDays <= 366
+      return diffDays <= MAX_REPORT_RANGE_DAYS
     },
     {
-      message: "Date range cannot exceed 366 days",
+      message: `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`,
       path: ["endDate"],
     }
   )
@@ -88,7 +90,7 @@ export const availabilityGridSchema = z
     floorId: z.string().trim().min(1).optional(),
     q: z.string().trim().optional(),
     page: z.coerce.number().int().min(1).optional().default(1),
-    limit: z.coerce.number().int().min(1).max(100).optional().default(25),
+    limit: z.coerce.number().int().min(1).max(5000).optional().default(25),
   })
   .refine(
     (data) => {
@@ -146,7 +148,7 @@ export const collectionsReportSchema = z
     staffUserId: z.string().trim().min(1).optional(),
     propertyId: z.string().trim().min(1).optional(),
     page: z.coerce.number().int().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(5000).optional(),
   })
   .refine(
     (data) => {
@@ -168,21 +170,28 @@ export const collectionsReportSchema = z
         const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
         const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
         const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-        return diffDays <= 366
+        return diffDays <= MAX_REPORT_RANGE_DAYS
       }
       return true
     },
     {
-      message: "Date range cannot exceed 366 days",
+      message: `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`,
       path: ["endDate"],
     }
   )
 
 export const receivablesReportSchema = z.object({
+  asOfDate: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "asOfDate must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
   propertyId: z.string().trim().min(1).optional(),
   filter: z.enum(["all", "in_house", "future", "departed"]).optional().default("all"),
   page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
 })
 
 export const discountsReportSchema = z
@@ -203,7 +212,7 @@ export const discountsReportSchema = z
       .optional(),
     propertyId: z.string().trim().min(1).optional(),
     page: z.coerce.number().int().min(1).optional(),
-    limit: z.coerce.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(5000).optional(),
   })
   .refine(
     (data) => {
@@ -225,12 +234,12 @@ export const discountsReportSchema = z
         const s = new Date(`${data.startDate}T00:00:00.000Z`).getTime()
         const e = new Date(`${data.endDate}T00:00:00.000Z`).getTime()
         const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-        return diffDays <= 366
+        return diffDays <= MAX_REPORT_RANGE_DAYS
       }
       return true
     },
     {
-      message: "Date range cannot exceed 366 days",
+      message: `Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`,
       path: ["endDate"],
     }
   )
@@ -258,7 +267,83 @@ export const dailyOpsListSchema = z.object({
   propertyId: z.string().trim().min(1).optional(),
   q: z.string().trim().optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(2000).optional().default(25),
+  limit: z.coerce.number().int().min(1).max(5000).optional().default(25),
   sort: z.string().trim().optional(),
   dir: z.enum(["asc", "desc"]).optional().default("asc"),
+})
+
+export const incomeReportSchema = reportDateRangeSchema.extend({
+  incomeHeadId: z.string().trim().min(1).optional(),
+  status: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
+})
+
+export const expenseReportSchema = reportDateRangeSchema.extend({
+  expenseHeadId: z.string().trim().min(1).optional(),
+  status: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
+})
+
+export const cashFlowReportSchema = reportDateRangeSchema
+
+export const revenueVsExpenseReportSchema = reportDateRangeSchema
+
+export const roomPerformanceReportSchema = reportDateRangeSchema.extend({
+  categoryId: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
+})
+
+export const monthlyPerformanceReportSchema = z.object({
+  startMonth: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}$/, "startMonth must be in YYYY-MM format")
+    .optional(),
+  endMonth: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}$/, "endMonth must be in YYYY-MM format")
+    .optional(),
+  propertyId: z.string().trim().min(1).optional(),
+})
+
+export const propertySummaryReportSchema = z.object({
+  startDate: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "startDate must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+  endDate: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "endDate must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+})
+
+export const guestReportSchema = z.object({
+  startDate: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "startDate must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+  endDate: z
+    .string()
+    .trim()
+    .refine(isValidISODateString, {
+      message: "endDate must be a valid calendar date in YYYY-MM-DD format",
+    })
+    .optional(),
+  propertyId: z.string().trim().min(1).optional(),
+  q: z.string().trim().optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(5000).optional(),
 })

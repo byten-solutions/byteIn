@@ -22,16 +22,31 @@ interface PropertyItem {
   status: string
 }
 
+const VALID_TABS: FinanceTab[] = ["accounts", "methods", "transfers", "income", "expenses"]
+
 export function FinanceView({
   session,
   properties,
   initialPropertyId,
+  initialTab,
+  initialIncomeId,
+  initialExpenseId,
+  initialTransferId,
 }: {
   session: SessionPayload
   properties: PropertyItem[]
   initialPropertyId: string
+  initialTab?: string
+  initialIncomeId?: string
+  initialExpenseId?: string
+  initialTransferId?: string
 }) {
-  const [activeTab, setActiveTab] = React.useState<FinanceTab>("accounts")
+  const [activeTab, setActiveTab] = React.useState<FinanceTab>(() => {
+    if (initialTab && VALID_TABS.includes(initialTab as FinanceTab)) {
+      return initialTab as FinanceTab
+    }
+    return "accounts"
+  })
   const [selectedPropertyId, setSelectedPropertyId] = React.useState(initialPropertyId)
   const [refreshKey, setRefreshKey] = React.useState(0)
   const [accounts, setAccounts] = React.useState<FinancialAccountWithBalanceDTO[]>([])
@@ -204,6 +219,7 @@ export function FinanceView({
                 accounts={accounts}
                 refreshKey={refreshKey}
                 onTransferSuccess={handleDataChange}
+                selectedTransferId={initialTransferId}
               />
             )}
 
@@ -213,6 +229,7 @@ export function FinanceView({
                 accounts={accounts}
                 refreshKey={refreshKey}
                 onDataChange={handleDataChange}
+                initialIncomeId={initialIncomeId}
               />
             )}
 
@@ -222,6 +239,7 @@ export function FinanceView({
                 accounts={accounts}
                 refreshKey={refreshKey}
                 onDataChange={handleDataChange}
+                initialExpenseId={initialExpenseId}
               />
             )}
           </div>

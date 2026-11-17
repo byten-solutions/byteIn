@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RoleName } from "@prisma/client"
-import { requireAuth, resolveScope } from "@/lib/auth-guard"
+import { requireAuth, resolveReportScope } from "@/lib/auth-guard"
 import { handleApiError } from "@/lib/errors"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { singleDateReportSchema } from "@/modules/reports/reports.validation"
@@ -19,8 +19,7 @@ export async function GET(req: NextRequest) {
         propertyId: searchParams.get("propertyId") || undefined,
       })
 
-      const effectivePropertyId =
-        resolveScope(session, query.propertyId, { allowSuperAdminGlobal: true }) ?? undefined
+      const effectivePropertyId = await resolveReportScope(session, query.propertyId)
 
       const report = await ReportsService.getDailyOperations(query.date, effectivePropertyId)
 

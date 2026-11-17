@@ -833,12 +833,14 @@ export class FinancialAccountService {
       limit?: number;
       startDate?: string;
       endDate?: string;
+      transferId?: string;
     }
   ): Promise<{ transfers: AccountTransferDTO[]; total: number; page: number; limit: number }> {
     const { page, limit, skip } = sanitizePagination(query?.page, query?.limit);
 
     const where: Prisma.AccountTransferWhereInput = {
       propertyId,
+      ...(query?.transferId && { id: query.transferId }),
       ...(query?.startDate && {
         transferDate: { gte: new Date(query.startDate) },
       }),

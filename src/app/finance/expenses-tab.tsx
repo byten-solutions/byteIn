@@ -57,18 +57,20 @@ export function ExpensesTab({
   accounts,
   refreshKey,
   onDataChange,
+  initialExpenseId,
 }: {
   propertyId: string
   accounts: FinancialAccountWithBalanceDTO[]
   refreshKey: number
   onDataChange: () => void
+  initialExpenseId?: string
 }) {
   const [expenses, setExpenses] = React.useState<ExpenseDTO[]>([])
   const [categories, setCategories] = React.useState<ExpenseHeadDTO[]>([])
   const [paymentMethods, setPaymentMethods] = React.useState<PaymentMethodDTO[]>([])
   const [totalCount, setTotalCount] = React.useState(0)
   const [page, setPage] = React.useState(1)
-  const [limit] = React.useState(20)
+  const [limit, setLimit] = React.useState(20)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [summary, setSummary] = React.useState<ExpenseSummaryMetricsDTO | null>(null)
@@ -85,7 +87,9 @@ export function ExpensesTab({
   const [isCategoriesOpen, setIsCategoriesOpen] = React.useState(false)
   const [editingExpense, setEditingExpense] = React.useState<ExpenseDTO | null>(null)
   const [payingExpense, setPayingExpense] = React.useState<ExpenseDTO | null>(null)
-  const [detailExpenseId, setDetailExpenseId] = React.useState<string | null>(null)
+  const [detailExpenseId, setDetailExpenseId] = React.useState<string | null>(
+    initialExpenseId || null
+  )
   const [voidingExpense, setVoidingExpense] = React.useState<ExpenseDTO | null>(null)
   const [voidingPayment, setVoidingPayment] = React.useState<{
     expenseId: string
@@ -402,9 +406,9 @@ export function ExpensesTab({
             }
           />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[540px] overflow-y-auto rounded-lg border border-border/70">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-muted/95 backdrop-blur z-10">
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
                   <TableHead className="text-xs font-semibold">Date</TableHead>
                   <TableHead className="text-xs font-semibold">Title</TableHead>
@@ -515,13 +519,18 @@ export function ExpensesTab({
         )}
 
         {/* 4. Pagination */}
-        {totalCount > limit && (
+        {totalCount > 0 && (
           <PaginationFooter
             total={totalCount}
             page={page}
             limit={limit}
+            pageSizeOptions={[10, 25, 50, 100]}
             syncUrl={false}
             onPageChange={setPage}
+            onLimitChange={(newLimit) => {
+              setLimit(newLimit)
+              setPage(1)
+            }}
           />
         )}
       </DataTableShell>

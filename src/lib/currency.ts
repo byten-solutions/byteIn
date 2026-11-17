@@ -65,6 +65,31 @@ export function formatPaymentMethod(method: string, referenceNumber?: string | n
 }
 
 /**
+ * Formats a monetary amount into compact Indian notation (e.g. ₹500, ₹45K, ₹1.5L, ₹1.25Cr).
+ */
+export function formatCompactMoney(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "₹0";
+  const num = typeof value === "number" ? value : parseFloat(value.toString());
+  if (isNaN(num)) return "₹0";
+  const abs = Math.abs(num);
+  const sign = num < 0 ? "-" : "";
+
+  if (abs >= 10000000) {
+    const cr = abs / 10000000;
+    return `${sign}₹${cr >= 10 || cr % 1 === 0 ? cr.toFixed(0) : cr.toFixed(2)}Cr`;
+  }
+  if (abs >= 100000) {
+    const l = abs / 100000;
+    return `${sign}₹${l >= 10 || l % 1 === 0 ? l.toFixed(0) : l.toFixed(1)}L`;
+  }
+  if (abs >= 1000) {
+    const k = abs / 1000;
+    return `${sign}₹${k >= 10 || k % 1 === 0 ? k.toFixed(0) : k.toFixed(1)}K`;
+  }
+  return `${sign}₹${Math.round(abs)}`;
+}
+
+/**
  * Cleans stringified role objects ("System Administrator ([object Object])") to prevent rendering [object Object].
  */
 export function formatStaffName(name?: string | null): string {

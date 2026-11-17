@@ -37,7 +37,7 @@ export default async function RoomsPage(props: {
   const rawStatus = searchParams?.status;
   const initialStatus = rawStatus && VALID_STATUSES.has(rawStatus) ? rawStatus : undefined;
   const effectivePropertyId =
-    resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true }) ?? undefined;
+    resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true, safeFallback: true }) ?? undefined;
 
   let summary: Awaited<ReturnType<typeof RoomService.getRoomsSummary>> = {
     counts: {

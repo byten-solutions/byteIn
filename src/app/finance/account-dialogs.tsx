@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { MoneyText } from "@/components/ui-kit"
+import { MoneyText, PaginationFooter } from "@/components/ui-kit"
 import { formatDate } from "@/lib/date-format"
 import type {
   FinancialAccountWithBalanceDTO,
@@ -389,6 +389,20 @@ function AccountStatementContent({
 
   const [filterKey, setFilterKey] = React.useState(0)
 
+  const [dialogPage, setDialogPage] = React.useState(1)
+  const [dialogLimit, setDialogLimit] = React.useState(10)
+
+  // Reset dialog page when dates or filterKey change
+  const [prevDates, setPrevDates] = React.useState({ startDate, endDate, filterKey })
+  if (
+    prevDates.startDate !== startDate ||
+    prevDates.endDate !== endDate ||
+    prevDates.filterKey !== filterKey
+  ) {
+    setPrevDates({ startDate, endDate, filterKey })
+    setDialogPage(1)
+  }
+
   React.useEffect(() => {
     let mounted = true
 
@@ -398,7 +412,7 @@ function AccountStatementContent({
           propertyId,
           startDate,
           endDate,
-          limit: "100",
+          limit: "5000",
         })
 
         const res = await fetch(
@@ -542,56 +556,85 @@ function AccountStatementContent({
               <div className="text-center py-12 border rounded-lg border-dashed border-border/80 text-muted-foreground text-xs">
                 No recorded transactions found for this account within the selected dates.
               </div>
-            ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <Table className="text-xs">
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="w-32">Date</TableHead>
-                      <TableHead>Description / Source</TableHead>
-                      <TableHead className="w-28">Ref #</TableHead>
-                      <TableHead className="text-right w-28">Inflow (+)</TableHead>
-                      <TableHead className="text-right w-28">Outflow (-)</TableHead>
-                      <TableHead className="text-right w-32 font-bold">Running Balance</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {statement.items.map((item) => {
-                      const hasCredit = item.credit !== null
-                      return (
-                        <TableRow key={item.id} className="hover:bg-muted/30">
-                          <TableCell className="font-mono text-muted-foreground whitespace-nowrap">
-                            {formatDate(item.date)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1.5">
-                              {hasCredit ? (
-                                <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              ) : (
-                                <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
-                              )}
-                              <span className="font-medium text-foreground">{item.description}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-muted-foreground text-[11px]">
-                            {item.referenceNumber || "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium text-emerald-600 dark:text-emerald-400">
-                            {item.credit ? <MoneyText value={item.credit} /> : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium text-rose-600 dark:text-rose-400">
-                            {item.debit ? <MoneyText value={item.debit} /> : "—"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-bold text-foreground">
-                            <MoneyText value={item.runningBalance} />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+            ) : (() => {
+              const totalDialogItems = statement.items.length
+              const totalDialogPages = Math.max(1, Math.ceil(totalDialogItems / dialogLimit))
+              const safeDialogPage = Math.min(Math.max(1, dialogPage), totalDialogPages)
+              const paginatedDialogItems = statement.items.slice(
+                (safeDialogPage - 1) * dialogLimit,
+                safeDialogPage * dialogLimit
+              )
+
+              return (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-32">Date</TableHead>
+                        <TableHead>Description / Source</TableHead>
+                        <TableHead className="w-28">Ref #</TableHead>
+                        <TableHead className="text-right w-28">Inflow (+)</TableHead>
+                        <TableHead className="text-right w-28">Outflow (-)</TableHead>
+                        <TableHead className="text-right w-32 font-bold">Running Balance</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedDialogItems.map((item) => {
+                        const hasCredit = item.credit !== null
+                        return (
+                          <TableRow key={item.id} className="hover:bg-muted/30">
+                            <TableCell className="font-mono text-muted-foreground whitespace-nowrap">
+                              {formatDate(item.date)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                {hasCredit ? (
+                                  <ArrowDownLeft className="size-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                ) : (
+                                  <ArrowUpRight className="size-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                                )}
+                                <span className="font-medium text-foreground">{item.description}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-mono text-muted-foreground text-[11px]">
+                              {item.referenceNumber || "—"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium text-emerald-600 dark:text-emerald-400">
+                              {item.credit ? <MoneyText value={item.credit} /> : "—"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-medium text-rose-600 dark:text-rose-400">
+                              {item.debit ? <MoneyText value={item.debit} /> : "—"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold text-foreground">
+                              <MoneyText value={item.runningBalance} />
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  {/* Pagination Footer */}
+                  {totalDialogItems > 0 && (
+                    <div className="border-t border-border p-2">
+                      <PaginationFooter
+                        page={safeDialogPage}
+                        limit={dialogLimit}
+                        total={totalDialogItems}
+                        totalPages={totalDialogPages}
+                        onPageChange={setDialogPage}
+                        onLimitChange={(newLimit) => {
+                          setDialogLimit(newLimit)
+                          setDialogPage(1)
+                        }}
+                        pageSizeOptions={[10, 25, 50]}
+                        syncUrl={false}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
           </>
         ) : null}
       </div>

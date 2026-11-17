@@ -1,6 +1,6 @@
 import * as React from "react"
 import Link from "next/link"
-import { Wallet, ArrowUpRight, CreditCard, Banknote, Smartphone } from "lucide-react"
+import { ArrowUpRight, Wallet } from "lucide-react"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { getHotelTodayDate } from "@/lib/date"
 import { formatMoney } from "@/lib/currency"
@@ -9,19 +9,13 @@ import type { ShiftCollectionsReportDTO, PaymentTransactionDTO } from "@/modules
 
 interface ShiftCollectionsCardProps {
   propertyId?: string
+  initialData?: ShiftCollectionsReportDTO
 }
 
-function getMethodIcon(method: string) {
-  const m = method.toUpperCase()
-  if (m === "CASH") return <Banknote className="size-3 text-emerald-600 dark:text-emerald-400" />
-  if (m === "UPI") return <Smartphone className="size-3 text-sky-600 dark:text-sky-400" />
-  return <CreditCard className="size-3 text-purple-600 dark:text-purple-400" />
-}
-
-export async function ShiftCollectionsCard({ propertyId }: ShiftCollectionsCardProps) {
+export async function ShiftCollectionsCard({ propertyId, initialData }: ShiftCollectionsCardProps) {
   const todayStr = getHotelTodayDate()
 
-  let collections: ShiftCollectionsReportDTO = {
+  let collections: ShiftCollectionsReportDTO = initialData || {
     targetDate: todayStr,
     totalCollected: "0.00",
     totalTransactions: 0,
@@ -30,144 +24,122 @@ export async function ShiftCollectionsCard({ propertyId }: ShiftCollectionsCardP
     transactions: [],
   }
 
-  try {
-    collections = await ReportsService.getShiftCollections(todayStr, propertyId)
-  } catch (err) {
-    console.error("Failed to load shift collections in ShiftCollectionsCard:", err)
+  if (!initialData) {
+    try {
+      collections = await ReportsService.getShiftCollections(
+        todayStr,
+        undefined,
+        undefined,
+        undefined,
+        propertyId
+      )
+    } catch (err) {
+      console.error("Failed to load shift collections in ShiftCollectionsCard:", err)
+    }
   }
 
   const totalCollectedNum = parseFloat(collections.totalCollected) || 0
-  const recentTx: PaymentTransactionDTO[] = (collections.transactions || []).slice(0, 4)
+  const recentTx: PaymentTransactionDTO[] = (collections.transactions || []).slice(0, 3)
   const methods = collections.methodBreakdown || []
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-xs flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border pb-2">
+    <Link
+      href="/billing"
+      className="block group rounded-xl border border-border/80 bg-card p-3.5 sm:p-4 hover:border-primary/50 hover:bg-muted/15 transition-all shadow-2xs space-y-2.5 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      title="View all billing and receipts"
+    >
+      {/* Heading */}
+      <div className="flex items-center justify-between border-b border-border/60 pb-2">
         <div className="flex items-center gap-2">
           <Wallet className="size-4 text-emerald-600 dark:text-emerald-400" />
-          <h3 className="font-semibold text-sm text-foreground">Shift Drawer & Collections</h3>
+          <h2 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+            Shift Collections
+          </h2>
         </div>
-        <Link
-          href="/billing"
-          className="text-xs text-muted-foreground hover:text-foreground font-mono transition-colors inline-flex items-center gap-0.5"
-        >
-          <span>Billing</span>
-          <ArrowUpRight className="size-3" />
-        </Link>
+        <ArrowUpRight className="size-3.5 text-muted-foreground/60 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
       </div>
 
-      {/* Primary KPI Callout */}
+      {/* Prominent Collected Amount & Payment Count */}
       <div className="space-y-0.5">
-        <span className="text-xs text-muted-foreground font-medium">Today&apos;s Front Desk Realization</span>
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight tabular-nums">
-            {formatMoney(totalCollectedNum)}
-          </span>
-          <span className="text-xs text-muted-foreground font-mono tabular-nums">
-            ({collections.totalTransactions} payment{collections.totalTransactions === 1 ? "" : "s"})
-          </span>
+        <div className="text-xl sm:text-2xl font-extrabold font-mono text-foreground tracking-tight tabular-nums">
+          {formatMoney(totalCollectedNum)}
+        </div>
+        <div className="text-xs text-muted-foreground font-mono">
+          {collections.totalTransactions} {collections.totalTransactions === 1 ? "receipt" : "receipts"} recorded today
         </div>
       </div>
 
-      {/* Payment Method Distribution Bar or Drawer Readiness */}
-      {methods.length > 0 && totalCollectedNum > 0 ? (
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Method Distribution</span>
-            <span className="font-mono">{methods.length} methods</span>
-          </div>
-          <div className="h-2 w-full rounded-md bg-muted/60 flex overflow-hidden gap-0.5 p-0.5">
+      {/* Compact Payment Method Breakdown */}
+      {methods.length > 0 && totalCollectedNum > 0 && (
+        <div className="space-y-1.5 pt-1 border-t border-border/50">
+          <div className="h-1.5 w-full rounded-full bg-muted/60 flex overflow-hidden gap-0.5">
             {methods.map((pm) => {
               const amount = parseFloat(pm.amount) || 0
-              const pct = totalCollectedNum > 0 ? (amount / totalCollectedNum) * 100 : 0
+              const pct = (amount / totalCollectedNum) * 100
               if (pct <= 0) return null
               const isCash = pm.method.toUpperCase() === "CASH"
               const isUPI = pm.method.toUpperCase() === "UPI"
-              const colorClass = isCash ? "bg-emerald-500" : isUPI ? "bg-sky-500" : "bg-purple-500"
-
+              const color = isCash ? "bg-emerald-500" : isUPI ? "bg-sky-500" : "bg-purple-500"
               return (
                 <div
                   key={pm.method}
-                  className={`h-full rounded-xs transition-all ${colorClass}`}
+                  className={`h-full rounded-full ${color}`}
                   style={{ width: `${pct}%` }}
-                  title={`${pm.method}: ${formatMoney(amount)} (${Math.round(pct)}%)`}
                 />
               )
             })}
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between rounded-lg bg-muted/20 border border-dashed border-border/60 px-3 py-2 text-xs">
-          <span className="text-muted-foreground">Cash Drawer</span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-emerald-500" />
-            Ready for receipts
-          </span>
+
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-mono text-muted-foreground">
+            {methods.map((pm) => (
+              <span key={pm.method}>
+                <span className="font-medium text-foreground">{pm.method}</span>:{" "}
+                {formatMoney(parseFloat(pm.amount) || 0)}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Recent Shift Payments List */}
-      <div className="space-y-2 pt-1 border-t border-border/60">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="font-semibold text-foreground">Recent Payments</span>
-          <Link href="/billing" className="text-[11px] text-primary hover:underline font-mono">
-            View All ({collections.totalTransactions})
-          </Link>
-        </div>
-
-        {recentTx.length === 0 ? (
-          <div className="py-2 px-3 text-center text-xs text-muted-foreground bg-muted/20 rounded-lg border border-dashed border-border/60">
-            No payments recorded yet today
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {recentTx.map((tx) => (
-              <div
-                key={tx.paymentId}
-                className="flex items-center justify-between p-2 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0 pr-2">
-                  <div className="size-6 rounded-md bg-card border border-border flex items-center justify-center shrink-0">
-                    {getMethodIcon(tx.paymentMethod)}
-                  </div>
-                  <div className="space-y-0.5 min-w-0">
-                    <span className="font-semibold text-foreground block truncate">
-                      {tx.guestName || "Walk-In Guest"}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground font-mono block truncate">
-                      #{tx.reservationNo || tx.invoiceNumber} · {tx.paymentMethod}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400 tabular-nums shrink-0">
-                  +{formatMoney(parseFloat(tx.amount) || 0)}
-                </div>
+      {/* Maximum 2-3 Compact Recent Transactions (only when they exist) */}
+      {recentTx.length > 0 && (
+        <div className="pt-2 border-t border-border/50 space-y-1">
+          {recentTx.map((tx) => (
+            <div
+              key={tx.paymentId}
+              className="flex items-center justify-between text-xs py-1"
+            >
+              <div className="truncate max-w-[170px]">
+                <span className="font-medium text-foreground block truncate">
+                  {tx.guestName || "Walk-In Guest"}
+                </span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {tx.paymentMethod}
+                </span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              <div className="font-mono font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                +{formatMoney(parseFloat(tx.amount) || 0)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Link>
   )
 }
 
 export function ShiftCollectionsSkeleton() {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-xs flex flex-col">
-      <div className="flex items-center justify-between border-b border-border pb-2">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-4 w-16" />
+    <div className="rounded-xl border border-border/80 bg-card p-4 sm:p-5 space-y-3 shadow-2xs">
+      <div className="flex items-center justify-between border-b border-border/60 pb-2.5">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-3.5 w-3.5" />
       </div>
       <div className="space-y-1">
-        <Skeleton className="h-3 w-32" />
-        <Skeleton className="h-7 w-44" />
+        <Skeleton className="h-8 w-44" />
+        <Skeleton className="h-3 w-28" />
       </div>
-      <Skeleton className="h-8 w-full rounded-lg" />
-      <div className="space-y-2 pt-1 border-t border-border/60">
-        <Skeleton className="h-8 w-full rounded-lg" />
-      </div>
+      <Skeleton className="h-1.5 w-full rounded-full" />
     </div>
   )
 }

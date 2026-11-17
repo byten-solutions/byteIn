@@ -6,7 +6,13 @@ import { AppShell } from "@/components/app-shell";
 import { FinanceView } from "./finance-view";
 
 export default async function FinancePage(props: {
-  searchParams?: Promise<{ propertyId?: string }>;
+  searchParams?: Promise<{
+    propertyId?: string;
+    tab?: string;
+    incomeId?: string;
+    expenseId?: string;
+    transferId?: string;
+  }>;
 }) {
   const session = await getSession();
   if (!session) {
@@ -53,6 +59,10 @@ export default async function FinancePage(props: {
           session={session}
           properties={properties}
           initialPropertyId={initialPropertyId}
+          initialTab={searchParams?.tab}
+          initialIncomeId={searchParams?.incomeId}
+          initialExpenseId={searchParams?.expenseId}
+          initialTransferId={searchParams?.transferId}
         />
       </div>
     </AppShell>

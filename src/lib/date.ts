@@ -40,3 +40,56 @@ export function getHotelTodayDateUtc(
   const day = parseInt(dayStr!, 10);
   return new Date(Date.UTC(year, month, day));
 }
+
+/**
+ * Returns a Date object representing 00:00:00.000 in the specified timezone
+ * for a given "YYYY-MM-DD" date string.
+ *
+ * This provides the exact half-open lower bound (>= startOfDay) in UTC.
+ */
+export function getHotelDateBoundaryUtc(
+  dateStr: string,
+  timeZone: string = HOTEL_TIMEZONE
+): Date {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    throw new Error(`Invalid date format for boundary: "${dateStr}". Expected YYYY-MM-DD`);
+  }
+  const approx = new Date(`${dateStr}T12:00:00.000Z`);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZoneName: "shortOffset",
+  }).formatToParts(approx);
+
+  const tzPart = parts.find((p) => p.type === "timeZoneName")?.value || "GMT+0";
+  const offsetMatch = tzPart.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  let offsetStr = "+00:00";
+  if (offsetMatch) {
+    const sign = offsetMatch[1];
+    const hours = offsetMatch[2]!.padStart(2, "0");
+    const mins = (offsetMatch[3] || "00").padStart(2, "0");
+    offsetStr = `${sign}${hours}:${mins}`;
+  }
+  return new Date(`${dateStr}T00:00:00.000${offsetStr}`);
+}
+
+/**
+ * Returns "YYYY-MM-DD" string with the given number of days added.
+ */
+export function addDaysToYmd(ymd: string, days: number): string {
+  const match = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    throw new Error(`Invalid date format for addDaysToYmd: "${ymd}". Expected YYYY-MM-DD`);
+  }
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + days));
+  return dt.toISOString().slice(0, 10);
+}
+
