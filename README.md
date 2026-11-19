@@ -87,7 +87,7 @@ Detailed specifications and architectural decisions reside under `docs/`:
 | [byteInn_Architecture_v1.md](docs/byteInn_Architecture_v1.md) | High-level system context, technology boundaries, module responsibilities, and V1 exclusions. |
 | [byteInn_Database_Design_v1.md](docs/byteInn_Database_Design_v1.md) | PostgreSQL schema, entities, relationships, constraints, and status lifecycles. |
 | [byteInn_Low_Level_Architecture_v1.md](docs/byteInn_Low_Level_Architecture_v1.md) | API boundaries, request flows, transaction requirements, and state transition logic. |
-| [byteInn_Implementation_Plan_v1.md](docs/byteInn_Implementation_Plan_v1.md) | Phased implementation roadmap (Phases 1–8) and core acceptance criteria. |
+| [byteInn_Implementation_Plan_v1.md](docs/byteInn_Implementation_Plan_v1.md) | Phased implementation roadmap (Core Phases 1–8, Financial Management Phases 1–4) and acceptance criteria. |
 | [AGENTS.md](AGENTS.md) | Primary instruction file for AI agents, engineering rules, and living documentation protocol. |
 | [prisma/README.md](prisma/README.md) | Database conventions, migration workflow, and relational constraints. |
 | [src/README.md](src/README.md) | Source directory structure, API conventions, and client/server component boundaries. |

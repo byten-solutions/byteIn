@@ -161,6 +161,16 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
     dotClass: "bg-stone-400",
     badgeClass: "bg-stone-500/12 text-stone-800 dark:text-stone-300 border-stone-500/25 font-medium",
   },
+  PARTIALLY_RECEIVED: {
+    label: "Partially Received",
+    dotClass: "bg-amber-500",
+    badgeClass: "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/30 font-semibold",
+  },
+  RECEIVED: {
+    label: "Received",
+    dotClass: "bg-emerald-500",
+    badgeClass: "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/25 font-semibold",
+  },
 }
 
 export interface StatusBadgeProps extends React.HTMLAttributes<HTMLSpanElement> {

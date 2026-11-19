@@ -3,9 +3,11 @@ import {
   ReservationStatus,
   AllocationStatus,
   InvoiceStatus,
-  PaymentStatus,
+  ReceiptStatus,
   InvoiceItemType,
   RoomStatus,
+  IncomeStatus,
+  ExpenseStatus,
 } from "@prisma/client"
 import { scopedCached, invalidateScoped } from "@/lib/scoped-cache"
 import { prisma } from "@/lib/prisma"
@@ -37,8 +39,36 @@ import type {
   DiscountsReportDTO,
   InvoiceDiscountItemDTO,
   RateOverrideItemDTO,
+  IncomeReportDTO,
+  IncomeReportItemDTO,
+  IncomeCategorySummaryDTO,
+  ExpenseReportDTO,
+  ExpenseReportItemDTO,
+  ExpenseCategorySummaryDTO,
+  CashFlowReportDTO,
+  DailyCashFlowDTO,
+  CashFlowInflowSourceDTO,
+  CashFlowOutflowCategoryDTO,
+  CashFlowAccountSummaryDTO,
+  RevenueVsExpenseReportDTO,
+  RoomPerformanceReportDTO,
+  RoomPerformanceItemDTO,
+  MonthlyPerformanceReportDTO,
+  MonthlyPerformanceMonthDTO,
+  PropertySummaryReportDTO,
+  PropertySummaryItemDTO,
+  GuestReportDTO,
+  GuestReportItemDTO,
+  MonthlyGuestLoyaltyDTO,
 } from "./reports.types"
-import { getHotelTodayDate, getHotelTodayDateUtc } from "@/lib/date"
+import {
+  getHotelTodayDate,
+  getHotelTodayDateUtc,
+  getHotelDateBoundaryUtc,
+  addDaysToYmd,
+  HOTEL_TIMEZONE,
+} from "@/lib/date"
+import { MAX_REPORT_RANGE_DAYS } from "./reports.validation"
 
 export class ReportsService {
   /**
@@ -59,8 +89,8 @@ export class ReportsService {
       throw new BadRequestError("endDate must be on or after startDate")
     }
     const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const totalDays = diffDays + 1
@@ -309,9 +339,12 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
+
+    const startTzSql = Prisma.sql`((${startDate} || ' 00:00:00')::timestamp AT TIME ZONE ${HOTEL_TIMEZONE} AT TIME ZONE 'UTC')`
+    const endTzSql = Prisma.sql`((to_char(${endDate}::date + 1, 'YYYY-MM-DD') || ' 00:00:00')::timestamp AT TIME ZONE ${HOTEL_TIMEZONE} AT TIME ZONE 'UTC')`
 
     const invPropertySql = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty
     const invJoinPropertySql = propertyId ? Prisma.sql`AND inv.property_id = ${propertyId}` : Prisma.empty
@@ -330,6 +363,7 @@ export class ReportsService {
         total_collected: number | string
       } | null
       total_outstanding: number | string
+      recognized_direct_income: number | string
       charge_breakdown: Array<{
         item_type: string
         count: number
@@ -359,7 +393,7 @@ export class ReportsService {
           COALESCE(SUM(tax_total), 0) as tax_total,
           COALESCE(SUM(discount_total), 0) as discount_total
         FROM invoices
-        WHERE created_at >= ${startObj} AND created_at <= ${endObj}
+        WHERE created_at >= ${startTzSql} AND created_at < ${endTzSql}
           AND status <> 'VOID'
           ${invPropertySql}
       ),
@@ -367,9 +401,18 @@ export class ReportsService {
         SELECT
           COUNT(*)::int as payment_count,
           COALESCE(SUM(amount), 0) as total_collected
-        FROM payments
-        WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-          AND status = 'RECORDED'
+        FROM receipts
+        WHERE paid_at >= ${startTzSql} AND paid_at < ${endTzSql}
+          AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
+          AND invoice_id IS NOT NULL
+          ${payPropertySql}
+      ),
+      direct_income_summary AS (
+        SELECT COALESCE(SUM(amount), 0) as recognized_direct_income
+        FROM receipts
+        WHERE paid_at >= ${startTzSql} AND paid_at < ${endTzSql}
+          AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
+          AND income_id IS NOT NULL
           ${payPropertySql}
       ),
       out_summary AS (
@@ -379,11 +422,13 @@ export class ReportsService {
         FROM invoices inv
         LEFT JOIN LATERAL (
           SELECT SUM(amount) as paid
-          FROM payments
-          WHERE invoice_id = inv.id AND status = 'RECORDED'
+          FROM receipts
+          WHERE invoice_id = inv.id
+            AND paid_at < ${endTzSql}
+            AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
         ) p ON true
-        WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
-          AND inv.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+        WHERE inv.created_at < ${endTzSql}
+          AND inv.status <> 'VOID'
           ${invJoinPropertySql}
       ),
       charge_summary AS (
@@ -393,39 +438,41 @@ export class ReportsService {
           COALESCE(SUM(ii.line_total), 0) as amount
         FROM invoice_items ii
         JOIN invoices inv ON inv.id = ii.invoice_id
-        WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
+        WHERE inv.created_at >= ${startTzSql} AND inv.created_at < ${endTzSql}
           AND inv.status <> 'VOID'
           ${invJoinPropertySql}
         GROUP BY ii.item_type
       ),
       method_summary AS (
         SELECT
-          payment_method::text as method,
+          payment_method_code::text as method,
           COUNT(*)::int as count,
           COALESCE(SUM(amount), 0) as amount
-        FROM payments
-        WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-          AND status = 'RECORDED'
+        FROM receipts
+        WHERE paid_at >= ${startTzSql} AND paid_at < ${endTzSql}
+          AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
+          AND invoice_id IS NOT NULL
           ${payPropertySql}
-        GROUP BY payment_method
+        GROUP BY payment_method_code
       ),
       daily_inv AS (
         SELECT
-          to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day_key,
+          to_char(created_at AT TIME ZONE 'UTC' AT TIME ZONE ${HOTEL_TIMEZONE}, 'YYYY-MM-DD') as day_key,
           SUM(grand_total) as invoiced
         FROM invoices
-        WHERE created_at >= ${startObj} AND created_at <= ${endObj}
+        WHERE created_at >= ${startTzSql} AND created_at < ${endTzSql}
           AND status <> 'VOID'
           ${invPropertySql}
         GROUP BY 1
       ),
       daily_pay AS (
         SELECT
-          to_char(paid_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day_key,
+          to_char(paid_at AT TIME ZONE 'UTC' AT TIME ZONE ${HOTEL_TIMEZONE}, 'YYYY-MM-DD') as day_key,
           SUM(amount) as collected
-        FROM payments
-        WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-          AND status = 'RECORDED'
+        FROM receipts
+        WHERE paid_at >= ${startTzSql} AND paid_at < ${endTzSql}
+          AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
+          AND invoice_id IS NOT NULL
           ${payPropertySql}
         GROUP BY 1
       ),
@@ -443,6 +490,7 @@ export class ReportsService {
         (SELECT row_to_json(inv_summary) FROM inv_summary) as inv_agg,
         (SELECT row_to_json(pay_summary) FROM pay_summary) as pay_agg,
         (SELECT total_outstanding FROM out_summary) as total_outstanding,
+        (SELECT recognized_direct_income FROM direct_income_summary) as recognized_direct_income,
         COALESCE((SELECT json_agg(charge_summary) FROM charge_summary), '[]'::json) as charge_breakdown,
         COALESCE((SELECT json_agg(method_summary) FROM method_summary), '[]'::json) as method_breakdown,
         COALESCE((SELECT json_agg(daily_summary) FROM daily_summary), '[]'::json) as daily_breakdown
@@ -457,15 +505,16 @@ export class ReportsService {
             LEFT JOIN (
               SELECT property_id, SUM(grand_total) as total_invoiced
               FROM invoices
-              WHERE created_at >= ${startObj} AND created_at <= ${endObj}
+              WHERE created_at >= ${startTzSql} AND created_at < ${endTzSql}
                 AND status <> 'VOID'
               GROUP BY property_id
             ) inv ON inv.property_id = p.id
             LEFT JOIN (
               SELECT property_id, SUM(amount) as total_collected
-              FROM payments
-              WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
-                AND status = 'RECORDED'
+              FROM receipts
+              WHERE paid_at >= ${startTzSql} AND paid_at < ${endTzSql}
+                AND (status = 'RECORDED' OR voided_at >= ${endTzSql})
+                AND invoice_id IS NOT NULL
               GROUP BY property_id
             ) pay ON pay.property_id = p.id
             ORDER BY p.name ASC
@@ -534,6 +583,9 @@ export class ReportsService {
       }))
     }
 
+    const directIncomeDec = new Prisma.Decimal(row?.recognized_direct_income ?? 0)
+    const totalRecognizedRevenueDec = totalInvoicedDec.add(directIncomeDec)
+
     return {
       startDate,
       endDate,
@@ -544,6 +596,8 @@ export class ReportsService {
       extraChargesTotal: extraChargesDec.toFixed(2),
       taxTotal: taxTotalDec.toFixed(2),
       discountTotal: discountTotalDec.toFixed(2),
+      recognizedDirectIncome: directIncomeDec.toFixed(2),
+      totalRecognizedRevenue: totalRecognizedRevenueDec.toFixed(2),
       invoiceCount,
       paymentCount,
       paymentMethodBreakdown,
@@ -561,8 +615,8 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const propertyFilterSql = propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty
@@ -758,7 +812,7 @@ export class ReportsService {
   }): Promise<DailyOperationsListDTO> {
     const dateStr = params.date || getHotelTodayDate()
     const page = Math.max(1, params.page || 1)
-    const limit = Math.min(2000, Math.max(1, params.limit || 25))
+    const limit = Math.min(5000, Math.max(1, params.limit || 25))
     const offset = (page - 1) * limit
     const q = params.q?.trim() || null
     const dir = params.dir === "desc" ? "DESC" : "ASC"
@@ -870,7 +924,7 @@ export class ReportsService {
             COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
             GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
           FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
+          LEFT JOIN receipts p ON p.invoice_id = i.id
           WHERE i.reservation_id = res.id
             AND i.status != 'VOID'
           GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
@@ -951,7 +1005,7 @@ export class ReportsService {
             COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)::text AS "totalPaid",
             GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0))::text AS "balanceDue"
           FROM invoices i
-          LEFT JOIN payments p ON p.invoice_id = i.id
+          LEFT JOIN receipts p ON p.invoice_id = i.id
           WHERE i.reservation_id IN (${Prisma.join(resIds)})
             AND i.status != 'VOID'
           GROUP BY i.id, i.reservation_id, i.invoice_number, i.grand_total, i.created_at
@@ -1054,7 +1108,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1080,7 +1134,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1107,7 +1161,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1133,7 +1187,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1154,7 +1208,7 @@ export class ReportsService {
 
       if (inv) {
         grandTotal = inv.grandTotal.toFixed(2)
-        const paidDec = inv.payments.reduce(
+        const paidDec = inv.receipts.reduce(
           (sum, p) => sum.add(p.amount),
           new Prisma.Decimal(0)
         )
@@ -1307,7 +1361,7 @@ export class ReportsService {
     let effectivePropertyId = propertyId
     let resolvedCategoryId = options?.categoryId === "all" ? undefined : options?.categoryId
     const page = Math.max(1, options?.page || 1)
-    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const limit = Math.min(5000, Math.max(1, options?.limit || 25))
     const skip = (page - 1) * limit
     const searchPattern = options?.q?.trim() ? `%${options.q.trim()}%` : null
 
@@ -1531,26 +1585,59 @@ export class ReportsService {
     endDateStr?: string,
     staffUserId?: string,
     propertyId?: string,
-    options?: { page?: number; limit?: number }
+    options?: { page?: number; limit?: number; onlyInvoiceReceipts?: boolean }
   ): Promise<ShiftCollectionsReportDTO> {
-    const todayIso = getHotelTodayDate()
-    const effectiveStart = startDateStr || dateStr || todayIso
-    const effectiveEnd = endDateStr || dateStr || todayIso
+    // Disambiguate positional parameters:
+    // If startDateStr does not conform to YYYY-MM-DD, it may be propertyId
+    // passed from shorthand calls such as getShiftCollections(todayStr, propertyId).
+    let effectivePropertyId = propertyId
+    let effectiveStartDateStr = startDateStr
 
-    const startObj = new Date(`${effectiveStart}T00:00:00.000Z`)
-    const endObj = new Date(`${effectiveEnd}T23:59:59.999Z`)
-    const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (startDateStr && !/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
+      if (!effectivePropertyId) {
+        effectivePropertyId = startDateStr
+      }
+      effectiveStartDateStr = undefined
     }
 
-    const propertyFilterSql = propertyId ? Prisma.sql`AND p.property_id = ${propertyId}` : Prisma.empty
+    const todayIso = getHotelTodayDate()
+    const effectiveStart = effectiveStartDateStr || dateStr || todayIso
+    const effectiveEnd = endDateStr || dateStr || todayIso
+
+    // Explicit validation: reject invalid date formats early
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+    if (!dateRegex.test(effectiveStart)) {
+      throw new BadRequestError(`Invalid startDate format: "${effectiveStart}". Expected YYYY-MM-DD`)
+    }
+    if (!dateRegex.test(effectiveEnd)) {
+      throw new BadRequestError(`Invalid endDate format: "${effectiveEnd}". Expected YYYY-MM-DD`)
+    }
+
+    // Half-open range boundaries in HOTEL_TIMEZONE converted to UTC Date instances
+    const startObj = getHotelDateBoundaryUtc(effectiveStart, HOTEL_TIMEZONE)
+    const nextDayStr = addDaysToYmd(effectiveEnd, 1)
+    const endObj = getHotelDateBoundaryUtc(nextDayStr, HOTEL_TIMEZONE)
+
+    if (!(startObj instanceof Date) || isNaN(startObj.getTime())) {
+      throw new BadRequestError(`Could not construct valid start Date object from "${effectiveStart}"`)
+    }
+    if (!(endObj instanceof Date) || isNaN(endObj.getTime())) {
+      throw new BadRequestError(`Could not construct valid end Date object from "${effectiveEnd}"`)
+    }
+
+    const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
+    }
+
+    const propertyFilterSql = effectivePropertyId ? Prisma.sql`AND p.property_id = ${effectivePropertyId}` : Prisma.empty
     const staffFilterSql = staffUserId
       ? Prisma.sql`AND (CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END) = ${staffUserId}`
       : Prisma.empty
+    const invoiceOnlyFilterSql = options?.onlyInvoiceReceipts ? Prisma.sql`AND p.invoice_id IS NOT NULL` : Prisma.empty
 
     const page = Math.max(1, options?.page || 1)
-    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const limit = Math.min(5000, Math.max(1, options?.limit || 25))
     const offset = (page - 1) * limit
 
     // 1. Consolidated Summary Query (Totals + Method Breakdown + Staff Breakdown via CTE)
@@ -1575,20 +1662,21 @@ export class ReportsService {
         SELECT
           p.id as payment_id,
           p.amount,
-          p.payment_method,
+          p.payment_method_code as payment_method,
           CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END as effective_staff_id,
           CASE 
             WHEN p.status = 'RECORDED' THEN p.amount
-            WHEN p.status = 'VOIDED' AND p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} THEN -p.amount
+            WHEN p.status = 'VOIDED' AND p.voided_at AT TIME ZONE 'UTC' >= ${startObj} AND p.voided_at AT TIME ZONE 'UTC' < ${endObj} THEN -p.amount
             ELSE p.amount
           END as effective_amount
-        FROM payments p
+        FROM receipts p
         WHERE (
-          (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
-          OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
+          (p.paid_at AT TIME ZONE 'UTC' >= ${startObj} AND p.paid_at AT TIME ZONE 'UTC' < ${endObj} AND (p.status = 'RECORDED' OR p.voided_at AT TIME ZONE 'UTC' >= ${endObj}))
+          OR (p.voided_at AT TIME ZONE 'UTC' >= ${startObj} AND p.voided_at AT TIME ZONE 'UTC' < ${endObj} AND p.status = 'VOIDED')
         )
         ${propertyFilterSql}
         ${staffFilterSql}
+        ${invoiceOnlyFilterSql}
       ),
       totals AS (
         SELECT
@@ -1682,7 +1770,7 @@ export class ReportsService {
       amount: Prisma.Decimal
       payment_method: string
       reference_number: string | null
-      status: PaymentStatus
+      status: ReceiptStatus
       paid_at: Date
       voided_at: Date | null
       void_reason: string | null
@@ -1701,7 +1789,7 @@ export class ReportsService {
         p.id as payment_id,
         p.invoice_id,
         p.amount,
-        p.payment_method::text,
+        p.payment_method_code::text as payment_method,
         p.reference_number,
         p.status,
         p.paid_at,
@@ -1722,15 +1810,15 @@ export class ReportsService {
           JOIN rooms rm ON rm.id = rr.room_id
           WHERE rr.reservation_id = r.id
         ) as room_numbers
-      FROM payments p
+      FROM receipts p
       JOIN users u ON u.id = p.created_by
       LEFT JOIN users vu ON vu.id = p.voided_by
       JOIN invoices inv ON inv.id = p.invoice_id
       LEFT JOIN reservations r ON r.id = inv.reservation_id
       LEFT JOIN customers c ON c.id = r.customer_id
       WHERE (
-        (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
-        OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
+        (p.paid_at AT TIME ZONE 'UTC' >= ${startObj} AND p.paid_at AT TIME ZONE 'UTC' < ${endObj} AND (p.status = 'RECORDED' OR p.voided_at AT TIME ZONE 'UTC' >= ${endObj}))
+        OR (p.voided_at AT TIME ZONE 'UTC' >= ${startObj} AND p.voided_at AT TIME ZONE 'UTC' < ${endObj} AND p.status = 'VOIDED')
       )
       ${propertyFilterSql}
       ${staffFilterSql}
@@ -1739,7 +1827,10 @@ export class ReportsService {
     `
 
     const transactions: PaymentTransactionDTO[] = txRows.map((tx) => {
-      const isVoid = tx.status === PaymentStatus.VOIDED
+      const isVoidInThisRange =
+        tx.status === ReceiptStatus.VOIDED &&
+        Boolean(tx.voided_at && tx.voided_at >= startObj && tx.voided_at < endObj)
+      const isVoid = isVoidInThisRange
       const effectiveUser = isVoid && tx.voided_by ? tx.voided_by : tx.created_by
       const effectiveUserName = isVoid ? (tx.voider_name || tx.creator_name || "System Staff") : (tx.creator_name || "System Staff")
       const guestName = tx.first_name ? `${tx.first_name} ${tx.last_name || ""}`.trim() : "Direct Folio"
@@ -1760,7 +1851,7 @@ export class ReportsService {
         notes: isVoid ? (tx.void_reason ? `Voided: ${tx.void_reason}` : "Payment voided") : null,
         recordedByUserId: effectiveUser,
         recordedByUserName: effectiveUserName,
-        paidAt: (tx.voided_at || tx.paid_at).toISOString(),
+        paidAt: (isVoid && tx.voided_at ? tx.voided_at : tx.paid_at).toISOString(),
       }
     })
 
@@ -1785,9 +1876,10 @@ export class ReportsService {
   static async getReceivablesReport(
     propertyId?: string,
     filterOption: "all" | "in_house" | "future" | "departed" = "all",
-    options?: { page?: number; limit?: number }
+    options?: { page?: number; limit?: number; asOfDate?: string }
   ): Promise<ReceivablesReportDTO> {
-    const todayStr = getHotelTodayDate()
+    const asOfDateStr = options?.asOfDate || getHotelTodayDate()
+    const asOfDateObj = new Date(`${asOfDateStr}T23:59:59.999Z`)
     const propertyFilterSql = propertyId ? Prisma.sql`AND i.property_id = ${propertyId}` : Prisma.empty
 
     const fetchSummary = async () => {
@@ -1813,12 +1905,14 @@ export class ReportsService {
             COALESCE(p.paid, 0) AS total_paid,
             (i.grand_total - COALESCE(p.paid, 0)) AS balance_due,
             st.stay_status,
-            (CURRENT_DATE - i.created_at::date) AS days_aging
+            (${asOfDateStr}::date - i.created_at::date) AS days_aging
           FROM invoices i
           LEFT JOIN LATERAL (
             SELECT SUM(amount) AS paid 
-            FROM payments 
-            WHERE invoice_id = i.id AND status = 'RECORDED'
+            FROM receipts 
+            WHERE invoice_id = i.id
+              AND paid_at <= ${asOfDateObj}
+              AND (status = 'RECORDED' OR voided_at > ${asOfDateObj})
           ) p ON true
           LEFT JOIN LATERAL (
             SELECT
@@ -1828,7 +1922,8 @@ export class ReportsService {
                 'DEPARTED'
               ) AS stay_status
           ) st ON true
-          WHERE i.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+          WHERE i.created_at <= ${asOfDateObj}
+            AND i.status <> 'VOID'
             ${propertyFilterSql}
             AND (i.grand_total - COALESCE(p.paid, 0)) > 0
         )
@@ -1864,10 +1959,10 @@ export class ReportsService {
       }
     }
 
-    const sum = await scopedCached("receivables-summary", propertyId, 60, fetchSummary)
+    const sum = await scopedCached(`receivables-summary-${asOfDateStr}`, propertyId, 60, fetchSummary)
 
     const page = Math.max(1, options?.page || 1)
-    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const limit = Math.min(5000, Math.max(1, options?.limit || 25))
     const offset = (page - 1) * limit
 
     let totalForFilter = sum.total_invoices
@@ -1910,9 +2005,9 @@ export class ReportsService {
         i.invoice_number,
         i.reservation_id,
         r.reservation_no,
-        r.customer_id,
+        COALESCE(r.customer_id, i.customer_id) AS customer_id,
         r.status AS reservation_status,
-        c.first_name,
+        COALESCE(c.first_name, i.customer_name, 'Guest') AS first_name,
         c.last_name,
         c.phone,
         c.email,
@@ -1920,13 +2015,13 @@ export class ReportsService {
         i.grand_total,
         COALESCE(p.paid, 0) AS total_paid,
         (i.grand_total - COALESCE(p.paid, 0)) AS balance_due,
-        (CURRENT_DATE - i.created_at::date)::int AS days_aging,
+        (${asOfDateStr}::date - i.created_at::date)::int AS days_aging,
         st.stay_status,
         (st.stay_status = 'IN_HOUSE') AS is_guest_in_house,
         CASE
-          WHEN (CURRENT_DATE - i.created_at::date) <= 7 THEN '0-7'
-          WHEN (CURRENT_DATE - i.created_at::date) <= 30 THEN '8-30'
-          WHEN (CURRENT_DATE - i.created_at::date) <= 60 THEN '31-60'
+          WHEN (${asOfDateStr}::date - i.created_at::date) <= 7 THEN '0-7'
+          WHEN (${asOfDateStr}::date - i.created_at::date) <= 30 THEN '8-30'
+          WHEN (${asOfDateStr}::date - i.created_at::date) <= 60 THEN '31-60'
           ELSE '60+'
         END AS aging_bucket,
         (
@@ -1936,12 +2031,14 @@ export class ReportsService {
           WHERE rr.reservation_id = r.id
         ) AS room_numbers
       FROM invoices i
-      JOIN reservations r ON r.id = i.reservation_id
-      JOIN customers c ON c.id = r.customer_id
+      LEFT JOIN reservations r ON r.id = i.reservation_id
+      LEFT JOIN customers c ON c.id = COALESCE(r.customer_id, i.customer_id)
       LEFT JOIN LATERAL (
         SELECT SUM(amount) AS paid 
-        FROM payments 
-        WHERE invoice_id = i.id AND status = 'RECORDED'
+        FROM receipts 
+        WHERE invoice_id = i.id
+          AND paid_at <= ${asOfDateObj}
+          AND (status = 'RECORDED' OR voided_at > ${asOfDateObj})
       ) p ON true
       LEFT JOIN LATERAL (
         SELECT
@@ -1951,7 +2048,8 @@ export class ReportsService {
             'DEPARTED'
           ) AS stay_status
       ) st ON true
-      WHERE i.status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID')
+      WHERE i.created_at <= ${asOfDateObj}
+        AND i.status <> 'VOID'
         ${propertyFilterSql}
         AND (i.grand_total - COALESCE(p.paid, 0)) > 0
         ${stayStatusFilterSql}
@@ -1981,7 +2079,7 @@ export class ReportsService {
     }))
 
     return {
-      asOfDate: todayStr,
+      asOfDate: asOfDateStr,
       totalReceivables: new Prisma.Decimal(sum.total_receivables).toFixed(2),
       totalInvoices: sum.total_invoices,
       inHouseReceivables: new Prisma.Decimal(sum.in_house_receivables).toFixed(2),
@@ -2015,8 +2113,8 @@ export class ReportsService {
       const s = new Date(`${startDate}T00:00:00.000Z`).getTime()
       const e = new Date(`${endDate}T23:59:59.999Z`).getTime()
       const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-      if (diffDays > 366) {
-        throw new BadRequestError("Date range cannot exceed 366 days")
+      if (diffDays > MAX_REPORT_RANGE_DAYS) {
+        throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
       }
     }
 
@@ -2042,7 +2140,7 @@ export class ReportsService {
       : Prisma.empty
 
     const page = Math.max(1, options?.page || 1)
-    const limit = Math.min(100, Math.max(1, options?.limit || 25))
+    const limit = Math.min(5000, Math.max(1, options?.limit || 25))
     const offset = (page - 1) * limit
 
     // 1. Consolidated totals query in SQL
@@ -2259,6 +2357,1329 @@ export class ReportsService {
         limit,
         total: maxItems,
         totalPages: Math.ceil(maxItems / limit),
+      },
+    }
+  }
+
+  /**
+   * Generates Direct Income Report:
+   * Categorizes direct non-invoice hotel revenues by income head and status.
+   * Invariant: Clearly distinguishes expected/billed amount from recognized realized receipts.
+   * Excludes voided receipts and voided incomes.
+   */
+  static async getIncomeReport(params: {
+    startDate: string
+    endDate: string
+    propertyId: string
+    incomeHeadId?: string
+    status?: string
+    page?: number
+    limit?: number
+  }): Promise<IncomeReportDTO> {
+    const { startDate, endDate, propertyId, incomeHeadId, status } = params
+    const startObj = new Date(`${startDate}T00:00:00.000Z`)
+    const endObj = new Date(`${endDate}T23:59:59.999Z`)
+
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(5000, Math.max(1, params.limit || 25))
+    const offset = (page - 1) * limit
+
+    let mappedStatus: IncomeStatus | undefined
+    if (status && status !== "ALL") {
+      if (status === "RECORDED") mappedStatus = IncomeStatus.RECEIVED
+      else if (status === "PARTIALLY_PAID") mappedStatus = IncomeStatus.PARTIALLY_RECEIVED
+      else if (Object.values(IncomeStatus).includes(status as IncomeStatus)) {
+        mappedStatus = status as IncomeStatus
+      }
+    }
+
+    const whereClause: Prisma.IncomeWhereInput = {
+      propertyId,
+      incomeDate: { gte: startObj, lte: endObj },
+      ...(incomeHeadId ? { incomeHeadId } : {}),
+      ...(mappedStatus
+        ? mappedStatus === IncomeStatus.VOID
+          ? { status: IncomeStatus.VOID }
+          : {
+              status: mappedStatus,
+              OR: [
+                { status: { not: IncomeStatus.VOID } },
+                { voidedAt: { gt: endObj } },
+              ],
+            }
+        : {
+            OR: [
+              { status: { not: IncomeStatus.VOID } },
+              { voidedAt: { gt: endObj } },
+            ],
+          }),
+    }
+
+    const [totalCount, incomes] = await Promise.all([
+      prisma.income.count({ where: whereClause }),
+      prisma.income.findMany({
+        where: whereClause,
+        include: {
+          incomeHead: { select: { name: true, code: true } },
+          creator: { select: { name: true } },
+          receipts: {
+            where: {
+              paidAt: { lte: endObj },
+              OR: [
+                { status: "RECORDED" },
+                { voidedAt: { gt: endObj } },
+              ],
+            },
+            select: { amount: true },
+          },
+        },
+        orderBy: [{ incomeDate: "desc" }, { createdAt: "desc" }],
+        skip: offset,
+        take: limit,
+      }),
+    ])
+
+    const incomeHeads = await prisma.incomeHead.findMany({
+      where: { propertyId },
+      select: { id: true, name: true, code: true },
+    })
+    const headMap = new Map(incomeHeads.map((h) => [h.id, h]))
+
+    const allIncomesSummary = await prisma.income.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        incomeHeadId: true,
+        expectedAmount: true,
+        receipts: {
+          where: {
+            paidAt: { lte: endObj },
+            OR: [
+              { status: "RECORDED" },
+              { voidedAt: { gt: endObj } },
+            ],
+          },
+          select: { amount: true },
+        },
+      },
+    })
+
+    let totalExpectedDec = new Prisma.Decimal(0)
+    let totalReceivedDec = new Prisma.Decimal(0)
+    const categoryTotals = new Map<string, { expected: Prisma.Decimal; received: Prisma.Decimal; count: number }>()
+
+    for (const inc of allIncomesSummary) {
+      const exp = new Prisma.Decimal(inc.expectedAmount)
+      const rec = inc.receipts.reduce((acc, r) => acc.add(new Prisma.Decimal(r.amount)), new Prisma.Decimal(0))
+      totalExpectedDec = totalExpectedDec.add(exp)
+      totalReceivedDec = totalReceivedDec.add(rec)
+
+      const existing = categoryTotals.get(inc.incomeHeadId) || {
+        expected: new Prisma.Decimal(0),
+        received: new Prisma.Decimal(0),
+        count: 0,
+      }
+      existing.expected = existing.expected.add(exp)
+      existing.received = existing.received.add(rec)
+      existing.count += 1
+      categoryTotals.set(inc.incomeHeadId, existing)
+    }
+
+    const totalPendingDec = totalExpectedDec.sub(totalReceivedDec)
+    const totalPendingAmount = totalPendingDec.gt(0) ? totalPendingDec.toFixed(2) : "0.00"
+
+    const categoryBreakdown: IncomeCategorySummaryDTO[] = Array.from(categoryTotals.entries()).map(([headId, data]) => {
+      const h = headMap.get(headId)
+      return {
+        categoryName: h?.name || "Direct Income",
+        categoryCode: h?.code || "OTHER",
+        expectedAmount: data.expected.toFixed(2),
+        receivedAmount: data.received.toFixed(2),
+        incomeCount: data.count,
+      }
+    })
+
+    const items: IncomeReportItemDTO[] = incomes.map((inc) => {
+      const exp = new Prisma.Decimal(inc.expectedAmount)
+      const rec = inc.receipts.reduce((acc, r) => acc.add(new Prisma.Decimal(r.amount)), new Prisma.Decimal(0))
+      const pending = exp.sub(rec)
+      return {
+        id: inc.id,
+        incomeDate: inc.incomeDate instanceof Date ? inc.incomeDate.toISOString().split("T")[0]! : String(inc.incomeDate).slice(0, 10),
+        title: inc.title,
+        categoryName: inc.incomeHead.name,
+        categoryCode: inc.incomeHead.code,
+        expectedAmount: exp.toFixed(2),
+        receivedAmount: rec.toFixed(2),
+        pendingAmount: pending.gt(0) ? pending.toFixed(2) : "0.00",
+        status: inc.status,
+        receiptCount: inc.receipts.length,
+        creatorName: inc.creator.name,
+        createdAt: inc.createdAt.toISOString(),
+      }
+    })
+
+    const totalReceiptsCount = incomes.reduce((acc, inc) => acc + inc.receipts.length, 0)
+
+    return {
+      startDate,
+      endDate,
+      totalExpectedAmount: totalExpectedDec.toFixed(2),
+      totalReceivedAmount: totalReceivedDec.toFixed(2),
+      totalPendingAmount,
+      incomeCount: totalCount,
+      receiptCount: totalReceiptsCount,
+      categoryBreakdown,
+      items,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
+      },
+    }
+  }
+
+  /**
+   * Generates Operating Expense Report:
+   * Categorizes operating expenditures by expense head and vendor.
+   * Invariant: Clearly separates recorded expenses (incurred obligations) from actual outgoing payments.
+   */
+  static async getExpenseReport(params: {
+    startDate: string
+    endDate: string
+    propertyId: string
+    expenseHeadId?: string
+    status?: string
+    page?: number
+    limit?: number
+  }): Promise<ExpenseReportDTO> {
+    const { startDate, endDate, propertyId, expenseHeadId, status } = params
+    const startObj = new Date(`${startDate}T00:00:00.000Z`)
+    const endObj = new Date(`${endDate}T23:59:59.999Z`)
+
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(5000, Math.max(1, params.limit || 25))
+    const offset = (page - 1) * limit
+
+    let mappedExpenseStatus: ExpenseStatus | undefined
+    if (status && status !== "ALL") {
+      if (status === "RECORDED") mappedExpenseStatus = ExpenseStatus.PAID
+      else if (Object.values(ExpenseStatus).includes(status as ExpenseStatus)) {
+        mappedExpenseStatus = status as ExpenseStatus
+      }
+    }
+
+    const whereClause: Prisma.ExpenseWhereInput = {
+      propertyId,
+      expenseDate: { gte: startObj, lte: endObj },
+      ...(expenseHeadId ? { expenseHeadId } : {}),
+      ...(mappedExpenseStatus
+        ? mappedExpenseStatus === ExpenseStatus.VOID
+          ? { status: ExpenseStatus.VOID }
+          : {
+              status: mappedExpenseStatus,
+              OR: [
+                { status: { not: ExpenseStatus.VOID } },
+                { voidedAt: { gt: endObj } },
+              ],
+            }
+        : {
+            OR: [
+              { status: { not: ExpenseStatus.VOID } },
+              { voidedAt: { gt: endObj } },
+            ],
+          }),
+    }
+
+    const [totalCount, expenses, allExpensesSummary, expenseHeads] = await Promise.all([
+      prisma.expense.count({ where: whereClause }),
+      prisma.expense.findMany({
+        where: whereClause,
+        include: {
+          expenseHead: { select: { name: true, code: true } },
+          creator: { select: { name: true } },
+          payments: {
+            where: {
+              paidAt: { lte: endObj },
+              OR: [
+                { status: "RECORDED" },
+                { voidedAt: { gt: endObj } },
+              ],
+            },
+            select: { amount: true },
+          },
+        },
+        orderBy: [{ expenseDate: "desc" }, { createdAt: "desc" }],
+        skip: offset,
+        take: limit,
+      }),
+      prisma.expense.findMany({
+        where: whereClause,
+        select: {
+          id: true,
+          expenseHeadId: true,
+          amount: true,
+          payments: {
+            where: {
+              paidAt: { lte: endObj },
+              OR: [
+                { status: "RECORDED" },
+                { voidedAt: { gt: endObj } },
+              ],
+            },
+            select: { amount: true },
+          },
+        },
+      }),
+      prisma.expenseHead.findMany({
+        where: { propertyId },
+        select: { id: true, name: true, code: true },
+      }),
+    ])
+
+    const headMap = new Map(expenseHeads.map((h) => [h.id, h]))
+
+    let totalRecordedDec = new Prisma.Decimal(0)
+    let totalDisbursedDec = new Prisma.Decimal(0)
+    let totalPaymentCount = 0
+    const categoryTotals = new Map<string, { recorded: Prisma.Decimal; disbursed: Prisma.Decimal; count: number }>()
+
+    for (const exp of allExpensesSummary) {
+      const rec = new Prisma.Decimal(exp.amount)
+      const disb = exp.payments.reduce((acc, p) => acc.add(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0))
+      totalRecordedDec = totalRecordedDec.add(rec)
+      totalDisbursedDec = totalDisbursedDec.add(disb)
+      totalPaymentCount += exp.payments.length
+
+      const existing = categoryTotals.get(exp.expenseHeadId) || {
+        recorded: new Prisma.Decimal(0),
+        disbursed: new Prisma.Decimal(0),
+        count: 0,
+      }
+      existing.recorded = existing.recorded.add(rec)
+      existing.disbursed = existing.disbursed.add(disb)
+      existing.count += 1
+      categoryTotals.set(exp.expenseHeadId, existing)
+    }
+
+    const totalPendingDec = totalRecordedDec.sub(totalDisbursedDec)
+    const totalPendingPayables = totalPendingDec.gt(0) ? totalPendingDec.toFixed(2) : "0.00"
+
+    const categoryBreakdown: ExpenseCategorySummaryDTO[] = Array.from(categoryTotals.entries()).map(([headId, data]) => {
+      const h = headMap.get(headId)
+      const pending = data.recorded.sub(data.disbursed)
+      return {
+        categoryName: h?.name || "Operating Expense",
+        categoryCode: h?.code || "MISC",
+        recordedAmount: data.recorded.toFixed(2),
+        disbursedAmount: data.disbursed.toFixed(2),
+        pendingAmount: pending.gt(0) ? pending.toFixed(2) : "0.00",
+        expenseCount: data.count,
+      }
+    })
+
+    const items: ExpenseReportItemDTO[] = expenses.map((exp) => {
+      const recorded = new Prisma.Decimal(exp.amount)
+      const disbursed = exp.payments.reduce((acc, p) => acc.add(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0))
+      const pending = recorded.sub(disbursed)
+      return {
+        id: exp.id,
+        expenseDate: exp.expenseDate instanceof Date ? exp.expenseDate.toISOString().split("T")[0]! : String(exp.expenseDate).slice(0, 10),
+        title: exp.title,
+        categoryName: exp.expenseHead.name,
+        categoryCode: exp.expenseHead.code,
+        vendorName: exp.vendorName,
+        referenceNumber: exp.referenceNumber,
+        recordedAmount: recorded.toFixed(2),
+        disbursedAmount: disbursed.toFixed(2),
+        pendingPayable: pending.gt(0) ? pending.toFixed(2) : "0.00",
+        status: exp.status,
+        paymentCount: exp.payments.length,
+        creatorName: exp.creator.name,
+        createdAt: exp.createdAt.toISOString(),
+      }
+    })
+
+    return {
+      startDate,
+      endDate,
+      totalRecordedExpenses: totalRecordedDec.toFixed(2),
+      totalDisbursedPayments: totalDisbursedDec.toFixed(2),
+      totalPendingPayables,
+      expenseCount: totalCount,
+      paymentCount: totalPaymentCount,
+      categoryBreakdown,
+      items,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
+      },
+    }
+  }
+
+  /**
+   * Generates Cash Flow Report:
+   * Realized cash inflows (receipts) vs actual cash disbursements (payments).
+   * Invariants:
+   * 1. Strictly excludes inter-account transfers.
+   * 2. Strictly excludes voided receipts and voided payments.
+   * 3. Calculates daily trend and account breakdown.
+   */
+  static async getCashFlowReport(filters: ReportFilterDTO): Promise<CashFlowReportDTO> {
+    const { startDate, endDate, propertyId } = filters
+    if (!propertyId) {
+      throw new BadRequestError("propertyId is required for Cash Flow Report")
+    }
+
+    const startObj = new Date(`${startDate}T00:00:00.000Z`)
+    const endObj = new Date(`${endDate}T23:59:59.999Z`)
+
+    const [receipts, payments, accounts] = await Promise.all([
+      prisma.receipt.findMany({
+        where: {
+          propertyId,
+          paidAt: { gte: startObj, lte: endObj },
+          OR: [
+            { status: "RECORDED" },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        select: {
+          id: true,
+          amount: true,
+          paidAt: true,
+          accountId: true,
+          invoiceId: true,
+          incomeId: true,
+        },
+      }),
+      prisma.payment.findMany({
+        where: {
+          propertyId,
+          paidAt: { gte: startObj, lte: endObj },
+          OR: [
+            { status: "RECORDED" },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        select: {
+          id: true,
+          amount: true,
+          paidAt: true,
+          accountId: true,
+          expense: {
+            select: {
+              expenseHeadId: true,
+              expenseHead: { select: { name: true, code: true } },
+            },
+          },
+        },
+      }),
+      prisma.financialAccount.findMany({
+        where: { propertyId, isActive: true },
+        select: { id: true, accountName: true, accountType: true },
+      }),
+    ])
+
+    let totalInflowsDec = new Prisma.Decimal(0)
+    let invoiceInflowsDec = new Prisma.Decimal(0)
+    let invoiceReceiptCount = 0
+    let directIncomeInflowsDec = new Prisma.Decimal(0)
+    let directIncomeReceiptCount = 0
+
+    const dailyMap = new Map<string, { inflows: Prisma.Decimal; outflows: Prisma.Decimal; rCount: number; pCount: number }>()
+    const accountMap = new Map<string, { inflows: Prisma.Decimal; outflows: Prisma.Decimal }>()
+
+    for (const a of accounts) {
+      accountMap.set(a.id, { inflows: new Prisma.Decimal(0), outflows: new Prisma.Decimal(0) })
+    }
+
+    for (const r of receipts) {
+      const amt = new Prisma.Decimal(r.amount)
+      totalInflowsDec = totalInflowsDec.add(amt)
+
+      if (r.invoiceId) {
+        invoiceInflowsDec = invoiceInflowsDec.add(amt)
+        invoiceReceiptCount += 1
+      } else if (r.incomeId) {
+        directIncomeInflowsDec = directIncomeInflowsDec.add(amt)
+        directIncomeReceiptCount += 1
+      }
+
+      const dayKey = getHotelTodayDate(r.paidAt)
+      const d = dailyMap.get(dayKey) || {
+        inflows: new Prisma.Decimal(0),
+        outflows: new Prisma.Decimal(0),
+        rCount: 0,
+        pCount: 0,
+      }
+      d.inflows = d.inflows.add(amt)
+      d.rCount += 1
+      dailyMap.set(dayKey, d)
+
+      if (r.accountId) {
+        const acc = accountMap.get(r.accountId) || { inflows: new Prisma.Decimal(0), outflows: new Prisma.Decimal(0) }
+        acc.inflows = acc.inflows.add(amt)
+        accountMap.set(r.accountId, acc)
+      }
+    }
+
+    let totalOutflowsDec = new Prisma.Decimal(0)
+    const expenseHeadTotals = new Map<string, { amount: Prisma.Decimal; count: number; name: string; code: string }>()
+
+    for (const p of payments) {
+      const amt = new Prisma.Decimal(p.amount)
+      totalOutflowsDec = totalOutflowsDec.add(amt)
+
+      const headId = p.expense?.expenseHeadId || "OTHER"
+      const headName = p.expense?.expenseHead?.name || "Operating Expense"
+      const headCode = p.expense?.expenseHead?.code || "MISC"
+
+      const existing = expenseHeadTotals.get(headId) || {
+        amount: new Prisma.Decimal(0),
+        count: 0,
+        name: headName,
+        code: headCode,
+      }
+      existing.amount = existing.amount.add(amt)
+      existing.count += 1
+      expenseHeadTotals.set(headId, existing)
+
+      const dayKey = getHotelTodayDate(p.paidAt)
+      const d = dailyMap.get(dayKey) || {
+        inflows: new Prisma.Decimal(0),
+        outflows: new Prisma.Decimal(0),
+        rCount: 0,
+        pCount: 0,
+      }
+      d.outflows = d.outflows.add(amt)
+      d.pCount += 1
+      dailyMap.set(dayKey, d)
+
+      if (p.accountId) {
+        const acc = accountMap.get(p.accountId) || { inflows: new Prisma.Decimal(0), outflows: new Prisma.Decimal(0) }
+        acc.outflows = acc.outflows.add(amt)
+        accountMap.set(p.accountId, acc)
+      }
+    }
+
+    const netCashFlowDec = totalInflowsDec.sub(totalOutflowsDec)
+
+    const sDate = new Date(`${startDate}T00:00:00.000Z`)
+    const eDate = new Date(`${endDate}T00:00:00.000Z`)
+    const dailyBreakdown: DailyCashFlowDTO[] = []
+
+    for (let cur = new Date(sDate); cur <= eDate; cur.setDate(cur.getDate() + 1)) {
+      const k = cur.toISOString().split("T")[0]!
+      const d = dailyMap.get(k) || {
+        inflows: new Prisma.Decimal(0),
+        outflows: new Prisma.Decimal(0),
+        rCount: 0,
+        pCount: 0,
+      }
+      dailyBreakdown.push({
+        date: k,
+        inflows: d.inflows.toFixed(2),
+        outflows: d.outflows.toFixed(2),
+        netCashFlow: d.inflows.sub(d.outflows).toFixed(2),
+        receiptCount: d.rCount,
+        paymentCount: d.pCount,
+      })
+    }
+
+    const inflowSources: CashFlowInflowSourceDTO[] = [
+      {
+        source: "GUEST_INVOICE",
+        amount: invoiceInflowsDec.toFixed(2),
+        count: invoiceReceiptCount,
+        percentage: totalInflowsDec.gt(0)
+          ? Math.round(invoiceInflowsDec.div(totalInflowsDec).mul(100).toNumber() * 10) / 10
+          : 0,
+      },
+      {
+        source: "DIRECT_INCOME",
+        amount: directIncomeInflowsDec.toFixed(2),
+        count: directIncomeReceiptCount,
+        percentage: totalInflowsDec.gt(0)
+          ? Math.round(directIncomeInflowsDec.div(totalInflowsDec).mul(100).toNumber() * 10) / 10
+          : 0,
+      },
+    ]
+
+    const outflowCategories: CashFlowOutflowCategoryDTO[] = Array.from(expenseHeadTotals.values()).map((eh) => {
+      const pct = totalOutflowsDec.gt(0)
+        ? Math.round(eh.amount.div(totalOutflowsDec).mul(100).toNumber() * 10) / 10
+        : 0
+      return {
+        categoryName: eh.name,
+        categoryCode: eh.code,
+        amount: eh.amount.toFixed(2),
+        count: eh.count,
+        percentage: pct,
+      }
+    })
+
+    const accountSummaries: CashFlowAccountSummaryDTO[] = accounts.map((a) => {
+      const accData = accountMap.get(a.id) || { inflows: new Prisma.Decimal(0), outflows: new Prisma.Decimal(0) }
+      return {
+        accountId: a.id,
+        accountName: a.accountName,
+        accountType: a.accountType,
+        inflows: accData.inflows.toFixed(2),
+        outflows: accData.outflows.toFixed(2),
+        netChange: accData.inflows.sub(accData.outflows).toFixed(2),
+      }
+    })
+
+    return {
+      startDate,
+      endDate,
+      totalInflows: totalInflowsDec.toFixed(2),
+      totalOutflows: totalOutflowsDec.toFixed(2),
+      netCashFlow: netCashFlowDec.toFixed(2),
+      receiptCount: receipts.length,
+      paymentCount: payments.length,
+      dailyBreakdown,
+      inflowSources,
+      outflowCategories,
+      accountSummaries,
+    }
+  }
+
+  /**
+   * Generates Revenue vs Expense Report:
+   * Computes Recognized Revenue vs Incurred Operating Expenses and Net Operating Result.
+   * Compares Accrual/Recognized basis against actual Cash Movement.
+   */
+  static async getRevenueVsExpenseReport(filters: ReportFilterDTO): Promise<RevenueVsExpenseReportDTO> {
+    const { startDate, endDate, propertyId } = filters
+    if (!propertyId) {
+      throw new BadRequestError("propertyId is required for Revenue vs Expense Report")
+    }
+
+    const startObj = new Date(`${startDate}T00:00:00.000Z`)
+    const endObj = new Date(`${endDate}T23:59:59.999Z`)
+
+    const [invoices, directIncomeReceipts, recordedExpenses, cashReceipts, cashPayments] = await Promise.all([
+      prisma.invoice.findMany({
+        where: {
+          propertyId,
+          createdAt: { gte: startObj, lte: endObj },
+          status: { not: "VOID" },
+        },
+        include: {
+          items: true,
+        },
+      }),
+      prisma.receipt.aggregate({
+        where: {
+          propertyId,
+          incomeId: { not: null },
+          paidAt: { gte: startObj, lte: endObj },
+          OR: [
+            { status: "RECORDED" },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        _sum: { amount: true },
+      }),
+      prisma.expense.aggregate({
+        where: {
+          propertyId,
+          expenseDate: { gte: startObj, lte: endObj },
+          OR: [
+            { status: { not: "VOID" } },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        _sum: { amount: true },
+      }),
+      prisma.receipt.aggregate({
+        where: {
+          propertyId,
+          paidAt: { gte: startObj, lte: endObj },
+          OR: [
+            { status: "RECORDED" },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        _sum: { amount: true },
+      }),
+      prisma.payment.aggregate({
+        where: {
+          propertyId,
+          paidAt: { gte: startObj, lte: endObj },
+          OR: [
+            { status: "RECORDED" },
+            { voidedAt: { gt: endObj } },
+          ],
+        },
+        _sum: { amount: true },
+      }),
+    ])
+
+    let roomChargesDec = new Prisma.Decimal(0)
+    let extraChargesDec = new Prisma.Decimal(0)
+    let taxTotalDec = new Prisma.Decimal(0)
+    let discountTotalDec = new Prisma.Decimal(0)
+    let netInvoicedDec = new Prisma.Decimal(0)
+
+    for (const inv of invoices) {
+      netInvoicedDec = netInvoicedDec.add(new Prisma.Decimal(inv.grandTotal))
+      taxTotalDec = taxTotalDec.add(new Prisma.Decimal(inv.taxTotal))
+      discountTotalDec = discountTotalDec.add(new Prisma.Decimal(inv.discountTotal))
+
+      for (const it of inv.items) {
+        const amt = new Prisma.Decimal(it.lineTotal)
+        if (it.itemType === InvoiceItemType.ROOM_CHARGE) {
+          roomChargesDec = roomChargesDec.add(amt)
+        } else {
+          extraChargesDec = extraChargesDec.add(amt)
+        }
+      }
+    }
+
+    const recognizedDirectIncomeDec = new Prisma.Decimal(directIncomeReceipts._sum.amount || 0)
+    const totalRecognizedRevenueDec = netInvoicedDec.add(recognizedDirectIncomeDec)
+
+    const totalRecordedExpensesDec = new Prisma.Decimal(recordedExpenses._sum.amount || 0)
+    const netOperatingResultDec = totalRecognizedRevenueDec.sub(totalRecordedExpensesDec)
+
+    const operatingMarginPct = totalRecognizedRevenueDec.gt(0)
+      ? Math.round(netOperatingResultDec.div(totalRecognizedRevenueDec).mul(100).toNumber() * 10) / 10
+      : 0
+
+    const totalCashReceiptsDec = new Prisma.Decimal(cashReceipts._sum.amount || 0)
+    const totalCashDisbursementsDec = new Prisma.Decimal(cashPayments._sum.amount || 0)
+    const netCashMovementDec = totalCashReceiptsDec.sub(totalCashDisbursementsDec)
+
+    return {
+      startDate,
+      endDate,
+      invoicedRoomCharges: roomChargesDec.toFixed(2),
+      invoicedExtraCharges: extraChargesDec.toFixed(2),
+      invoicedTaxes: taxTotalDec.toFixed(2),
+      invoicedDiscounts: discountTotalDec.toFixed(2),
+      netInvoicedRevenue: netInvoicedDec.toFixed(2),
+      recognizedDirectIncome: recognizedDirectIncomeDec.toFixed(2),
+      totalRecognizedRevenue: totalRecognizedRevenueDec.toFixed(2),
+      totalRecordedExpenses: totalRecordedExpensesDec.toFixed(2),
+      netOperatingResult: netOperatingResultDec.toFixed(2),
+      operatingMarginPercentage: operatingMarginPct,
+      totalCashReceipts: totalCashReceiptsDec.toFixed(2),
+      totalCashDisbursements: totalCashDisbursementsDec.toFixed(2),
+      netCashMovement: netCashMovementDec.toFixed(2),
+    }
+  }
+
+  /**
+   * Generates Room Performance Report:
+   * Evaluates occupancy, room revenue, ADR, RevPAR, and maintenance status per physical room.
+   * Invariant: Attributed via ReservationRoom allocations and snapshotted nightly rates,
+   * never by assuming invoice totals can be attributed directly to rooms.
+   */
+  static async getRoomPerformanceReport(params: {
+    startDate: string
+    endDate: string
+    propertyId: string
+    categoryId?: string
+    page?: number
+    limit?: number
+  }): Promise<RoomPerformanceReportDTO> {
+    const { startDate, endDate, propertyId, categoryId } = params
+    const s = new Date(`${startDate}T00:00:00.000Z`).getTime()
+    const e = new Date(`${endDate}T00:00:00.000Z`).getTime()
+    if (e < s) {
+      throw new BadRequestError("endDate must be on or after startDate")
+    }
+    const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
+    }
+    const totalDays = diffDays + 1
+    const todayUtcStr = getHotelTodayDateUtc().toISOString().split("T")[0]!
+
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(5000, Math.max(1, params.limit || 25))
+    const offset = (page - 1) * limit
+
+    const categoryFilterSql = categoryId ? Prisma.sql`AND rm.room_category_id = ${categoryId}` : Prisma.empty
+
+    const [countRows, roomRows] = await Promise.all([
+      prisma.$queryRaw<Array<{ total: number }>>`
+        SELECT COUNT(*)::int as total
+        FROM rooms rm
+        WHERE rm.property_id = ${propertyId}
+        ${categoryFilterSql};
+      `,
+      prisma.$queryRaw<Array<{
+        room_id: string
+        room_no: string
+        display_name: string | null
+        category_name: string
+        floor_no: number
+        building_name: string
+        current_status: RoomStatus
+        nights_sold: number
+        room_revenue: Prisma.Decimal
+      }>>`
+        SELECT
+          rm.id as room_id,
+          rm.room_no,
+          rm.display_name,
+          rc.name as category_name,
+          f.floor_no,
+          b.name as building_name,
+          rm.status as current_status,
+          COALESCE(SUM(alloc.nights), 0)::int as nights_sold,
+          COALESCE(SUM(alloc.rev), 0) as room_revenue
+        FROM rooms rm
+        JOIN room_categories rc ON rc.id = rm.room_category_id
+        JOIN buildings b ON b.id = rm.building_id
+        JOIN floors f ON f.id = rm.floor_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*)::int as nights,
+            COALESCE(SUM(rr.booked_nightly_rate), 0) as rev
+          FROM reservation_rooms rr
+          CROSS JOIN LATERAL generate_series(
+            GREATEST(rr.arrival_date, ${startDate}::date),
+            LEAST(COALESCE(rr.actual_checkout_date, rr.departure_date) - 1, ${endDate}::date),
+            '1 day'::interval
+          ) d(dt)
+          WHERE rr.room_id = rm.id
+            AND rr.arrival_date <= ${endDate}::date
+            AND COALESCE(rr.actual_checkout_date, rr.departure_date) > ${startDate}::date
+            AND (
+              rr.status IN ('CHECKED_IN', 'CHECKED_OUT')
+              OR (rr.status = 'CONFIRMED' AND d.dt::date >= ${todayUtcStr}::date)
+            )
+        ) alloc ON true
+        WHERE rm.property_id = ${propertyId}
+        ${categoryFilterSql}
+        GROUP BY rm.id, rm.room_no, rm.display_name, rc.name, f.floor_no, b.name, rm.status
+        ORDER BY rm.room_no ASC
+        LIMIT ${limit} OFFSET ${offset};
+      `,
+    ])
+
+    const totalRoomsCount = countRows[0]?.total || 0
+
+    let totalNightsSold = 0
+    let totalRoomRevenueDec = new Prisma.Decimal(0)
+
+    const rooms: RoomPerformanceItemDTO[] = roomRows.map((r) => {
+      const sold = Number(r.nights_sold) || 0
+      const revDec = new Prisma.Decimal(r.room_revenue || 0)
+      totalNightsSold += sold
+      totalRoomRevenueDec = totalRoomRevenueDec.add(revDec)
+
+      const occRate = totalDays > 0 ? Math.round((sold / totalDays) * 1000) / 10 : 0
+      const adr = sold > 0 ? revDec.div(sold).toFixed(2) : "0.00"
+      const revpar = totalDays > 0 ? revDec.div(totalDays).toFixed(2) : "0.00"
+
+      return {
+        roomId: r.room_id,
+        roomNo: r.room_no,
+        roomDisplayName: r.display_name,
+        categoryName: r.category_name,
+        floorNo: r.floor_no,
+        buildingName: r.building_name,
+        nightsSold: sold,
+        totalAvailableNights: totalDays,
+        occupancyRate: occRate,
+        roomRevenue: revDec.toFixed(2),
+        adr,
+        revpar,
+        currentStatus: r.current_status,
+      }
+    })
+
+    const totalAvailableRoomNights = totalRoomsCount * totalDays
+    const avgOccRate = totalAvailableRoomNights > 0
+      ? Math.round((totalNightsSold / totalAvailableRoomNights) * 1000) / 10
+      : 0
+    const avgAdr = totalNightsSold > 0 ? totalRoomRevenueDec.div(totalNightsSold).toFixed(2) : "0.00"
+    const avgRevpar = totalAvailableRoomNights > 0 ? totalRoomRevenueDec.div(totalAvailableRoomNights).toFixed(2) : "0.00"
+
+    return {
+      startDate,
+      endDate,
+      totalRooms: totalRoomsCount,
+      totalDays,
+      totalNightsSold,
+      totalRoomRevenue: totalRoomRevenueDec.toFixed(2),
+      averageAdr: avgAdr,
+      averageRevpar: avgRevpar,
+      averageOccupancyRate: avgOccRate,
+      rooms,
+      pagination: {
+        page,
+        limit,
+        total: totalRoomsCount,
+        totalPages: Math.max(1, Math.ceil(totalRoomsCount / limit)),
+      },
+    }
+  }
+
+  /**
+   * Generates Monthly Performance Report:
+   * Executive rolling monthly trend of occupancy, revenue, expenses, and Net Operating Result.
+   */
+  static async getMonthlyPerformanceReport(filters: {
+    startMonth?: string
+    endMonth?: string
+    propertyId?: string
+  }): Promise<MonthlyPerformanceReportDTO> {
+    const { propertyId } = filters
+    if (!propertyId) {
+      throw new BadRequestError("propertyId is required for Monthly Performance Report")
+    }
+
+    const todayStr = getHotelTodayDate()
+    const currentYear = parseInt(todayStr.slice(0, 4), 10)
+    const currentMonth = parseInt(todayStr.slice(5, 7), 10)
+
+    const endM = filters.endMonth || `${currentYear}-${String(currentMonth).padStart(2, "0")}`
+    let startM = filters.startMonth
+    if (!startM) {
+      const pastDate = new Date(currentYear, currentMonth - 12, 1)
+      startM = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, "0")}`
+    }
+
+    const [sY, sM] = startM.split("-").map(Number)
+    const [eY, eM] = endM.split("-").map(Number)
+
+    const months: MonthlyPerformanceMonthDTO[] = []
+    let curY = sY!
+    let curM = sM!
+
+    while (curY < eY! || (curY === eY! && curM <= eM!)) {
+      const mStr = `${curY}-${String(curM).padStart(2, "0")}`
+      const startOfMonth = `${mStr}-01`
+      const daysInM = new Date(curY, curM, 0).getDate()
+      const endOfMonth = `${mStr}-${String(daysInM).padStart(2, "0")}`
+
+      const [occ, revVsExp] = await Promise.all([
+        this.getOccupancyReport({ startDate: startOfMonth, endDate: endOfMonth, propertyId }),
+        this.getRevenueVsExpenseReport({ startDate: startOfMonth, endDate: endOfMonth, propertyId }),
+      ])
+
+      const dateObj = new Date(curY, curM - 1, 1)
+      const monthName = dateObj.toLocaleDateString("en-US", { month: "short", year: "numeric" })
+
+      months.push({
+        monthKey: mStr,
+        monthName,
+        totalRooms: occ.totalRooms,
+        availableNights: occ.totalAvailableRoomNights,
+        occupiedNights: occ.totalOccupiedRoomNights,
+        occupancyRate: occ.occupancyRate,
+        roomRevenue: occ.totalRoomRevenue,
+        adr: occ.adr,
+        revpar: occ.revpar,
+        netInvoicedRevenue: revVsExp.netInvoicedRevenue,
+        recognizedDirectIncome: revVsExp.recognizedDirectIncome,
+        totalRecognizedRevenue: revVsExp.totalRecognizedRevenue,
+        recordedExpenses: revVsExp.totalRecordedExpenses,
+        netOperatingResult: revVsExp.netOperatingResult,
+        cashInflows: revVsExp.totalCashReceipts,
+        cashOutflows: revVsExp.totalCashDisbursements,
+        netCashMovement: revVsExp.netCashMovement,
+      })
+
+      curM++
+      if (curM > 12) {
+        curM = 1
+        curY++
+      }
+    }
+
+    return {
+      startMonth: startM,
+      endMonth: endM,
+      months,
+    }
+  }
+
+  /**
+   * Generates Property Summary Report (Super Admin only):
+   * Cross-property operational and financial comparison table.
+   */
+  static async getPropertySummaryReport(filters?: {
+    startDate?: string
+    endDate?: string
+  }): Promise<PropertySummaryReportDTO> {
+    const todayStr = getHotelTodayDate()
+    const startDate = filters?.startDate || `${todayStr.slice(0, 7)}-01`
+    const endDate = filters?.endDate || todayStr
+
+    const startObj = new Date(`${startDate}T00:00:00.000Z`)
+    const endObj = new Date(`${endDate}T23:59:59.999Z`)
+
+    const properties = await prisma.property.findMany({
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        status: true,
+        _count: {
+          select: {
+            rooms: true,
+            users: true,
+          },
+        },
+      },
+      orderBy: { name: "asc" },
+    })
+
+    const propertySummaries: PropertySummaryItemDTO[] = []
+
+    for (const p of properties) {
+      const [roomCounts, activeResCount, invoicedAgg, directIncomeAgg, expensesAgg, cashRecAgg, cashPayAgg] = await Promise.all([
+        prisma.room.groupBy({
+          by: ["status"],
+          where: { propertyId: p.id },
+          _count: { _all: true },
+        }),
+        prisma.reservation.count({
+          where: {
+            propertyId: p.id,
+            status: ReservationStatus.CONFIRMED,
+          },
+        }),
+        prisma.invoice.aggregate({
+          where: {
+            propertyId: p.id,
+            createdAt: { gte: startObj, lte: endObj },
+            status: { not: "VOID" },
+          },
+          _sum: { grandTotal: true },
+        }),
+        prisma.receipt.aggregate({
+          where: {
+            propertyId: p.id,
+            paidAt: { gte: startObj, lte: endObj },
+            incomeId: { not: null },
+            OR: [
+              { status: "RECORDED" },
+              { voidedAt: { gt: endObj } },
+            ],
+          },
+          _sum: { amount: true },
+        }),
+        prisma.expense.aggregate({
+          where: {
+            propertyId: p.id,
+            expenseDate: { gte: startObj, lte: endObj },
+            OR: [
+              { status: { not: "VOID" } },
+              { voidedAt: { gt: endObj } },
+            ],
+          },
+          _sum: { amount: true },
+        }),
+        prisma.receipt.aggregate({
+          where: {
+            propertyId: p.id,
+            paidAt: { gte: startObj, lte: endObj },
+            OR: [
+              { status: "RECORDED" },
+              { voidedAt: { gt: endObj } },
+            ],
+          },
+          _sum: { amount: true },
+        }),
+        prisma.payment.aggregate({
+          where: {
+            propertyId: p.id,
+            paidAt: { gte: startObj, lte: endObj },
+            OR: [
+              { status: "RECORDED" },
+              { voidedAt: { gt: endObj } },
+            ],
+          },
+          _sum: { amount: true },
+        }),
+      ])
+
+      let clean = 0
+      let occupied = 0
+      for (const rc of roomCounts) {
+        if (rc.status === RoomStatus.VACANT_CLEAN) clean = rc._count._all
+        else if (rc.status === RoomStatus.OCCUPIED) occupied = rc._count._all
+      }
+
+      const totalRooms = p._count.rooms
+      const occRate = totalRooms > 0 ? Math.round((occupied / totalRooms) * 1000) / 10 : 0
+
+      const invoicedDec = new Prisma.Decimal(invoicedAgg._sum.grandTotal || 0)
+      const directIncomeDec = new Prisma.Decimal(directIncomeAgg._sum.amount || 0)
+      const totalRecognizedRevenueDec = invoicedDec.add(directIncomeDec)
+
+      const recordedExpensesDec = new Prisma.Decimal(expensesAgg._sum.amount || 0)
+      const netOperatingResultDec = totalRecognizedRevenueDec.sub(recordedExpensesDec)
+
+      const totalCashCollectedDec = new Prisma.Decimal(cashRecAgg._sum.amount || 0)
+      const totalCashDisbursedDec = new Prisma.Decimal(cashPayAgg._sum.amount || 0)
+      const netCashMovementDec = totalCashCollectedDec.sub(totalCashDisbursedDec)
+
+      propertySummaries.push({
+        propertyId: p.id,
+        propertyName: p.name,
+        city: p.city,
+        status: p.status,
+        totalRooms,
+        cleanRooms: clean,
+        occupiedRooms: occupied,
+        activeReservations: activeResCount,
+        occupancyRate: occRate,
+        totalInvoicedRevenue: invoicedDec.toFixed(2),
+        recognizedDirectIncome: directIncomeDec.toFixed(2),
+        totalRecognizedRevenue: totalRecognizedRevenueDec.toFixed(2),
+        recordedExpenses: recordedExpensesDec.toFixed(2),
+        netOperatingResult: netOperatingResultDec.toFixed(2),
+        totalCashCollected: totalCashCollectedDec.toFixed(2),
+        totalCashDisbursed: totalCashDisbursedDec.toFixed(2),
+        netCashMovement: netCashMovementDec.toFixed(2),
+        activeStaffCount: p._count.users,
+      })
+    }
+
+    const activeProperties = properties.filter((p) => p.status === "ACTIVE").length
+    const totalRooms = propertySummaries.reduce((acc, p) => acc + p.totalRooms, 0)
+
+    return {
+      startDate,
+      endDate,
+      totalProperties: properties.length,
+      activeProperties,
+      totalRooms,
+      properties: propertySummaries,
+    }
+  }
+
+  /**
+   * Generates Guest Analytics Report:
+   * Aggregates spend, stay frequency, repeat guest metrics, and booking history.
+   */
+  static async getGuestReport(params: {
+    startDate?: string
+    endDate?: string
+    propertyId?: string
+    q?: string
+    page?: number
+    limit?: number
+  }): Promise<GuestReportDTO> {
+    const { startDate, endDate, propertyId, q } = params
+    const page = Math.max(1, params.page || 1)
+    const limit = Math.min(5000, Math.max(1, params.limit || 25))
+    const offset = (page - 1) * limit
+
+    const whereClause: Prisma.CustomerWhereInput = {
+      ...(q
+        ? {
+            OR: [
+              { firstName: { contains: q, mode: "insensitive" } },
+              { lastName: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+              { phone: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(propertyId
+        ? {
+            reservations: {
+              some: {
+                propertyId,
+                ...(startDate && endDate
+                  ? {
+                      createdAt: {
+                        gte: new Date(`${startDate}T00:00:00.000Z`),
+                        lte: new Date(`${endDate}T23:59:59.999Z`),
+                      },
+                    }
+                  : {}),
+              },
+            },
+          }
+        : {}),
+    }
+
+    const propertyFilterSql = propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty
+    const dateRangeFilterSql =
+      startDate && endDate
+        ? Prisma.sql`AND rr.arrival_date >= ${startDate}::date AND rr.arrival_date <= ${endDate}::date`
+        : Prisma.empty
+
+    // Execute customer list and monthly historical loyalty CTE in parallel
+    const [totalCount, customers, monthlyRows] = await Promise.all([
+      prisma.customer.count({ where: whereClause }),
+      prisma.customer.findMany({
+        where: whereClause,
+        include: {
+          reservations: {
+            where: {
+              ...(propertyId ? { propertyId } : {}),
+              ...(startDate && endDate
+                ? {
+                    createdAt: {
+                      gte: new Date(`${startDate}T00:00:00.000Z`),
+                      lte: new Date(`${endDate}T23:59:59.999Z`),
+                    },
+                  }
+                : {}),
+            },
+            include: {
+              rooms: {
+                select: {
+                  arrivalDate: true,
+                  departureDate: true,
+                  bookedNightlyRate: true,
+                },
+              },
+              invoices: {
+                where: { status: { not: "VOID" } },
+                select: { grandTotal: true },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+        skip: offset,
+        take: limit,
+      }),
+      prisma.$queryRaw<Array<{
+        month: string
+        total_guests: number
+        new_guests: number
+        returning_guests: number
+        loyalty_rate: number
+      }>>`
+        WITH guest_first_stay AS (
+          SELECT r.customer_id, MIN(rr.arrival_date) as first_stay_at
+          FROM reservation_rooms rr
+          JOIN reservations r ON r.id = rr.reservation_id
+          WHERE r.status != 'CANCELLED' AND rr.status != 'CANCELLED' ${propertyFilterSql}
+          GROUP BY r.customer_id
+        ),
+        monthly_stays AS (
+          SELECT 
+            to_char(rr.arrival_date, 'YYYY-MM') as month,
+            r.customer_id,
+            gfs.first_stay_at,
+            rr.arrival_date as stay_at
+          FROM reservation_rooms rr
+          JOIN reservations r ON r.id = rr.reservation_id
+          JOIN guest_first_stay gfs ON gfs.customer_id = r.customer_id
+          WHERE r.status != 'CANCELLED' AND rr.status != 'CANCELLED' ${propertyFilterSql} ${dateRangeFilterSql}
+        ),
+        monthly_agg AS (
+          SELECT
+            month,
+            COUNT(DISTINCT customer_id)::int as total_guests,
+            COUNT(DISTINCT CASE WHEN to_char(first_stay_at, 'YYYY-MM') < month THEN customer_id END)::int as returning_guests
+          FROM monthly_stays
+          GROUP BY month
+          ORDER BY month ASC
+        )
+        SELECT
+          month,
+          total_guests,
+          (total_guests - returning_guests)::int as new_guests,
+          returning_guests,
+          ROUND((returning_guests::numeric / NULLIF(total_guests, 0)::numeric) * 100, 1)::float as loyalty_rate
+        FROM monthly_agg;
+      `,
+    ])
+
+    const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const monthlyTrend: MonthlyGuestLoyaltyDTO[] = (monthlyRows || []).map((row) => {
+      const [y, m] = row.month.split("-")
+      const mIdx = parseInt(m || "1", 10) - 1
+      const displayMonth = `${MONTH_LABELS[mIdx] || m} ${y}`
+      return {
+        month: row.month,
+        displayMonth,
+        totalGuests: row.total_guests,
+        newGuests: row.new_guests,
+        returningGuests: row.returning_guests,
+        loyaltyRate: row.loyalty_rate ?? 0,
+      }
+    })
+
+    let totalSpendDec = new Prisma.Decimal(0)
+    let repeatCount = 0
+
+    const items: GuestReportItemDTO[] = customers.map((c) => {
+      const resCount = c.reservations.length
+      if (resCount > 1) repeatCount += 1
+
+      let guestSpend = new Prisma.Decimal(0)
+      let totalNights = 0
+      let latestStay: Date | null = null
+
+      for (const res of c.reservations) {
+        for (const inv of res.invoices) {
+          guestSpend = guestSpend.add(new Prisma.Decimal(inv.grandTotal))
+        }
+        for (const rm of res.rooms) {
+          const s = rm.arrivalDate.getTime()
+          const e = rm.departureDate.getTime()
+          const nights = Math.max(1, Math.round((e - s) / (1000 * 60 * 60 * 24)))
+          totalNights += nights
+
+          if (!latestStay || rm.departureDate > latestStay) {
+            latestStay = rm.departureDate
+          }
+        }
+      }
+
+      totalSpendDec = totalSpendDec.add(guestSpend)
+
+      return {
+        customerId: c.id,
+        guestName: `${c.firstName} ${c.lastName || ""}`.trim(),
+        email: c.email,
+        phone: c.phone,
+        nationality: c.nationality,
+        address: c.address,
+        totalReservations: resCount,
+        totalStayNights: totalNights,
+        totalSpend: guestSpend.toFixed(2),
+        lastStayDate: latestStay ? latestStay.toISOString().split("T")[0]! : null,
+        isRepeatGuest: resCount > 1,
+      }
+    })
+
+    const totalTrendGuests = monthlyTrend.reduce((acc, m) => acc + m.totalGuests, 0)
+    const totalReturningTrend = monthlyTrend.reduce((acc, m) => acc + m.returningGuests, 0)
+    const overallLoyaltyPct =
+      totalTrendGuests > 0
+        ? Math.round((totalReturningTrend / totalTrendGuests) * 1000) / 10
+        : totalCount > 0
+        ? Math.round((repeatCount / (customers.length || 1)) * 1000) / 10
+        : 0
+    const avgSpend = totalCount > 0 ? totalSpendDec.div(customers.length || 1).toFixed(2) : "0.00"
+
+    return {
+      startDate,
+      endDate,
+      totalUniqueGuests: totalCount,
+      repeatGuestCount: totalReturningTrend > 0 ? totalReturningTrend : repeatCount,
+      repeatGuestPercentage: overallLoyaltyPct,
+      totalGuestSpend: totalSpendDec.toFixed(2),
+      averageSpendPerGuest: avgSpend,
+      monthlyTrend,
+      guests: items,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
       },
     }
   }

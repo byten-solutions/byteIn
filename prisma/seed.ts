@@ -4,9 +4,14 @@ import {
   RoomStatus,
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
   ReservationStatus,
   AllocationStatus,
+  PaymentStatus,
+  AccountType,
+  ExpenseStatus,
+  IncomeStatus,
+  TransferStatus,
   Prisma,
 } from "@prisma/client";
 import bcrypt from "bcryptjs";
@@ -16,99 +21,8 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding byteInn database...");
 
-  // 0. Clean up leaked test data (e.g. temporary properties or test fixtures)
-  const leakedProperties = await prisma.property.findMany({
-    where: {
-      name: { not: "byteInn Grand Hotel" },
-    },
-    include: {
-      buildings: true,
-      rooms: true,
-    },
-  });
-
-  for (const lp of leakedProperties) {
-    console.log(`Cleaning leaked test property: "${lp.name}" (${lp.id})...`);
-    // Delete dependent records for this leaked property
-    await prisma.payment.deleteMany({
-      where: { invoice: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } } },
-    });
-    await prisma.invoiceItem.deleteMany({
-      where: { invoice: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } } },
-    });
-    await prisma.invoice.deleteMany({
-      where: { reservation: { rooms: { some: { room: { propertyId: lp.id } } } } },
-    });
-    await prisma.reservationRoom.deleteMany({
-      where: { room: { propertyId: lp.id } },
-    });
-    await prisma.room.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.roomCategoryAmenity.deleteMany({
-      where: { roomCategory: { propertyId: lp.id } },
-    });
-    await prisma.roomCategory.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.floor.deleteMany({
-      where: { building: { propertyId: lp.id } },
-    });
-    await prisma.building.deleteMany({
-      where: { propertyId: lp.id },
-    });
-    await prisma.property.delete({
-      where: { id: lp.id },
-    });
-  }
-
-  // Also clean any leaked buildings under any property (such as "Main Tower")
-  const leakedBuildings = await prisma.building.findMany({
-    where: {
-      name: { notIn: ["Main Wing", "West Wing"] },
-    },
-  });
-  for (const lb of leakedBuildings) {
-    console.log(`Cleaning leaked building: "${lb.name}" (${lb.id})...`);
-    await prisma.room.deleteMany({ where: { buildingId: lb.id } });
-    await prisma.floor.deleteMany({ where: { buildingId: lb.id } });
-    await prisma.building.delete({ where: { id: lb.id } });
-  }
-
-  // Clean non-canonical reservations and customers left over from temporary test seeds
-  const CANONICAL_RESERVATION_NOS = [
-    "RES-20261011-B139",
-    "RES-20261011-6472",
-    "RES-20261011-5FDC",
-    "RES-20261011-D228",
-    "RES-20261011-253D",
-  ];
-  const CANONICAL_INVOICE_NUMBERS = [
-    "INV-20261011-B139",
-    "INV-20261011-6472",
-    "INV-20261011-5FDC",
-    "INV-20261011-D228",
-  ];
-  await prisma.payment.deleteMany({
-    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
-  });
-  await prisma.invoiceItem.deleteMany({
-    where: { invoice: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } } },
-  });
-  await prisma.invoice.deleteMany({
-    where: { invoiceNumber: { notIn: CANONICAL_INVOICE_NUMBERS } },
-  });
-  await prisma.reservationRoom.deleteMany({
-    where: { reservation: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } } },
-  });
-  await prisma.reservation.deleteMany({
-    where: { reservationNo: { notIn: CANONICAL_RESERVATION_NOS } },
-  });
-  await prisma.customer.deleteMany({
-    where: {
-      phone: { notIn: ["+91 98765 43210", "+91 98765 43211", "+91 98765 43212", "+91 98765 43213"] },
-    },
-  });
+  // 0. Seed initialization
+  console.log("Ensuring byteInn Grand Hotel demo fixtures...");
 
   // 1. Seed Roles
   const adminRole = await prisma.role.upsert({
@@ -198,6 +112,23 @@ async function main() {
     });
   }
   console.log(`Property ensured: ${property.name} (${property.id})`);
+
+  // Ensure default financial account for the property
+  let propertyAccount = await prisma.financialAccount.findFirst({
+    where: { propertyId: property.id, isDefault: true },
+  });
+  if (!propertyAccount) {
+    propertyAccount = await prisma.financialAccount.create({
+      data: {
+        propertyId: property.id,
+        accountName: "Main Operating Drawer",
+        accountType: "CASH",
+        openingBalance: 10000,
+        isDefault: true,
+        isActive: true,
+      },
+    });
+  }
 
   // 4. Seed Buildings (Main Wing & West Wing)
   let mainWing = await prisma.building.findFirst({
@@ -854,7 +785,7 @@ async function main() {
         amount: new Prisma.Decimal("3825.00"),
         paymentMethod: "UPI",
         referenceNumber: "UPI-MRIN-B139",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T10:25:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -879,7 +810,7 @@ async function main() {
         amount: new Prisma.Decimal("1800.00"),
         paymentMethod: "CARD",
         referenceNumber: "CARD-HB-6472",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-20T10:35:00.000Z"), // paidAt after invoice issuedAt
         createdBy: receptionistUser.id,
       },
@@ -918,7 +849,7 @@ async function main() {
         amount: new Prisma.Decimal("500.00"),
         paymentMethod: "CASH",
         referenceNumber: "CASH-MRIN-5FDC",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T14:05:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -943,7 +874,7 @@ async function main() {
         amount: new Prisma.Decimal("100.00"),
         paymentMethod: "CASH",
         referenceNumber: "CASH-JHB-D228",
-        status: PaymentStatus.RECORDED,
+        status: ReceiptStatus.RECORDED,
         paidAt: new Date("2026-10-11T10:35:00.000Z"),
         createdBy: receptionistUser.id,
       },
@@ -956,9 +887,13 @@ async function main() {
     });
     if (!resv) continue;
 
+    const propertyAccount = await prisma.financialAccount.findFirst({
+      where: { propertyId: resv.propertyId },
+    });
+
     const existingInvoice = await prisma.invoice.findUnique({
       where: { invoiceNumber: demo.invoiceNumber },
-      include: { payments: true, items: true },
+      include: { receipts: true, items: true },
     });
 
     if (!existingInvoice) {
@@ -976,10 +911,15 @@ async function main() {
           items: {
             create: demo.items,
           },
-          payments: {
+          receipts: {
             create: {
-              ...demo.payment,
-              propertyId: resv.propertyId,
+              accountId: propertyAccount!.id,
+              amount: demo.payment.amount,
+              paymentMethodCode: demo.payment.paymentMethod,
+              referenceNumber: demo.payment.referenceNumber,
+              status: ReceiptStatus.RECORDED,
+              paidAt: demo.payment.paidAt,
+              createdBy: demo.payment.createdBy,
             },
           },
         },
@@ -1011,9 +951,9 @@ async function main() {
         }
       }
       // Ensure payment date
-      if (existingInvoice.payments.length > 0) {
-        await prisma.payment.update({
-          where: { id: existingInvoice.payments[0].id },
+      if (existingInvoice.receipts.length > 0) {
+        await prisma.receipt.update({
+          where: { id: existingInvoice.receipts[0].id },
           data: {
             paidAt: demo.payment.paidAt,
           },
@@ -1092,16 +1032,697 @@ async function main() {
   if (migrated > 0) console.log(`Migrated ${migrated} existing customer IDs to last-4`);
   if (redacted > 0) console.log(`Redacted ${redacted} audit log records`);
 
-  // Final summary verification
+  // --------------------------------------------------------------------------
+  // 13. Realistic Multi-Month Financial & Operational Data (Stage 4 Expansion)
+  // --------------------------------------------------------------------------
+  if (isProduction && !process.env.FORCE_EXPANDED_SEED) {
+    console.log("Production environment detected: Skipping Stage 4 demo transaction expansion.");
+  } else {
+    console.log("\n13. Seeding Multi-Month Financial Accounts, Direct Incomes, Expenses, and Transfers...");
+
+    // 13.1 Ensure Financial Accounts
+    const mainDrawer = await prisma.financialAccount.upsert({
+      where: { propertyId_accountName: { propertyId: property.id, accountName: "Main Operating Drawer" } },
+      update: { isDefault: true, isActive: true, openingBalance: new Prisma.Decimal("100000.00") },
+      create: {
+        propertyId: property.id,
+        accountName: "Main Operating Drawer",
+        accountType: AccountType.CASH,
+        openingBalance: new Prisma.Decimal("100000.00"),
+        openingBalanceDate: new Date("2026-08-01"),
+        isDefault: true,
+        isActive: true,
+      },
+    });
+
+    const pettyCash = await prisma.financialAccount.upsert({
+      where: { propertyId_accountName: { propertyId: property.id, accountName: "Front Desk Petty Cash" } },
+      update: { isActive: true },
+      create: {
+        propertyId: property.id,
+        accountName: "Front Desk Petty Cash",
+        accountType: AccountType.CASH,
+        openingBalance: new Prisma.Decimal("10000.00"),
+        openingBalanceDate: new Date("2026-08-01"),
+        isDefault: false,
+        isActive: true,
+      },
+    });
+
+    const hdfcBank = await prisma.financialAccount.upsert({
+      where: { propertyId_accountName: { propertyId: property.id, accountName: "HDFC Bank Operating" } },
+      update: { isActive: true },
+      create: {
+        propertyId: property.id,
+        accountName: "HDFC Bank Operating",
+        accountType: AccountType.BANK,
+        openingBalance: new Prisma.Decimal("450000.00"),
+        openingBalanceDate: new Date("2026-08-01"),
+        isDefault: false,
+        isActive: true,
+      },
+    });
+
+    const sbiBank = await prisma.financialAccount.upsert({
+      where: { propertyId_accountName: { propertyId: property.id, accountName: "SBI Current Account" } },
+      update: { isActive: true },
+      create: {
+        propertyId: property.id,
+        accountName: "SBI Current Account",
+        accountType: AccountType.BANK,
+        openingBalance: new Prisma.Decimal("200000.00"),
+        openingBalanceDate: new Date("2026-08-01"),
+        isDefault: false,
+        isActive: true,
+      },
+    });
+
+    console.log(`Financial accounts ensured: ${mainDrawer.accountName}, ${pettyCash.accountName}, ${hdfcBank.accountName}, ${sbiBank.accountName}`);
+
+    // 13.2 Payment Methods
+    const paymentMethodDefs = [
+      { code: "CASH", name: "Cash Currency", defaultAccountId: mainDrawer.id },
+      { code: "UPI", name: "Unified Payments Interface (UPI)", defaultAccountId: hdfcBank.id },
+      { code: "CARD", name: "Credit / Debit Card Terminal", defaultAccountId: hdfcBank.id },
+      { code: "BANK_TRANSFER", name: "Bank Transfer (NEFT/RTGS)", defaultAccountId: sbiBank.id },
+    ];
+
+    for (const pm of paymentMethodDefs) {
+      await prisma.paymentMethod.upsert({
+        where: { propertyId_code: { propertyId: property.id, code: pm.code } },
+        update: { name: pm.name, defaultAccountId: pm.defaultAccountId, isActive: true },
+        create: {
+          propertyId: property.id,
+          code: pm.code,
+          name: pm.name,
+          defaultAccountId: pm.defaultAccountId,
+          isActive: true,
+        },
+      });
+    }
+
+    // 13.3 Standard Heads of Income
+    const incomeHeadDefs = [
+      { code: "BANQUET", name: "Banquet & Event Space Hire", description: "Conference halls, banquets, and celebration venues" },
+      { code: "LAUNDRY", name: "Guest Laundry & Dry Cleaning", description: "Direct guest dry cleaning and pressing services" },
+      { code: "CAB", name: "Airport Taxi & City Transfers", description: "Chauffeured guest transport and airport shuttles" },
+      { code: "MISC", name: "Business Centre & Facilities", description: "Printing, secretarial services, and boardrooms" },
+      { code: "SALVAGE", name: "Scrap & Linen Salvage", description: "Linen salvage, kitchen recycling, and discarded assets" },
+    ];
+
+    const incomeHeadMap = new Map<string, string>();
+    for (const ih of incomeHeadDefs) {
+      const head = await prisma.incomeHead.upsert({
+        where: { propertyId_code: { propertyId: property.id, code: ih.code } },
+        update: { name: ih.name, description: ih.description, isActive: true },
+        create: {
+          propertyId: property.id,
+          code: ih.code,
+          name: ih.name,
+          description: ih.description,
+          isActive: true,
+        },
+      });
+      incomeHeadMap.set(ih.code, head.id);
+    }
+
+    // 13.4 Standard Heads of Expense
+    const expenseHeadDefs = [
+      { code: "HK_SUPPLIES", name: "Housekeeping & Linen Supplies", description: "Cleaning chemicals, bedsheets, and toiletries" },
+      { code: "FNB_GROCERY", name: "F&B & Breakfast Groceries", description: "Dairy, provisions, beverages, and bakery" },
+      { code: "UTIL_ELEC", name: "Electricity & Power Utility", description: "State electricity board utility bills and power diesel" },
+      { code: "UTIL_WATER", name: "Water & Sanitation Utility", description: "Municipal water supply and tanker deliveries" },
+      { code: "MAINTENANCE", name: "Property Repairs & HVAC Maintenance", description: "AC servicing, plumbing, and structural upkeep" },
+      { code: "STAFF_WELFARE", name: "Staff Welfare & Uniforms", description: "Staff meals, uniforms, and medical provisions" },
+      { code: "IT_SOFTWARE", name: "Software & IT Subscriptions", description: "Cloud PMS, Wi-Fi lease line, and IT support" },
+    ];
+
+    const expenseHeadMap = new Map<string, string>();
+    for (const eh of expenseHeadDefs) {
+      const head = await prisma.expenseHead.upsert({
+        where: { propertyId_code: { propertyId: property.id, code: eh.code } },
+        update: { name: eh.name, description: eh.description, isActive: true },
+        create: {
+          propertyId: property.id,
+          code: eh.code,
+          name: eh.name,
+          description: eh.description,
+          isActive: true,
+        },
+      });
+      expenseHeadMap.set(eh.code, head.id);
+    }
+
+    // 13.5 Seed Direct Income Records (Aug - Nov 2026)
+    const directIncomeFixtures = [
+      // August 2026
+      { ref: "INC-2026-08-01", title: "Corporate Seminar Space Rental", headCode: "BANQUET", amount: "35000.00", dateStr: "2026-08-10", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-08-02", title: "Bulk Dry Cleaning Service - Tech Mahindra", headCode: "LAUNDRY", amount: "8400.00", dateStr: "2026-08-14", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-08-03", title: "Airport VIP Transfer (Innova Crysta)", headCode: "CAB", amount: "3200.00", dateStr: "2026-08-18", status: IncomeStatus.RECEIVED, method: "CARD", accountId: hdfcBank.id },
+      { ref: "INC-2026-08-04", title: "Boardroom Meeting Day Pass", headCode: "MISC", amount: "6500.00", dateStr: "2026-08-22", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-08-05", title: "Discarded Copper Wiring & Scrap Salvage", headCode: "SALVAGE", amount: "12500.00", dateStr: "2026-08-26", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-08-06", title: "Cocktail Reception Venue Booking", headCode: "BANQUET", amount: "45000.00", dateStr: "2026-08-28", status: IncomeStatus.VOID, voidReason: "Organizer cancelled 48h prior due to rain; deposit forfeited under separate folio", method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-08-07", title: "Express Uniform Pressing - Airline Crew", headCode: "LAUNDRY", amount: "5600.00", dateStr: "2026-08-30", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+
+      // September 2026
+      { ref: "INC-2026-09-01", title: "Annual General Meeting Hall Hire", headCode: "BANQUET", amount: "60000.00", dateStr: "2026-09-04", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-09-02", title: "Airport Shuttle Transfers - 4 Trips", headCode: "CAB", amount: "7800.00", dateStr: "2026-09-08", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-09-03", title: "Old Banquet Chairs & Metal Scrap", headCode: "SALVAGE", amount: "9200.00", dateStr: "2026-09-12", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-09-04", title: "Guest Express Laundry Delegation", headCode: "LAUNDRY", amount: "4200.00", dateStr: "2026-09-15", status: IncomeStatus.RECEIVED, method: "CARD", accountId: hdfcBank.id },
+      { ref: "INC-2026-09-05", title: "Product Launch Event Hall Advance", headCode: "BANQUET", amount: "50000.00", dateStr: "2026-09-19", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-09-06", title: "Conference Audio-Visual Tech Equipment", headCode: "MISC", amount: "8500.00", dateStr: "2026-09-22", status: IncomeStatus.VOID, voidReason: "Duplicate billing entry corrected by duty manager", method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-09-07", title: "Full Day Cab Hire - Guest Mr. Iyer", headCode: "CAB", amount: "4500.00", dateStr: "2026-09-26", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-09-08", title: "Quarterly Kitchen Oil Recycling Collection", headCode: "SALVAGE", amount: "7400.00", dateStr: "2026-09-29", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+
+      // October 2026
+      { ref: "INC-2026-10-01", title: "Wedding Sangeet Hall Hire - Advance", headCode: "BANQUET", amount: "75000.00", dateStr: "2026-10-03", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-10-02", title: "Guest Laundry & Dry Cleaning Package", headCode: "LAUNDRY", amount: "6800.00", dateStr: "2026-10-07", status: IncomeStatus.RECEIVED, method: "CARD", accountId: hdfcBank.id },
+      { ref: "INC-2026-10-03", title: "Airport Pickup Shuttle Service", headCode: "CAB", amount: "3600.00", dateStr: "2026-10-10", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-10-04", title: "Boardroom Day Rental - VC Pitch Day", headCode: "MISC", amount: "12000.00", dateStr: "2026-10-14", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-10-05", title: "Discarded Mattresses & Wood Scrap", headCode: "SALVAGE", amount: "8900.00", dateStr: "2026-10-18", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-10-06", title: "Fashion Exhibition Space Hire", headCode: "BANQUET", amount: "40000.00", dateStr: "2026-10-22", status: IncomeStatus.PENDING, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-10-07", title: "Emergency Airport Drop - Early Flight", headCode: "CAB", amount: "2800.00", dateStr: "2026-10-25", status: IncomeStatus.RECEIVED, method: "CASH", accountId: mainDrawer.id },
+      { ref: "INC-2026-10-08", title: "Guest Laundry Rush Order", headCode: "LAUNDRY", amount: "3900.00", dateStr: "2026-10-28", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-10-09", title: "Conference Projector Rental", headCode: "MISC", amount: "4500.00", dateStr: "2026-10-30", status: IncomeStatus.VOID, voidReason: "In-house AV failed; vendor waived charges and client was not billed", method: "CASH", accountId: mainDrawer.id },
+
+      // November 2026
+      { ref: "INC-2026-11-01", title: "Diwali Corporate Gala Hall Hire", headCode: "BANQUET", amount: "85000.00", dateStr: "2026-11-02", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-11-02", title: "Group Airport Shuttle - 6 Trips", headCode: "CAB", amount: "10500.00", dateStr: "2026-11-05", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+      { ref: "INC-2026-11-03", title: "Linen Dry Cleaning Service - Wedding Group", headCode: "LAUNDRY", amount: "9400.00", dateStr: "2026-11-08", status: IncomeStatus.RECEIVED, method: "CARD", accountId: hdfcBank.id },
+      { ref: "INC-2026-11-04", title: "Executive Boardroom Rental", headCode: "MISC", amount: "14000.00", dateStr: "2026-11-10", status: IncomeStatus.RECEIVED, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-11-05", title: "Doctor Association Conference Hall", headCode: "BANQUET", amount: "55000.00", dateStr: "2026-11-12", status: IncomeStatus.PENDING, method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "INC-2026-11-06", title: "Airport Drop Shuttle (Kia Carnival)", headCode: "CAB", amount: "4000.00", dateStr: "2026-11-14", status: IncomeStatus.RECEIVED, method: "UPI", accountId: hdfcBank.id },
+    ];
+
+    for (const inc of directIncomeFixtures) {
+      const headId = incomeHeadMap.get(inc.headCode);
+      if (!headId) continue;
+
+      let income = await prisma.income.findFirst({
+        where: { propertyId: property.id, description: inc.ref },
+      });
+
+      if (!income) {
+        income = await prisma.income.create({
+          data: {
+            propertyId: property.id,
+            incomeHeadId: headId,
+            title: inc.title,
+            description: inc.ref,
+            expectedAmount: new Prisma.Decimal(inc.amount),
+            incomeDate: new Date(inc.dateStr),
+            status: inc.status,
+            createdBy: adminUser.id,
+            voidReason: inc.voidReason || null,
+            voidedAt: inc.status === IncomeStatus.VOID ? new Date(`${inc.dateStr}T14:30:00Z`) : null,
+            voidedBy: inc.status === IncomeStatus.VOID ? adminUser.id : null,
+          },
+        });
+
+        // If RECEIVED, create corresponding Receipt
+        if (inc.status === IncomeStatus.RECEIVED) {
+          await prisma.receipt.create({
+            data: {
+              propertyId: property.id,
+              incomeId: income.id,
+              accountId: inc.accountId,
+              paymentMethodCode: inc.method,
+              amount: new Prisma.Decimal(inc.amount),
+              referenceNumber: `REC-${inc.ref}`,
+              idempotencyKey: `IDEMP-INC-${inc.ref}`,
+              status: ReceiptStatus.RECORDED,
+              paidAt: new Date(`${inc.dateStr}T10:00:00Z`),
+              createdBy: adminUser.id,
+            },
+          });
+        }
+      }
+    }
+    console.log(`Direct Incomes ensured: ${directIncomeFixtures.length} items`);
+
+    // 13.6 Seed Operating Expenses (Aug - Nov 2026)
+    const operatingExpenseFixtures = [
+      // August 2026
+      { ref: "EXP-2026-08-01", title: "Housekeeping Chemicals & Cleaning Solvents", headCode: "HK_SUPPLIES", vendor: "CleanPro Industrial Chemicals", amount: "18500.00", dateStr: "2026-08-05", status: ExpenseStatus.PAID, paidAmount: "18500.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-08-02", title: "Monthly Dairy, Butter & Cheese Supplies", headCode: "FNB_GROCERY", vendor: "Nandini Milk Products Co.", amount: "32400.00", dateStr: "2026-08-08", status: ExpenseStatus.PAID, paidAmount: "32400.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-08-03", title: "BESCOM Grid Electricity Tariff - July", headCode: "UTIL_ELEC", vendor: "BESCOM Power Utility Ltd", amount: "64800.00", dateStr: "2026-08-12", status: ExpenseStatus.PAID, paidAmount: "64800.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-08-04", title: "Municipal Potable Water Tankers (12 Loads)", headCode: "UTIL_WATER", vendor: "Kaveri Water Supply Logistics", amount: "14400.00", dateStr: "2026-08-15", status: ExpenseStatus.PAID, paidAmount: "14400.00", method: "CASH", accountId: mainDrawer.id },
+      { ref: "EXP-2026-08-05", title: "Chiller Plant Preventative Maintenance & Filters", headCode: "MAINTENANCE", vendor: "Voltas Air Conditioning Services", amount: "28000.00", dateStr: "2026-08-19", status: ExpenseStatus.PAID, paidAmount: "28000.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-08-06", title: "Staff Uniforms Tailoring & Laundry Allowance", headCode: "STAFF_WELFARE", vendor: "Metro Stitch & Uniform Corp", amount: "12500.00", dateStr: "2026-08-22", status: ExpenseStatus.PAID, paidAmount: "12500.00", method: "CASH", accountId: pettyCash.id },
+      { ref: "EXP-2026-08-07", title: "CloudPMS Subscription & Server Hosting", headCode: "IT_SOFTWARE", vendor: "byteInn Cloud Technologies Inc", amount: "15000.00", dateStr: "2026-08-25", status: ExpenseStatus.PAID, paidAmount: "15000.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-08-08", title: "Emergency Elevator Gearbox Repair", headCode: "MAINTENANCE", vendor: "Otis Elevator India Ltd", amount: "45000.00", dateStr: "2026-08-28", status: ExpenseStatus.VOID, voidReason: "Vendor invoiced wrong rate variance; reissued under new PO 8842", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+
+      // September 2026
+      { ref: "EXP-2026-09-01", title: "Linen Restocking (Towels & Bedding Sets)", headCode: "HK_SUPPLIES", vendor: "Bombay Dyeing Commercial Textiles", amount: "38000.00", dateStr: "2026-09-04", status: ExpenseStatus.PAID, paidAmount: "38000.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-09-02", title: "Monthly Bakery & Breakfast Provisions", headCode: "FNB_GROCERY", vendor: "Golden Harvest Grain Suppliers", amount: "27500.00", dateStr: "2026-09-07", status: ExpenseStatus.PAID, paidAmount: "27500.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-09-03", title: "BESCOM Grid Electricity Tariff - August", headCode: "UTIL_ELEC", vendor: "BESCOM Power Utility Ltd", amount: "72100.00", dateStr: "2026-09-11", status: ExpenseStatus.PAID, paidAmount: "72100.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-09-04", title: "Water Supply & Water Softener Salt Pellets", headCode: "UTIL_WATER", vendor: "Kaveri Water Supply Logistics", amount: "16200.00", dateStr: "2026-09-15", status: ExpenseStatus.PAID, paidAmount: "16200.00", method: "CASH", accountId: mainDrawer.id },
+      { ref: "EXP-2026-09-05", title: "Diesel for DG Backup Generators (1000L)", headCode: "UTIL_ELEC", vendor: "Indian Oil Commercial Depot", amount: "48000.00", dateStr: "2026-09-18", status: ExpenseStatus.PAID, paidAmount: "48000.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-09-06", title: "Staff Annual Health Checkup & Medical Kits", headCode: "STAFF_WELFARE", vendor: "Apollo Healthcare Diagnostic Centre", amount: "18000.00", dateStr: "2026-09-22", status: ExpenseStatus.PAID, paidAmount: "18000.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-09-07", title: "Fibre Internet Lease Line & Wi-Fi Access Points", headCode: "IT_SOFTWARE", vendor: "Airtel Business Enterprise", amount: "14200.00", dateStr: "2026-09-26", status: ExpenseStatus.PAID, paidAmount: "14200.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-09-08", title: "Bathroom Plumbing Overhaul - Floor 3", headCode: "MAINTENANCE", vendor: "Sri Balaji Plumbing Works", amount: "22000.00", dateStr: "2026-09-29", status: ExpenseStatus.PARTIALLY_PAID, paidAmount: "12000.00", method: "CASH", accountId: mainDrawer.id },
+
+      // October 2026
+      { ref: "EXP-2026-10-01", title: "Housekeeping Toiletries, Soaps & Dental Kits", headCode: "HK_SUPPLIES", vendor: "GuestAmenities Direct Ltd", amount: "24600.00", dateStr: "2026-10-04", status: ExpenseStatus.PAID, paidAmount: "24600.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-10-02", title: "F&B Fresh Meats, Poultry & Seafood Restock", headCode: "FNB_GROCERY", vendor: "Bangalore Cold Chain Logistics", amount: "36800.00", dateStr: "2026-10-08", status: ExpenseStatus.PAID, paidAmount: "36800.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-10-03", title: "BESCOM Grid Electricity Tariff - September", headCode: "UTIL_ELEC", vendor: "BESCOM Power Utility Ltd", amount: "69400.00", dateStr: "2026-10-12", status: ExpenseStatus.PAID, paidAmount: "69400.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-10-04", title: "Swimming Pool Cleaning & Water Testing", headCode: "MAINTENANCE", vendor: "AquaClear Water Solutions", amount: "9800.00", dateStr: "2026-10-16", status: ExpenseStatus.PAID, paidAmount: "9800.00", method: "CASH", accountId: pettyCash.id },
+      { ref: "EXP-2026-10-05", title: "Fire Safety Equipment Bi-Annual Inspection", headCode: "MAINTENANCE", vendor: "Ceasefire Industries Safety Corp", amount: "16500.00", dateStr: "2026-10-20", status: ExpenseStatus.PAID, paidAmount: "16500.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-10-06", title: "Staff Diwali Sweets & Festive Hampers", headCode: "STAFF_WELFARE", vendor: "Anand Sweets & Savouries", amount: "28500.00", dateStr: "2026-10-24", status: ExpenseStatus.PAID, paidAmount: "28500.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-10-07", title: "Front-Desk Thermal Receipt Paper & Stationery", headCode: "HK_SUPPLIES", vendor: "Vanguard Office Stationery", amount: "5400.00", dateStr: "2026-10-27", status: ExpenseStatus.PAID, paidAmount: "5400.00", method: "CASH", accountId: pettyCash.id },
+      { ref: "EXP-2026-10-08", title: "Marble Floor Crystallization & Polishing", headCode: "MAINTENANCE", vendor: "ShineStone Polishing Experts", amount: "32000.00", dateStr: "2026-10-30", status: ExpenseStatus.PARTIALLY_PAID, paidAmount: "16000.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+
+      // November 2026
+      { ref: "EXP-2026-11-01", title: "F&B Imported Gourmet Ingredients & Cheeses", headCode: "FNB_GROCERY", vendor: "European Gourmet Foods Ltd", amount: "44000.00", dateStr: "2026-11-03", status: ExpenseStatus.PAID, paidAmount: "44000.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-11-02", title: "BESCOM Grid Electricity Tariff - October", headCode: "UTIL_ELEC", vendor: "BESCOM Power Utility Ltd", amount: "78200.00", dateStr: "2026-11-06", status: ExpenseStatus.PAID, paidAmount: "78200.00", method: "BANK_TRANSFER", accountId: sbiBank.id },
+      { ref: "EXP-2026-11-03", title: "Water Supply & Tanker Deliveries", headCode: "UTIL_WATER", vendor: "Kaveri Water Supply Logistics", amount: "15800.00", dateStr: "2026-11-08", status: ExpenseStatus.PAID, paidAmount: "15800.00", method: "CASH", accountId: mainDrawer.id },
+      { ref: "EXP-2026-11-04", title: "Deep Kitchen Extraction Duct Degreasing", headCode: "MAINTENANCE", vendor: "AirVent Specialist Cleaning Services", amount: "21000.00", dateStr: "2026-11-10", status: ExpenseStatus.PAID, paidAmount: "21000.00", method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-11-05", title: "Monthly Housekeeping Cleaning Chemical Refill", headCode: "HK_SUPPLIES", vendor: "CleanPro Industrial Chemicals", amount: "19200.00", dateStr: "2026-11-12", status: ExpenseStatus.PENDING, method: "BANK_TRANSFER", accountId: hdfcBank.id },
+      { ref: "EXP-2026-11-06", title: "Staff Cafeteria Monthly Provisions", headCode: "STAFF_WELFARE", vendor: "South Kitchen Grain Mart", amount: "22500.00", dateStr: "2026-11-14", status: ExpenseStatus.PENDING, method: "BANK_TRANSFER", accountId: sbiBank.id },
+    ];
+
+    for (const exp of operatingExpenseFixtures) {
+      const headId = expenseHeadMap.get(exp.headCode);
+      if (!headId) continue;
+
+      let expense = await prisma.expense.findFirst({
+        where: { propertyId: property.id, referenceNumber: exp.ref },
+      });
+
+      if (!expense) {
+        expense = await prisma.expense.create({
+          data: {
+            propertyId: property.id,
+            expenseHeadId: headId,
+            title: exp.title,
+            description: exp.title,
+            vendorName: exp.vendor,
+            referenceNumber: exp.ref,
+            amount: new Prisma.Decimal(exp.amount),
+            expenseDate: new Date(exp.dateStr),
+            status: exp.status,
+            createdBy: adminUser.id,
+            voidReason: exp.voidReason || null,
+            voidedAt: exp.status === ExpenseStatus.VOID ? new Date(`${exp.dateStr}T16:00:00Z`) : null,
+            voidedBy: exp.status === ExpenseStatus.VOID ? adminUser.id : null,
+          },
+        });
+
+        // If PAID or PARTIALLY_PAID, record Payment
+        if (exp.paidAmount && (exp.status === ExpenseStatus.PAID || exp.status === ExpenseStatus.PARTIALLY_PAID)) {
+          await prisma.payment.create({
+            data: {
+              propertyId: property.id,
+              expenseId: expense.id,
+              accountId: exp.accountId,
+              paymentMethodCode: exp.method,
+              amount: new Prisma.Decimal(exp.paidAmount),
+              referenceNumber: `PAY-${exp.ref}`,
+              idempotencyKey: `IDEMP-PAY-${exp.ref}`,
+              status: PaymentStatus.RECORDED,
+              paidAt: new Date(`${exp.dateStr}T11:00:00Z`),
+              createdBy: adminUser.id,
+            },
+          });
+        }
+      }
+    }
+    console.log(`Operating Expenses ensured: ${operatingExpenseFixtures.length} items`);
+
+    // 13.7 Seed Account Transfers (Aug - Nov 2026)
+    const transferFixtures = [
+      // Weekly cash deposits: Main Operating Drawer -> HDFC Bank Operating
+      { ref: "TRF-2026-08-01", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "5000.00", dateStr: "2026-08-09", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-08-02", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "6000.00", dateStr: "2026-08-16", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-08-03", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "5500.00", dateStr: "2026-08-23", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-08-04", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "6500.00", dateStr: "2026-08-30", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-09-01", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "6000.00", dateStr: "2026-09-06", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-09-02", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "7000.00", dateStr: "2026-09-13", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-09-03", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "7500.00", dateStr: "2026-09-20", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-10-01", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "8000.00", dateStr: "2026-10-04", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-10-02", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "8500.00", dateStr: "2026-10-18", description: "Weekly cash drawer deposit to HDFC Bank" },
+      { ref: "TRF-2026-11-01", fromId: mainDrawer.id, toId: hdfcBank.id, amount: "8000.00", dateStr: "2026-11-08", description: "Weekly cash drawer deposit to HDFC Bank" },
+
+      // Monthly Petty Cash Replenishments: HDFC Bank -> Front Desk Petty Cash
+      { ref: "TRF-2026-08-PC", fromId: hdfcBank.id, toId: pettyCash.id, amount: "6000.00", dateStr: "2026-08-15", description: "Petty cash monthly replenishment from HDFC Bank" },
+      { ref: "TRF-2026-09-PC", fromId: hdfcBank.id, toId: pettyCash.id, amount: "6500.00", dateStr: "2026-09-15", description: "Petty cash monthly replenishment from HDFC Bank" },
+      { ref: "TRF-2026-10-PC", fromId: hdfcBank.id, toId: pettyCash.id, amount: "7500.00", dateStr: "2026-10-15", description: "Petty cash festive month replenishment" },
+      { ref: "TRF-2026-11-PC", fromId: hdfcBank.id, toId: pettyCash.id, amount: "6000.00", dateStr: "2026-11-10", description: "Petty cash monthly replenishment from HDFC Bank" },
+
+      // Inter-bank Treasury Transfers: HDFC Bank -> SBI Current Account
+      { ref: "TRF-2026-08-IB", fromId: hdfcBank.id, toId: sbiBank.id, amount: "40000.00", dateStr: "2026-08-20", description: "Treasury balance transfer for statutory utilities account" },
+      { ref: "TRF-2026-09-IB", fromId: hdfcBank.id, toId: sbiBank.id, amount: "40000.00", dateStr: "2026-09-20", description: "Treasury balance transfer for electricity obligations" },
+      { ref: "TRF-2026-10-IB", fromId: hdfcBank.id, toId: sbiBank.id, amount: "40000.00", dateStr: "2026-10-20", description: "Treasury balance transfer for vendor payouts" },
+    ];
+
+    for (const trf of transferFixtures) {
+      const existing = await prisma.accountTransfer.findFirst({
+        where: { propertyId: property.id, referenceNumber: trf.ref },
+      });
+
+      if (!existing) {
+        await prisma.accountTransfer.create({
+          data: {
+            propertyId: property.id,
+            fromAccountId: trf.fromId,
+            toAccountId: trf.toId,
+            amount: new Prisma.Decimal(trf.amount),
+            transferDate: new Date(trf.dateStr),
+            description: trf.description,
+            referenceNumber: trf.ref,
+            status: TransferStatus.COMPLETED,
+            createdBy: adminUser.id,
+          },
+        });
+      } else {
+        await prisma.accountTransfer.update({
+          where: { id: existing.id },
+          data: {
+            amount: new Prisma.Decimal(trf.amount),
+            description: trf.description,
+            transferDate: new Date(trf.dateStr),
+          },
+        });
+      }
+    }
+    console.log(`Account Transfers ensured: ${transferFixtures.length} transactions`);
+
+    // 13.8 Seed Additional Historical Multi-Item Folio Reservations & Receipts
+    const roomsList = await prisma.room.findMany({
+      where: { building: { propertyId: property.id } },
+      include: { category: true },
+      take: 8,
+    });
+
+    const historicalGuests = [
+      { firstName: "Vikram", lastName: "Aditya", phone: "+91 98450 11001", email: "vikram.aditya@example.com", city: "Hyderabad" },
+      { firstName: "Priya", lastName: "Nambiar", phone: "+91 98450 11002", email: "priya.nambiar@example.com", city: "Kochi" },
+      { firstName: "Siddharth", lastName: "Mehta", phone: "+91 98450 11003", email: "siddharth.mehta@example.com", city: "Mumbai" },
+      { firstName: "Kavita", lastName: "Krishnan", phone: "+91 98450 11004", email: "kavita.krishnan@example.com", city: "Chennai" },
+      { firstName: "Arun", lastName: "Deshmukh", phone: "+91 98450 11005", email: "arun.deshmukh@example.com", city: "Pune" },
+    ];
+
+    const guestMap = new Map<string, string>();
+    for (const g of historicalGuests) {
+      let cust = await prisma.customer.findFirst({
+        where: { phone: g.phone },
+      });
+      if (!cust) {
+        cust = await prisma.customer.create({
+          data: {
+            firstName: g.firstName,
+            lastName: g.lastName,
+            phone: g.phone,
+            email: g.email,
+            address: g.city,
+            registeredPropertyId: property.id,
+          },
+        });
+      }
+      guestMap.set(g.phone, cust.id);
+    }
+
+    if (roomsList.length > 0) {
+      const historicalBookings = [
+        {
+          resNo: "RES-2026-AUG-101",
+          invNo: "INV-2026-AUG-101",
+          phone: "+91 98450 11001",
+          room: roomsList[0],
+          arrival: "2026-08-12",
+          departure: "2026-08-15",
+          nights: 3,
+          rate: "3500.00",
+          fb: "1800.00",
+          laundry: "650.00",
+          status: ReservationStatus.COMPLETED,
+          invStatus: InvoiceStatus.PAID,
+          paymentMethod: "UPI",
+          account: hdfcBank,
+        },
+        {
+          resNo: "RES-2026-SEP-201",
+          invNo: "INV-2026-SEP-201",
+          phone: "+91 98450 11002",
+          room: roomsList[1],
+          arrival: "2026-09-10",
+          departure: "2026-09-13",
+          nights: 3,
+          rate: "4200.00",
+          fb: "2400.00",
+          laundry: "800.00",
+          status: ReservationStatus.COMPLETED,
+          invStatus: InvoiceStatus.PAID,
+          paymentMethod: "CARD",
+          account: hdfcBank,
+        },
+        {
+          resNo: "RES-2026-OCT-301",
+          invNo: "INV-2026-OCT-301",
+          phone: "+91 98450 11003",
+          room: roomsList[2],
+          arrival: "2026-10-05",
+          departure: "2026-10-08",
+          nights: 3,
+          rate: "3800.00",
+          fb: "1500.00",
+          laundry: "500.00",
+          status: ReservationStatus.COMPLETED,
+          invStatus: InvoiceStatus.PARTIALLY_PAID, // Receivables test case!
+          paymentMethod: "UPI",
+          partialAmount: "8000.00", // Grand total is 13400, leaving 5400 balance due
+          account: hdfcBank,
+        },
+        {
+          resNo: "RES-2026-OCT-302",
+          invNo: "INV-2026-OCT-302",
+          phone: "+91 98450 11004",
+          room: roomsList[3],
+          arrival: "2026-10-18",
+          departure: "2026-10-21",
+          nights: 3,
+          rate: "4500.00",
+          fb: "2200.00",
+          laundry: "900.00",
+          status: ReservationStatus.COMPLETED,
+          invStatus: InvoiceStatus.PAID,
+          paymentMethod: "BANK_TRANSFER",
+          account: sbiBank,
+          hasVoidedReceipt: true, // Audit trail & void reversal test case!
+        },
+        {
+          resNo: "RES-2026-NOV-401",
+          invNo: "INV-2026-NOV-401",
+          phone: "+91 98450 11005",
+          room: roomsList[4],
+          arrival: "2026-11-08",
+          departure: "2026-11-11",
+          nights: 3,
+          rate: "4000.00",
+          fb: "1600.00",
+          laundry: "700.00",
+          status: ReservationStatus.COMPLETED,
+          invStatus: InvoiceStatus.PARTIALLY_PAID, // Departed receivable!
+          paymentMethod: "CASH",
+          partialAmount: "8000.00", // Grand total is 14300, leaving 6300 balance due
+          account: mainDrawer,
+        },
+      ];
+
+      for (const hb of historicalBookings) {
+        const custId = guestMap.get(hb.phone);
+        if (!custId) continue;
+
+        let resv = await prisma.reservation.findUnique({
+          where: { reservationNo: hb.resNo },
+        });
+
+        if (!resv) {
+          resv = await prisma.reservation.create({
+            data: {
+              propertyId: property.id,
+              customerId: custId,
+              reservationNo: hb.resNo,
+              status: hb.status,
+              createdBy: receptionistUser.id,
+              createdAt: new Date(`${hb.arrival}T08:00:00Z`),
+            },
+          });
+
+          await prisma.reservationRoom.create({
+            data: {
+              reservationId: resv.id,
+              roomId: hb.room.id,
+              roomCategoryId: hb.room.roomCategoryId,
+              arrivalDate: new Date(`${hb.arrival}T00:00:00.000Z`),
+              departureDate: new Date(`${hb.departure}T00:00:00.000Z`),
+              bookedNightlyRate: new Prisma.Decimal(hb.rate),
+              status: AllocationStatus.CHECKED_OUT,
+              checkedInAt: new Date(`${hb.arrival}T13:00:00Z`),
+              checkedOutAt: new Date(`${hb.departure}T11:00:00Z`),
+            },
+          });
+        }
+
+        const existingInv = await prisma.invoice.findUnique({
+          where: { invoiceNumber: hb.invNo },
+        });
+
+        if (!existingInv) {
+          const roomTotal = new Prisma.Decimal(hb.rate).mul(hb.nights);
+          const fbTotal = new Prisma.Decimal(hb.fb);
+          const laundryTotal = new Prisma.Decimal(hb.laundry);
+          const grandTotal = roomTotal.add(fbTotal).add(laundryTotal);
+
+          const inv = await prisma.invoice.create({
+            data: {
+              reservationId: resv.id,
+              propertyId: property.id,
+              invoiceNumber: hb.invNo,
+              subtotal: grandTotal,
+              discountTotal: new Prisma.Decimal("0.00"),
+              taxTotal: new Prisma.Decimal("0.00"),
+              grandTotal,
+              status: hb.invStatus,
+              issuedAt: new Date(`${hb.departure}T10:30:00Z`),
+              items: {
+                create: [
+                  {
+                    description: `Room Charge - ${hb.room.roomNo} (${hb.nights} Nights)`,
+                    quantity: hb.nights,
+                    unitPrice: new Prisma.Decimal(hb.rate),
+                    lineTotal: roomTotal,
+                    itemType: InvoiceItemType.ROOM_CHARGE,
+                  },
+                  {
+                    description: "Breakfast Buffet & Dining Charges",
+                    quantity: 1,
+                    unitPrice: fbTotal,
+                    lineTotal: fbTotal,
+                    itemType: InvoiceItemType.EXTRA_CHARGE,
+                  },
+                  {
+                    description: "Guest Express Laundry Services",
+                    quantity: 1,
+                    unitPrice: laundryTotal,
+                    lineTotal: laundryTotal,
+                    itemType: InvoiceItemType.EXTRA_CHARGE,
+                  },
+                ],
+              },
+            },
+          });
+
+          // Voided receipt scenario for audit trail
+          if (hb.hasVoidedReceipt) {
+            await prisma.receipt.create({
+              data: {
+                propertyId: property.id,
+                invoiceId: inv.id,
+                accountId: hb.account.id,
+                paymentMethodCode: hb.paymentMethod,
+                amount: grandTotal,
+                referenceNumber: `REC-ERR-${hb.invNo}`,
+                idempotencyKey: `IDEMP-ERR-${hb.invNo}`,
+                status: ReceiptStatus.VOIDED,
+                paidAt: new Date(`${hb.departure}T10:45:00Z`),
+                voidReason: "Payment recorded against wrong customer folio; reversed by receptionist",
+                voidedAt: new Date(`${hb.departure}T10:50:00Z`),
+                voidedBy: adminUser.id,
+                createdBy: receptionistUser.id,
+              },
+            });
+          }
+
+          // Legitimate receipt
+          const paidAmount = hb.partialAmount ? new Prisma.Decimal(hb.partialAmount) : grandTotal;
+          await prisma.receipt.create({
+            data: {
+              propertyId: property.id,
+              invoiceId: inv.id,
+              accountId: hb.account.id,
+              paymentMethodCode: hb.paymentMethod,
+              amount: paidAmount,
+              referenceNumber: `REC-${hb.invNo}`,
+              idempotencyKey: `IDEMP-REC-${hb.invNo}`,
+              status: ReceiptStatus.RECORDED,
+              paidAt: new Date(`${hb.departure}T10:55:00Z`),
+              createdBy: receptionistUser.id,
+            },
+          });
+        }
+      }
+      console.log(`Historical folio reservations ensured: ${historicalBookings.length} bookings`);
+    }
+  }
+
+  // Final summary verification & derived account balances report
   const totalRooms = await prisma.room.count();
   const totalCategories = await prisma.roomCategory.count();
   const totalInvoices = await prisma.invoice.count();
-  const payments = await prisma.payment.findMany({ where: { status: PaymentStatus.RECORDED } });
-  const totalCollected = payments.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
+  const totalIncomes = await prisma.income.count();
+  const totalExpenses = await prisma.expense.count();
+  const totalPayments = await prisma.payment.count();
+  const totalTransfers = await prisma.accountTransfer.count();
+  const receipts = await prisma.receipt.findMany({ where: { status: ReceiptStatus.RECORDED } });
+  const totalCollected = receipts.reduce((sum, p) => sum.add(p.amount), new Prisma.Decimal(0));
 
-  console.log(`\nFINAL DEV DB COUNTS:`);
-  console.log(`rooms=${totalRooms}, categories=${totalCategories}, invoices=${totalInvoices}, total collected=${totalCollected}`);
-  console.log("Database seed completed successfully.");
+  console.log(`\n================================================================================`);
+  console.log(`📊 FINAL DEV DATABASE ENTITY COUNTS:`);
+  console.log(`================================================================================`);
+  console.log(`Rooms:             ${totalRooms}`);
+  console.log(`Categories:        ${totalCategories}`);
+  console.log(`Invoices:          ${totalInvoices}`);
+  console.log(`Receipts Recorded: ${receipts.length} (Total Collected: ₹${totalCollected.toLocaleString()})`);
+  console.log(`Direct Incomes:    ${totalIncomes}`);
+  console.log(`Expenses:          ${totalExpenses}`);
+  console.log(`Outgoing Payments: ${totalPayments}`);
+  console.log(`Account Transfers: ${totalTransfers}`);
+
+  console.log(`\n================================================================================`);
+  console.log(`💰 DERIVED FINANCIAL ACCOUNT BALANCES:`);
+  console.log(`================================================================================`);
+  const accounts = await prisma.financialAccount.findMany({
+    where: { propertyId: property.id },
+    orderBy: { accountName: "asc" },
+  });
+
+  for (const acc of accounts) {
+    const recSum = await prisma.receipt.aggregate({
+      where: { propertyId: property.id, accountId: acc.id, status: ReceiptStatus.RECORDED },
+      _sum: { amount: true },
+    });
+    const paySum = await prisma.payment.aggregate({
+      where: { propertyId: property.id, accountId: acc.id, status: PaymentStatus.RECORDED },
+      _sum: { amount: true },
+    });
+    const trfIn = await prisma.accountTransfer.aggregate({
+      where: { propertyId: property.id, toAccountId: acc.id, status: TransferStatus.COMPLETED },
+      _sum: { amount: true },
+    });
+    const trfOut = await prisma.accountTransfer.aggregate({
+      where: { propertyId: property.id, fromAccountId: acc.id, status: TransferStatus.COMPLETED },
+      _sum: { amount: true },
+    });
+
+    const open = new Prisma.Decimal(acc.openingBalance);
+    const inRec = recSum._sum.amount || new Prisma.Decimal(0);
+    const inTrf = trfIn._sum.amount || new Prisma.Decimal(0);
+    const outPay = paySum._sum.amount || new Prisma.Decimal(0);
+    const outTrf = trfOut._sum.amount || new Prisma.Decimal(0);
+
+    const derivedBalance = open.add(inRec).add(inTrf).sub(outPay).sub(outTrf);
+
+    console.log(`\n• [${acc.accountName}] (${acc.accountType}):`);
+    console.log(`    Opening Balance:      ₹${open.toFixed(2)}`);
+    console.log(`    Receipt Inflows (+):  ₹${inRec.toFixed(2)}`);
+    console.log(`    Transfers In (+):     ₹${inTrf.toFixed(2)}`);
+    console.log(`    Payments Out (-):     ₹${outPay.toFixed(2)}`);
+    console.log(`    Transfers Out (-):    ₹${outTrf.toFixed(2)}`);
+    console.log(`    ---------------------------------------------`);
+    console.log(`    => Derived Balance:   ₹${derivedBalance.toFixed(2)}`);
+  }
+  console.log(`================================================================================\n`);
 }
 
 main()

@@ -1,7 +1,9 @@
-import { InvoiceStatus, InvoiceItemType, PaymentStatus } from "@prisma/client";
+import { InvoiceStatus, InvoiceItemType, PaymentStatus, ReceiptStatus } from "@prisma/client";
 
 export interface CreateInvoiceInput {
-  reservationId: string;
+  reservationId?: string | null;
+  customerId?: string | null;
+  customerName?: string | null;
   discountTotal?: number | string;
   discountReason?: string;
   taxTotal?: number | string;
@@ -32,6 +34,8 @@ export interface VoidPaymentInput {
 export interface RecordPaymentInput {
   amount: number | string;
   paymentMethod: string;
+  paymentMethodId?: string | null;
+  accountId?: string | null;
   referenceNumber?: string | null;
   idempotencyKey?: string | null;
   paidAt?: string;
@@ -54,8 +58,10 @@ export interface PaymentDTO {
   invoiceId: string;
   amount: string;
   paymentMethod: string;
+  paymentMethodId?: string | null;
+  accountId?: string;
   referenceNumber: string | null;
-  status: PaymentStatus;
+  status: PaymentStatus | ReceiptStatus;
   paidAt: string;
   createdBy: string;
   creatorName?: string;
@@ -69,7 +75,7 @@ export interface InvoiceDetailDTO {
   id: string;
   propertyId: string;
   invoiceNumber: string;
-  reservationId: string;
+  reservationId: string | null;
   reservationNo: string;
   customerId: string;
   customerName: string;
@@ -87,6 +93,7 @@ export interface InvoiceDetailDTO {
   updatedAt: string;
   items: InvoiceItemDTO[];
   payments: PaymentDTO[];
+  receipts?: PaymentDTO[];
 }
 
 export interface InvoiceListQuery {

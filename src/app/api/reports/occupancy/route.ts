@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RoleName } from "@prisma/client"
-import { requireAuth, resolveScope } from "@/lib/auth-guard"
+import { requireAuth, resolveReportScope } from "@/lib/auth-guard"
 import { handleApiError } from "@/lib/errors"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { reportDateRangeSchema } from "@/modules/reports/reports.validation"
@@ -13,13 +13,12 @@ export async function GET(req: NextRequest) {
       const searchParams = req.nextUrl.searchParams
 
       const query = reportDateRangeSchema.parse({
-        startDate: searchParams.get("startDate") || undefined,
-        endDate: searchParams.get("endDate") || undefined,
+        startDate: searchParams.get("startDate") || searchParams.get("from") || undefined,
+        endDate: searchParams.get("endDate") || searchParams.get("to") || undefined,
         propertyId: searchParams.get("propertyId") || undefined,
       })
 
-      const effectivePropertyId =
-        resolveScope(session, query.propertyId, { allowSuperAdminGlobal: true }) ?? undefined
+      const effectivePropertyId = await resolveReportScope(session, query.propertyId)
 
       const report = await ReportsService.getOccupancyReport({
         ...query,

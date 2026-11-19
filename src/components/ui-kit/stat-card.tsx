@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
+import { LOCALE } from "@/lib/currency"
 
 export interface StatCardProps {
   label: string
@@ -160,7 +161,7 @@ function AnimatedStatValue({ value }: { value: React.ReactNode }) {
   const fixed = displayVal.toFixed(parsed.decimals)
   const [rawInt, rawDec] = fixed.split(".")
   const intDisplay = parsed.hasComma
-    ? Number(rawInt).toLocaleString("en-US")
+    ? Number(rawInt).toLocaleString(LOCALE)
     : rawInt
   const decDisplay = parsed.decimals > 0 && rawDec ? `.${rawDec}` : null
 

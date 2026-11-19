@@ -260,7 +260,7 @@ export async function requireHotelAdmin(
 export function resolveScope(
   session: SessionPayload,
   requestedPropertyId?: string | null,
-  options?: { allowSuperAdminGlobal?: boolean }
+  options?: { allowSuperAdminGlobal?: boolean; safeFallback?: boolean }
 ): string | null {
   const requested = requestedPropertyId?.trim() || null;
 
@@ -272,9 +272,11 @@ export function resolveScope(
 
   // Fail closed: a hotel-level user without an assigned hotel must NEVER fall through to "all hotels".
   if (!session.propertyId) {
+    if (options?.safeFallback) return null;
     throw new AuthError("Your account is not assigned to a hotel. Contact a platform administrator.", 403);
   }
   if (requested && requested !== session.propertyId) {
+    if (options?.safeFallback) return session.propertyId;
     throw new AuthError(
       "Access denied: You cannot access or modify records belonging to another hotel.",
       403
@@ -284,5 +286,25 @@ export function resolveScope(
 }
 
 export const requireHotelContext = resolveScope;
+
+/**
+ * Resolves property scope for reports, automatically defaulting to the first
+ * active hotel property when SUPER_ADMIN accesses a report without an explicit property selection.
+ */
+export async function resolveReportScope(
+  session: SessionPayload,
+  requestedPropertyId?: string | null
+): Promise<string> {
+  let targetPropertyId = requestedPropertyId?.trim() || undefined;
+  if (session.role === RoleName.SUPER_ADMIN && !targetPropertyId) {
+    const firstActiveProperty = await prisma.property.findFirst({
+      where: { status: "ACTIVE" },
+      select: { id: true },
+      orderBy: { name: "asc" },
+    });
+    targetPropertyId = firstActiveProperty?.id;
+  }
+  return resolveScope(session, targetPropertyId)!;
+}
 
 

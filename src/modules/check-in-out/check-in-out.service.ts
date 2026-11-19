@@ -4,7 +4,7 @@ import {
   ReservationStatus,
   InvoiceStatus,
   InvoiceItemType,
-  PaymentStatus,
+  ReceiptStatus,
   Prisma,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -371,7 +371,7 @@ export class CheckInOutService {
             status: { in: [InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID] },
           },
           include: {
-            payments: { where: { status: PaymentStatus.RECORDED } },
+            receipts: { where: { status: ReceiptStatus.RECORDED } },
             items: true,
           },
         });
@@ -388,7 +388,7 @@ export class CheckInOutService {
             const bookedRate = new Prisma.Decimal(allocation.bookedNightlyRate);
             const nominalReduction = bookedRate.mul(unusedNights);
 
-            const totalPaid = activeInvoice.payments.reduce(
+            const totalPaid = activeInvoice.receipts.reduce(
               (sum, p) => sum.add(p.amount),
               new Prisma.Decimal(0)
             );

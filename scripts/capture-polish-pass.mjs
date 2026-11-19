@@ -1,4 +1,3 @@
-/* eslint-disable no-console */
 import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";

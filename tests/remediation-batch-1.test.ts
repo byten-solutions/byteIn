@@ -10,7 +10,7 @@ import { POST as voidPaymentRoute } from "../src/app/api/invoices/[id]/payments/
 import { POST as recordPaymentRoute } from "../src/app/api/invoices/[id]/payments/route";
 import { GET as occupancyReportRoute } from "../src/app/api/reports/occupancy/route";
 import { GET as receivablesReportRoute } from "../src/app/api/reports/receivables/route";
-import { ReservationStatus, AllocationStatus, RoomStatus, PaymentStatus } from "@prisma/client";
+import { ReservationStatus, AllocationStatus, RoomStatus, ReceiptStatus } from "@prisma/client";
 import { loginRateLimiter } from "../src/lib/rate-limiter";
 
 describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
@@ -44,9 +44,13 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
     adminUserId = adminUser.id;
     receptionistUserId = receptionistUser.id;
 
+    const property = await prisma.property.findFirst();
+    assert.ok(property, "Property required for test");
+    testPropertyId = property.id;
+
     await prisma.user.updateMany({
       where: { id: { in: [adminUser.id, receptionistUser.id] } },
-      data: { mustChangePassword: false },
+      data: { mustChangePassword: false, propertyId: testPropertyId },
     });
 
     adminToken = await AuthService.createSessionToken({
@@ -54,6 +58,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       email: adminUser.email,
       name: adminUser.name,
       role: RoleName.ADMIN,
+      propertyId: testPropertyId,
     });
 
     receptionistToken = await AuthService.createSessionToken({
@@ -61,12 +66,8 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       email: receptionistUser.email,
       name: receptionistUser.name,
       role: RoleName.RECEPTIONIST,
+      propertyId: testPropertyId,
     });
-
-    // 2. Locate or create property, room category, room, and customer
-    const property = await prisma.property.findFirst();
-    assert.ok(property, "Property required for test");
-    testPropertyId = property.id;
 
     const category = await prisma.roomCategory.findFirst({
       where: { propertyId: testPropertyId },
@@ -112,8 +113,8 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
     // Reset login rate limiter keys
     loginRateLimiter.reset("login:ip:127.0.0.1");
 
-    // Clean up created payments, invoice items, invoices, reservation rooms, reservations, rooms, customer
-    await prisma.payment.deleteMany({
+    // Clean up created receipts, invoice items, invoices, reservation rooms, reservations, rooms, customer
+    await prisma.receipt.deleteMany({
       where: {
         OR: [
           { referenceNumber: { contains: "IDEMP" } },
@@ -220,13 +221,15 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
         },
       });
 
-      const paymentA = await prisma.payment.create({
+      const acc = await prisma.financialAccount.findFirst({ where: { propertyId: testPropertyId } });
+      const paymentA = await prisma.receipt.create({
         data: {
           invoiceId: invA.id,
           propertyId: testPropertyId,
+          accountId: acc!.id,
           amount: 200,
-          paymentMethod: "CASH",
-          status: PaymentStatus.RECORDED,
+          paymentMethodCode: "CASH",
+          status: ReceiptStatus.RECORDED,
           paidAt: new Date(),
           createdBy: receptionistUserId,
         },
@@ -263,10 +266,10 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       );
 
       // Verify payment was NOT voided in database
-      const checkPayment = await prisma.payment.findUnique({
+      const checkPayment = await prisma.receipt.findUnique({
         where: { id: paymentA.id },
       });
-      assert.equal(checkPayment?.status, PaymentStatus.RECORDED);
+      assert.equal(checkPayment?.status, ReceiptStatus.RECORDED);
     });
   });
 
@@ -391,7 +394,7 @@ describe("Batch 1 Remediations: Adversarial Audit Fixes", () => {
       );
 
       // Verify database contains only ONE payment record for this idempotency key
-      const payments = await prisma.payment.findMany({
+      const payments = await prisma.receipt.findMany({
         where: { invoiceId: inv.id },
       });
       assert.equal(payments.length, 1, "Only one payment record must exist in database");

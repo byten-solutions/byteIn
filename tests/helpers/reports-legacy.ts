@@ -4,12 +4,14 @@ import {
   AllocationStatus,
   InvoiceStatus,
   PaymentStatus,
+  ReceiptStatus,
   InvoiceItemType,
   RoomStatus,
 } from "@prisma/client"
 import { scopedCached, invalidateScoped } from "@/lib/scoped-cache"
 import { prisma } from "@/lib/prisma"
 import { BadRequestError } from "@/lib/errors"
+import { MAX_REPORT_RANGE_DAYS } from "@/modules/reports/reports.validation"
 import type {
   ReportFilterDTO,
   OccupancyReportDTO,
@@ -59,8 +61,8 @@ export class ReportsService {
       throw new BadRequestError("endDate must be on or after startDate")
     }
     const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const totalDays = diffDays + 1
@@ -308,8 +310,8 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const invPropertySql = propertyId ? Prisma.sql`AND property_id = ${propertyId}` : Prisma.empty
@@ -346,7 +348,7 @@ export class ReportsService {
       SELECT
         COUNT(*)::int as payment_count,
         COALESCE(SUM(amount), 0) as total_collected
-      FROM payments
+      FROM receipts
       WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
         AND status = 'RECORDED'
         ${payPropertySql};
@@ -362,7 +364,7 @@ export class ReportsService {
       FROM invoices inv
       LEFT JOIN LATERAL (
         SELECT SUM(amount) as paid
-        FROM payments
+        FROM receipts
         WHERE invoice_id = inv.id AND status = 'RECORDED'
       ) p ON true
       WHERE inv.created_at >= ${startObj} AND inv.created_at <= ${endObj}
@@ -416,14 +418,14 @@ export class ReportsService {
       amount: Prisma.Decimal
     }>>`
       SELECT
-        payment_method::text,
+        payment_method_code::text as payment_method,
         COUNT(*)::int as count,
         COALESCE(SUM(amount), 0) as amount
-      FROM payments
+      FROM receipts
       WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
         AND status = 'RECORDED'
         ${payPropertySql}
-      GROUP BY payment_method;
+      GROUP BY payment_method_code;
     `
     const paymentMethodBreakdown: PaymentMethodBreakdownDTO[] = []
     for (const m of methodRows) {
@@ -457,7 +459,7 @@ export class ReportsService {
         SELECT
           to_char(paid_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') as day_key,
           SUM(amount) as collected
-        FROM payments
+        FROM receipts
         WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
           AND status = 'RECORDED'
           ${payPropertySql}
@@ -502,7 +504,7 @@ export class ReportsService {
         ) inv ON inv.property_id = p.id
         LEFT JOIN (
           SELECT property_id, SUM(amount) as total_collected
-          FROM payments
+          FROM receipts
           WHERE paid_at >= ${startObj} AND paid_at <= ${endObj}
             AND status = 'RECORDED'
           GROUP BY property_id
@@ -544,8 +546,8 @@ export class ReportsService {
     const startObj = new Date(`${startDate}T00:00:00.000Z`)
     const endObj = new Date(`${endDate}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const propertyFilterSql = propertyId ? Prisma.sql`AND r.property_id = ${propertyId}` : Prisma.empty
@@ -846,7 +848,7 @@ export class ReportsService {
           COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0) AS total_paid,
           GREATEST(0, i.grand_total - COALESCE(SUM(p.amount) FILTER (WHERE p.status = 'RECORDED'), 0)) AS balance_due
         FROM invoices i
-        LEFT JOIN payments p ON p.invoice_id = i.id
+        LEFT JOIN receipts p ON p.invoice_id = i.id
         WHERE i.reservation_id = res.id
           AND i.status != 'VOID'
         GROUP BY i.id, i.invoice_number, i.grand_total, i.created_at
@@ -951,7 +953,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -977,7 +979,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1004,7 +1006,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1030,7 +1032,7 @@ export class ReportsService {
             customer: true,
             invoices: {
               where: { status: { not: InvoiceStatus.VOID } },
-              include: { payments: { where: { status: PaymentStatus.RECORDED } } },
+              include: { receipts: { where: { status: ReceiptStatus.RECORDED } } },
             },
           },
         },
@@ -1051,8 +1053,8 @@ export class ReportsService {
 
       if (inv) {
         grandTotal = inv.grandTotal.toFixed(2)
-        const paidDec = inv.payments.reduce(
-          (sum, p) => sum.add(p.amount),
+        const paidDec = inv.receipts.reduce(
+          (sum: Prisma.Decimal, p) => sum.add(p.amount),
           new Prisma.Decimal(0)
         )
         totalPaid = paidDec.toFixed(2)
@@ -1427,8 +1429,8 @@ export class ReportsService {
     const startObj = new Date(`${effectiveStart}T00:00:00.000Z`)
     const endObj = new Date(`${effectiveEnd}T23:59:59.999Z`)
     const diffDays = Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays > 366) {
-      throw new BadRequestError("Date range cannot exceed 366 days")
+    if (diffDays > MAX_REPORT_RANGE_DAYS) {
+      throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
     }
 
     const propertyFilterSql = propertyId ? Prisma.sql`AND p.property_id = ${propertyId}` : Prisma.empty
@@ -1454,7 +1456,7 @@ export class ReportsService {
             ELSE p.amount
           END
         ), 0) as total_collected
-      FROM payments p
+      FROM receipts p
       WHERE (
         (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
         OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
@@ -1472,7 +1474,7 @@ export class ReportsService {
       amount: Prisma.Decimal
     }>>`
       SELECT
-        p.payment_method::text,
+        p.payment_method_code::text as payment_method,
         COUNT(*)::int as count,
         COALESCE(SUM(
           CASE 
@@ -1481,14 +1483,14 @@ export class ReportsService {
             ELSE p.amount
           END
         ), 0) as amount
-      FROM payments p
+      FROM receipts p
       WHERE (
         (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
         OR (p.voided_at >= ${startObj} AND p.voided_at <= ${endObj} AND p.status = 'VOIDED')
       )
       ${propertyFilterSql}
       ${staffFilterSql}
-      GROUP BY p.payment_method;
+      GROUP BY p.payment_method_code;
     `
     const methodBreakdown: PaymentMethodBreakdownDTO[] = methodRows.map((m) => {
       const amt = new Prisma.Decimal(m.amount)
@@ -1514,7 +1516,7 @@ export class ReportsService {
         u.id as user_id,
         u.name as user_name,
         u.email as user_email,
-        p.payment_method::text,
+        p.payment_method_code::text as payment_method,
         COALESCE(SUM(
           CASE 
             WHEN p.status = 'RECORDED' THEN p.amount
@@ -1523,7 +1525,7 @@ export class ReportsService {
           END
         ), 0) as method_amount,
         COUNT(*)::int as total_count
-      FROM payments p
+      FROM receipts p
       JOIN users u ON u.id = CASE WHEN p.status = 'VOIDED' AND p.voided_by IS NOT NULL THEN p.voided_by ELSE p.created_by END
       WHERE (
         (p.paid_at >= ${startObj} AND p.paid_at <= ${endObj} AND p.status = 'RECORDED')
@@ -1531,7 +1533,7 @@ export class ReportsService {
       )
       ${propertyFilterSql}
       ${staffFilterSql}
-      GROUP BY u.id, u.name, u.email, p.payment_method;
+      GROUP BY u.id, u.name, u.email, p.payment_method_code;
     `
     const staffMap = new Map<string, {
       userId: string
@@ -1596,7 +1598,7 @@ export class ReportsService {
         p.id as payment_id,
         p.invoice_id,
         p.amount,
-        p.payment_method::text,
+        p.payment_method_code::text as payment_method,
         p.reference_number,
         p.status,
         p.paid_at,
@@ -1617,7 +1619,7 @@ export class ReportsService {
           JOIN rooms rm ON rm.id = rr.room_id
           WHERE rr.reservation_id = r.id
         ) as room_numbers
-      FROM payments p
+      FROM receipts p
       JOIN users u ON u.id = p.created_by
       LEFT JOIN users vu ON vu.id = p.voided_by
       JOIN invoices inv ON inv.id = p.invoice_id
@@ -1712,7 +1714,7 @@ export class ReportsService {
           FROM invoices i
           LEFT JOIN LATERAL (
             SELECT SUM(amount) AS paid 
-            FROM payments 
+            FROM receipts 
             WHERE invoice_id = i.id AND status = 'RECORDED'
           ) p ON true
           LEFT JOIN LATERAL (
@@ -1835,7 +1837,7 @@ export class ReportsService {
       JOIN customers c ON c.id = r.customer_id
       LEFT JOIN LATERAL (
         SELECT SUM(amount) AS paid 
-        FROM payments 
+        FROM receipts 
         WHERE invoice_id = i.id AND status = 'RECORDED'
       ) p ON true
       LEFT JOIN LATERAL (
@@ -1910,8 +1912,8 @@ export class ReportsService {
       const s = new Date(`${startDate}T00:00:00.000Z`).getTime()
       const e = new Date(`${endDate}T23:59:59.999Z`).getTime()
       const diffDays = Math.round((e - s) / (1000 * 60 * 60 * 24))
-      if (diffDays > 366) {
-        throw new BadRequestError("Date range cannot exceed 366 days")
+      if (diffDays > MAX_REPORT_RANGE_DAYS) {
+        throw new BadRequestError(`Date range cannot exceed ${MAX_REPORT_RANGE_DAYS} days (10 years)`)
       }
     }
 

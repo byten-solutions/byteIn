@@ -16,7 +16,7 @@ export default async function CategoriesPage(props: {
   }
 
   const searchParams = props.searchParams ? await props.searchParams : undefined;
-  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true });
+  const scope = resolveScope(session, searchParams?.propertyId, { allowSuperAdminGlobal: true, safeFallback: true });
 
   let categories: Awaited<ReturnType<typeof RoomCategoryService.getCategories>> = [];
   let amenities: Awaited<ReturnType<typeof AmenityService.getAmenities>> = [];

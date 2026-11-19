@@ -193,6 +193,14 @@ describe("PMS Daily Operations Report Tests (Arrivals, Departures, In-House, Ove
 
   after(async () => {
     // Cleanup in reverse foreign key order
+    await prisma.receipt.deleteMany({
+      where: {
+        OR: [
+          { createdBy: testStaffUserId },
+          { invoice: { reservation: { createdBy: testStaffUserId } } },
+        ],
+      },
+    })
     await prisma.payment.deleteMany({
       where: { createdBy: testStaffUserId },
     })
@@ -230,6 +238,12 @@ describe("PMS Daily Operations Report Tests (Arrivals, Departures, In-House, Ove
     })
     await prisma.building.deleteMany({
       where: { id: testBuildingId },
+    })
+    await prisma.financialAccount.deleteMany({
+      where: { propertyId: testPropertyId },
+    })
+    await prisma.paymentMethod.deleteMany({
+      where: { propertyId: testPropertyId },
     })
     await prisma.property.deleteMany({
       where: { id: testPropertyId },

@@ -101,6 +101,8 @@ export interface RevenueReportDTO {
   extraChargesTotal: string
   taxTotal: string
   discountTotal: string
+  recognizedDirectIncome?: string
+  totalRecognizedRevenue?: string
   invoiceCount: number
   paymentCount: number
   paymentMethodBreakdown: PaymentMethodBreakdownDTO[]
@@ -407,6 +409,327 @@ export interface DiscountsReportDTO {
   }
   invoiceDiscounts: InvoiceDiscountItemDTO[]
   rateOverrides: RateOverrideItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 9. Direct Income Report
+// ----------------------------------------------------------------------------
+
+export interface IncomeReportItemDTO {
+  id: string
+  incomeDate: string
+  title: string
+  categoryName: string
+  categoryCode: string
+  expectedAmount: string
+  receivedAmount: string
+  pendingAmount: string
+  status: string
+  receiptCount: number
+  creatorName: string
+  createdAt: string
+}
+
+export interface IncomeCategorySummaryDTO {
+  categoryName: string
+  categoryCode: string
+  expectedAmount: string
+  receivedAmount: string
+  incomeCount: number
+}
+
+export interface IncomeReportDTO {
+  startDate: string
+  endDate: string
+  totalExpectedAmount: string
+  totalReceivedAmount: string
+  totalPendingAmount: string
+  incomeCount: number
+  receiptCount: number
+  categoryBreakdown: IncomeCategorySummaryDTO[]
+  items: IncomeReportItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 10. Operating Expenses Report
+// ----------------------------------------------------------------------------
+
+export interface ExpenseReportItemDTO {
+  id: string
+  expenseDate: string
+  title: string
+  categoryName: string
+  categoryCode: string
+  vendorName: string | null
+  referenceNumber: string | null
+  recordedAmount: string
+  disbursedAmount: string
+  pendingPayable: string
+  status: string
+  paymentCount: number
+  creatorName: string
+  createdAt: string
+}
+
+export interface ExpenseCategorySummaryDTO {
+  categoryName: string
+  categoryCode: string
+  recordedAmount: string
+  disbursedAmount: string
+  pendingAmount: string
+  expenseCount: number
+}
+
+export interface ExpenseReportDTO {
+  startDate: string
+  endDate: string
+  totalRecordedExpenses: string
+  totalDisbursedPayments: string
+  totalPendingPayables: string
+  expenseCount: number
+  paymentCount: number
+  categoryBreakdown: ExpenseCategorySummaryDTO[]
+  items: ExpenseReportItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 11. Cash Flow Report (Actual Receipts vs Outgoing Disbursements)
+// ----------------------------------------------------------------------------
+
+export interface DailyCashFlowDTO {
+  date: string
+  inflows: string
+  outflows: string
+  netCashFlow: string
+  receiptCount: number
+  paymentCount: number
+}
+
+export interface CashFlowInflowSourceDTO {
+  source: "GUEST_INVOICE" | "DIRECT_INCOME"
+  amount: string
+  count: number
+  percentage: number
+}
+
+export interface CashFlowOutflowCategoryDTO {
+  categoryName: string
+  categoryCode: string
+  amount: string
+  count: number
+  percentage: number
+}
+
+export interface CashFlowAccountSummaryDTO {
+  accountId: string
+  accountName: string
+  accountType: string
+  inflows: string
+  outflows: string
+  netChange: string
+}
+
+export interface CashFlowReportDTO {
+  startDate: string
+  endDate: string
+  totalInflows: string
+  totalOutflows: string
+  netCashFlow: string
+  receiptCount: number
+  paymentCount: number
+  dailyBreakdown: DailyCashFlowDTO[]
+  inflowSources: CashFlowInflowSourceDTO[]
+  outflowCategories: CashFlowOutflowCategoryDTO[]
+  accountSummaries: CashFlowAccountSummaryDTO[]
+}
+
+// ----------------------------------------------------------------------------
+// 12. Revenue vs Expense Report (Net Operating Result)
+// ----------------------------------------------------------------------------
+
+export interface RevenueVsExpenseReportDTO {
+  startDate: string
+  endDate: string
+  // Recognized Revenue (Accrual / Recognition Basis)
+  invoicedRoomCharges: string
+  invoicedExtraCharges: string
+  invoicedTaxes: string
+  invoicedDiscounts: string
+  netInvoicedRevenue: string
+  recognizedDirectIncome: string
+  totalRecognizedRevenue: string
+
+  // Recorded Operating Expenses (Incurred Obligations)
+  totalRecordedExpenses: string
+
+  // Bottom Line: Net Operating Result
+  netOperatingResult: string
+  operatingMarginPercentage: number // (netOperatingResult / totalRecognizedRevenue) * 100
+
+  // Cash Movement Comparison (Cash Inflows vs Outflows)
+  totalCashReceipts: string
+  totalCashDisbursements: string
+  netCashMovement: string
+}
+
+// ----------------------------------------------------------------------------
+// 13. Room Performance Report
+// ----------------------------------------------------------------------------
+
+export interface RoomPerformanceItemDTO {
+  roomId: string
+  roomNo: string
+  roomDisplayName: string | null
+  categoryName: string
+  floorNo: number
+  buildingName: string
+  nightsSold: number
+  totalAvailableNights: number
+  occupancyRate: number
+  roomRevenue: string
+  adr: string
+  revpar: string
+  currentStatus: RoomStatus
+}
+
+export interface RoomPerformanceReportDTO {
+  startDate: string
+  endDate: string
+  totalRooms: number
+  totalDays: number
+  totalNightsSold: number
+  totalRoomRevenue: string
+  averageAdr: string
+  averageRevpar: string
+  averageOccupancyRate: number
+  rooms: RoomPerformanceItemDTO[]
+  pagination?: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+// ----------------------------------------------------------------------------
+// 14. Monthly Performance Report (12-Month Executive Trend)
+// ----------------------------------------------------------------------------
+
+export interface MonthlyPerformanceMonthDTO {
+  monthKey: string // YYYY-MM
+  monthName: string // e.g. "Nov 2026"
+  totalRooms: number
+  availableNights: number
+  occupiedNights: number
+  occupancyRate: number
+  roomRevenue: string
+  adr: string
+  revpar: string
+  netInvoicedRevenue: string
+  recognizedDirectIncome: string
+  totalRecognizedRevenue: string
+  recordedExpenses: string
+  netOperatingResult: string
+  cashInflows: string
+  cashOutflows: string
+  netCashMovement: string
+}
+
+export interface MonthlyPerformanceReportDTO {
+  startMonth: string // YYYY-MM
+  endMonth: string   // YYYY-MM
+  months: MonthlyPerformanceMonthDTO[]
+}
+
+// ----------------------------------------------------------------------------
+// 15. Property Summary Report (Super Admin Cross-Property Overview)
+// ----------------------------------------------------------------------------
+
+export interface PropertySummaryItemDTO {
+  propertyId: string
+  propertyName: string
+  city: string | null
+  status: string
+  totalRooms: number
+  cleanRooms: number
+  occupiedRooms: number
+  activeReservations: number
+  occupancyRate: number
+  totalInvoicedRevenue: string
+  recognizedDirectIncome: string
+  totalRecognizedRevenue: string
+  recordedExpenses: string
+  netOperatingResult: string
+  totalCashCollected: string
+  totalCashDisbursed: string
+  netCashMovement: string
+  activeStaffCount: number
+}
+
+export interface PropertySummaryReportDTO {
+  startDate: string
+  endDate: string
+  totalProperties: number
+  activeProperties: number
+  totalRooms: number
+  properties: PropertySummaryItemDTO[]
+}
+
+// ----------------------------------------------------------------------------
+// 16. Guest Analytics Report
+// ----------------------------------------------------------------------------
+
+export interface GuestReportItemDTO {
+  customerId: string
+  guestName: string
+  email: string | null
+  phone: string | null
+  nationality: string | null
+  address: string | null
+  totalReservations: number
+  totalStayNights: number
+  totalSpend: string
+  lastStayDate: string | null
+  isRepeatGuest: boolean
+}
+
+export interface MonthlyGuestLoyaltyDTO {
+  month: string
+  displayMonth: string
+  totalGuests: number
+  newGuests: number
+  returningGuests: number
+  loyaltyRate: number
+}
+
+export interface GuestReportDTO {
+  startDate?: string
+  endDate?: string
+  totalUniqueGuests: number
+  repeatGuestCount: number
+  repeatGuestPercentage: number
+  totalGuestSpend: string
+  averageSpendPerGuest: string
+  monthlyTrend: MonthlyGuestLoyaltyDTO[]
+  guests: GuestReportItemDTO[]
   pagination?: {
     page: number
     limit: number

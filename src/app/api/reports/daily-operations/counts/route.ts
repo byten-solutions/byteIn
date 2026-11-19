@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { RoleName } from "@prisma/client"
-import { requireAuth, resolveScope } from "@/lib/auth-guard"
+import { requireAuth, resolveReportScope } from "@/lib/auth-guard"
 import { handleApiError } from "@/lib/errors"
 import { ReportsService } from "@/modules/reports/reports.service"
 import { dailyOpsCountsSchema } from "@/modules/reports/reports.validation"
@@ -23,9 +23,9 @@ export async function GET(req: NextRequest) {
       }
 
       const query = dailyOpsCountsSchema.parse(rawQuery)
-      const scope = resolveScope(session, query.propertyId, { allowSuperAdminGlobal: true })
+      const scope = await resolveReportScope(session, query.propertyId)
 
-      const data = await ReportsService.getDailyOperationsCounts(query.date, scope ?? undefined)
+      const data = await ReportsService.getDailyOperationsCounts(query.date, scope)
       return NextResponse.json({ success: true, data })
     } catch (error) {
       return handleApiError(error)

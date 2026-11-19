@@ -16,16 +16,17 @@ Activate this skill whenever:
 
 ## 2. Context to Load
 Before designing or modifying UI:
-- Primary Authority: [docs/UI_UX_GUIDELINES.md](file:///Users/apple/Byten/byteInn/docs/UI_UX_GUIDELINES.md)
+- Primary Authority: [docs/UI_UX_GUIDELINES.md](file:///Users/apple/Byten/byteInn/docs/UI_UX_GUIDELINES.md) (particularly Section 1.1 on Interface Archetypes & Progressive Disclosure)
 - Styling Tokens: [src/app/globals.css](file:///Users/apple/Byten/byteInn/src/app/globals.css)
 - Existing Primitives: Inspect `src/components/ui/` (`button.tsx`, `card.tsx`, `dialog.tsx`, `table.tsx`, `badge.tsx`, etc.)
 - Active Navigation Shell: Inspect `src/components/app-shell.tsx`
 
 ## 3. Core Design Principles
-1. **Receptionist-First Ergonomics**: High information density without visual clutter; rapid scanning for room numbers, guest names, stay dates, and monetary balances.
-2. **Warm Boutique Hospitality Aesthetic**: Deep slate and warm amber/terracotta accents (`--primary`), calm surfaces (`--card`, `--background`), and subtle borders. Avoid harsh saturated generic primaries.
-3. **Strict Dark/Light Mode Parity**: Every surface, border, and text element must look intentional in both themes. Test both light (`default`) and dark (`.dark`).
-4. **Semantic Status Badging**:
+1. **Summary-First Progressive Disclosure**: Interfaces display only the information users need immediately. Detailed breakdowns, transaction histories, and secondary metadata live in dedicated detail views (`/entity/[id]`), not overview screens or dialogs. Core rule: *Show users what they need to know first. Show everything else when they ask for it.*
+2. **Receptionist-First Ergonomics**: Front-desk operations require rapid scanning under time pressure. Maintain high tabular information density for primary operational paths (room numbers, guest names, stay dates, and monetary balances). Progressive disclosure applies to secondary breakdowns and audit trails—never remove useful operational data that receptionists rely on.
+3. **Warm Boutique Hospitality Aesthetic**: Deep slate and warm amber/terracotta accents (`--primary`), calm surfaces (`--card`, `--background`), and subtle borders. Avoid harsh saturated generic primaries.
+4. **Strict Dark/Light Mode Parity**: Every surface, border, and text element must look intentional in both themes. Test both light (`default`) and dark (`.dark`).
+5. **Semantic Status Badging**:
    - `RoomStatus`:
      - `VACANT_CLEAN`: Emerald / Green (`bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800`)
      - `VACANT_DIRTY`: Amber / Orange (`bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200 dark:border-amber-800`)
@@ -44,20 +45,27 @@ Before designing or modifying UI:
      - `VOID`: Slate
 
 ## 4. Step-by-Step Workflow
-1. **Identify Existing Components**: Search `src/components/ui/` before creating new component files.
-2. **Apply Design Tokens**: Use Tailwind CSS v4 semantic classes (`bg-background`, `text-foreground`, `bg-card`, `border-border`, `text-muted-foreground`). Never use hardcoded arbitrary hex colors.
-3. **Implement Responsive Layout**:
+1. **Identify Interface Archetype**: Classify whether the surface is an *Overview*, *Listing*, *Detail*, or *Dialog* per `docs/UI_UX_GUIDELINES.md` §1.1. Enforce content boundaries (e.g. no ledgers in dialogs, no dense tables on overview dashboards).
+2. **Identify Existing Components**: Search `src/components/ui/` before creating new component files.
+3. **Apply Design Tokens**: Use Tailwind CSS v4 semantic classes (`bg-background`, `text-foreground`, `bg-card`, `border-border`, `text-muted-foreground`). Never use hardcoded arbitrary hex colors.
+4. **Implement Responsive Layout**:
    - Mobile: clean single-column stacking with sticky action buttons and drawer navigation.
    - Desktop: multi-column dashboard with persistent collapsible sidebar.
-4. **Incorporate Feedback States**: Always include Loading skeleton/spinners, Empty states (with clear Call to Action), and Error states.
-5. **Verify Accessibility**: Ensure adequate contrast, keyboard focus rings (`focus-visible:ring-2`), and descriptive `aria-label`s on icon-only buttons.
+   - Whitespace: maintain generous padding (`p-4` to `p-6`) and gaps (`gap-4` to `gap-6`); never nest cards inside cards.
+5. **Incorporate Feedback States**: Always include Loading skeleton/spinners, Empty states (with clear Call to Action), and Error states.
+6. **Verify Accessibility**: Ensure adequate contrast, keyboard focus rings (`focus-visible:ring-2`), and descriptive `aria-label`s on icon-only buttons.
 
 ## 5. Scope & Safety Constraints
+- ❌ Do NOT place detailed transaction histories, audit logs, or running ledgers inside dialogs or overview cards.
+- ❌ Do NOT crowd overview screens with micro-KPI cards or nested container cards.
+- ❌ Do NOT remove operational data columns from listing tables under the guise of minimalism; reception desks require complete scanning context.
 - ❌ Do NOT introduce Tailwind v3 configurations or install alternative UI libraries (e.g., Mantine, Chakra, Material UI).
-- ❌ Do NOT remove operational data columns to make a table "look simpler." Reception desks require complete context.
 - ❌ Do NOT bypass Base UI / shadcn accessible primitives.
 
 ## 6. Completion Checklist
+- [ ] Matches its designated interface archetype (Overview, Listing, Detail, Dialog)
+- [ ] Dialogs are focused on a single transactional action with clean, uncrowded footers and no button overlap
+- [ ] High-density tabular scanning is preserved without decorative clutter
 - [ ] Uses established tokens from `globals.css`
 - [ ] Looks polished in both Light and Dark modes
 - [ ] Responsive down to 375px mobile viewports

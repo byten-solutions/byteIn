@@ -46,20 +46,22 @@ describe("Phase 6: Billing & Payments Tests", () => {
 
   before(async () => {
     // 1. Staff User
-    await prisma.user.deleteMany({ where: { email: "staff.billing@byteinn.test" } });
-    const user = await prisma.user.create({
-      data: {
-        email: "staff.billing@byteinn.test",
-        passwordHash: "hash-test",
-        name: "Billing Staff",
-        role: {
-          connectOrCreate: {
-            where: { name: RoleName.RECEPTIONIST },
-            create: { name: RoleName.RECEPTIONIST },
+    let user = await prisma.user.findUnique({ where: { email: "staff.billing@byteinn.test" } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: "staff.billing@byteinn.test",
+          passwordHash: "hash-test",
+          name: "Billing Staff",
+          role: {
+            connectOrCreate: {
+              where: { name: RoleName.RECEPTIONIST },
+              create: { name: RoleName.RECEPTIONIST },
+            },
           },
         },
-      },
-    });
+      });
+    }
     testStaffUserId = user.id;
 
     // 2. Property, Building, Floor
@@ -196,6 +198,15 @@ describe("Phase 6: Billing & Payments Tests", () => {
       },
     });
 
+    await prisma.receipt.deleteMany({
+      where: {
+        OR: [
+          { createdBy: testStaffUserId },
+          { invoice: { reservationId: { in: [testReservationId, secondReservationId] } } },
+        ],
+      },
+    });
+
     await prisma.payment.deleteMany({
       where: { createdBy: testStaffUserId },
     });
@@ -221,7 +232,13 @@ describe("Phase 6: Billing & Payments Tests", () => {
     });
 
     await prisma.reservationRoom.deleteMany({
-      where: { roomId: { in: [room301Id, room302Id] } },
+      where: {
+        OR: [
+          { roomId: { in: [room301Id, room302Id] } },
+          { reservation: { createdBy: testStaffUserId } },
+          { reservationId: { in: [testReservationId, secondReservationId] } },
+        ],
+      },
     });
 
     await prisma.reservation.deleteMany({
@@ -248,12 +265,16 @@ describe("Phase 6: Billing & Payments Tests", () => {
       where: { id: testBuildingId },
     });
 
-    await prisma.property.deleteMany({
-      where: { id: testPropertyId },
+    await prisma.financialAccount.deleteMany({
+      where: { propertyId: testPropertyId },
     });
 
-    await prisma.user.deleteMany({
-      where: { id: testStaffUserId },
+    await prisma.paymentMethod.deleteMany({
+      where: { propertyId: testPropertyId },
+    });
+
+    await prisma.property.deleteMany({
+      where: { id: testPropertyId },
     });
   });
 
@@ -642,9 +663,25 @@ describe("Phase 6: Billing & Payments Tests", () => {
   describe("8. Batch 1 Regression: Reservation Auto-Invoicing & Checkout Billing Integration", () => {
     let autoReservationId: string;
     let autoInvoiceId: string;
+    let autoRoomId: string;
+
+    before(async () => {
+      const r = await prisma.room.create({
+        data: {
+          propertyId: testPropertyId,
+          buildingId: testBuildingId,
+          floorId: testFloorId,
+          roomCategoryId: testCategoryId,
+          roomNo: `308-${Date.now()}`,
+          capacity: 2,
+          status: RoomStatus.VACANT_CLEAN,
+        },
+      });
+      autoRoomId = r.id;
+    });
 
     it("should atomically provision an itemized draft invoice upon reservation creation when autoCreateInvoice is true", async () => {
-      // Create new reservation with autoCreateInvoice = true (3 nights in Room 301 @ $150 = $450)
+      // Create new reservation with autoCreateInvoice = true (3 nights in dedicated Room @ $150 = $450)
       const todayIso = getHotelTodayDate();
       const pastArrivalDate = new Date(`${todayIso}T00:00:00.000Z`);
       pastArrivalDate.setUTCDate(pastArrivalDate.getUTCDate() - 3);
@@ -654,7 +691,7 @@ describe("Phase 6: Billing & Payments Tests", () => {
           customerId: testCustomerId,
           allocations: [
             {
-              roomId: room301Id,
+              roomId: autoRoomId,
               arrivalDate: pastArrival,
               departureDate: todayIso, // 3 nights @ $150
             },
@@ -737,7 +774,7 @@ describe("Phase 6: Billing & Payments Tests", () => {
         },
       });
       await prisma.room.update({
-        where: { id: room301Id },
+        where: { id: autoRoomId },
         data: { status: RoomStatus.OCCUPIED },
       });
 

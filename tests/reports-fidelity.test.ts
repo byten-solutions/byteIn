@@ -81,7 +81,17 @@ describe("Reports Optimization Fidelity Verification Suite (Old vs New Exact Mat
                 startDate: range.startDate,
                 endDate: range.endDate,
                 propertyId: scope.propertyId,
-              })
+              }),
+            (res) => {
+              // Strip new direct income fields so fidelity test compares legacy metrics
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { recognizedDirectIncome, totalRecognizedRevenue, ...rest } = (res || {}) as unknown as {
+                recognizedDirectIncome?: string
+                totalRecognizedRevenue?: string
+                [key: string]: unknown
+              }
+              return rest
+            }
           );
         });
 

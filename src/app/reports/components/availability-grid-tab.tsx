@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils"
 import type { AvailabilityGridDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "./use-report-query"
 import { ReportSectionError, TableSkeleton } from "./report-section-shell"
+import { ReportMetricBand } from "./charts"
 
 interface AvailabilityGridTabProps {
   initialStartDate: string
@@ -19,6 +20,7 @@ interface AvailabilityGridTabProps {
   propertyId?: string
   isSuperAdmin?: boolean
   refreshTrigger?: number
+  hideWindowControls?: boolean
 }
 
 interface PropertyOption {
@@ -48,10 +50,17 @@ export function AvailabilityGridTab({
   propertyId,
   isSuperAdmin = false,
   refreshTrigger = 0,
+  hideWindowControls = false,
 }: AvailabilityGridTabProps) {
   const [selectedPropertyId, setSelectedPropertyId] = React.useState<string | undefined>(propertyId)
-  const [gridStart, setGridStart] = React.useState<string>(initialStartDate)
-  const [gridEnd, setGridEnd] = React.useState<string>(initialEndDate)
+  const [internalStart, setInternalStart] = React.useState<string>(initialStartDate)
+  const [internalEnd, setInternalEnd] = React.useState<string>(initialEndDate)
+
+  const gridStart = hideWindowControls ? initialStartDate : internalStart
+  const gridEnd = hideWindowControls ? initialEndDate : internalEnd
+  const setGridStart = setInternalStart
+  const setGridEnd = setInternalEnd
+
   const [categoryId, setCategoryId] = React.useState<string | undefined>(undefined)
   const [buildingId, setBuildingId] = React.useState<string | undefined>(undefined)
   const [floorId, setFloorId] = React.useState<string | undefined>(undefined)
@@ -204,83 +213,106 @@ export function AvailabilityGridTab({
 
   return (
     <div className="space-y-4">
-      {/* Super Admin Hotel Scope Switcher & Banner */}
-      {isSuperAdmin && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-foreground print:hidden">
-          <div className="flex items-center gap-2">
-            <Building2 className="size-4 text-primary shrink-0" />
-            <span>
-              Showing <strong className="font-semibold text-primary">{activePropertyName}</strong>. Pick another hotel to switch.
-            </span>
-          </div>
-          {properties.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Label htmlFor="grid-hotel-select" className="text-xs text-muted-foreground whitespace-nowrap">
-                Hotel:
-              </Label>
-              <select
-                id="grid-hotel-select"
-                value={effectivePropertyId || ""}
-                onChange={(e) => handlePropertyChange(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2.5 text-xs font-medium text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+      {/* 1. Operational Grid Metrics */}
+      <ReportMetricBand
+        metrics={[
+          {
+            label: "Total Rooms in Grid",
+            value: data?.totalRooms ?? 0,
+            subtext: "Physical room inventory",
+          },
+          {
+            label: "Rows Displayed",
+            value: data?.rooms?.length ?? 0,
+            subtext: "Paged room rows",
+          },
+          {
+            label: "Window Dates",
+            value: data?.dates?.length ?? 0,
+            subtext: `${gridStart} to ${gridEnd}`,
+          },
+          {
+            label: "Property Context",
+            value: activePropertyName,
+            subtext: "Active hotel scope",
+          },
+        ]}
+      />
+
+      {/* Super Admin Hotel Scope Switcher */}
+      {isSuperAdmin && properties.length > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-card px-3 py-2 text-xs print:hidden">
+          <Building2 className="size-3.5 text-primary shrink-0" />
+          <Label htmlFor="grid-hotel-select" className="text-xs text-muted-foreground whitespace-nowrap font-medium">
+            Hotel Scope:
+          </Label>
+          <select
+            id="grid-hotel-select"
+            value={effectivePropertyId || ""}
+            onChange={(e) => handlePropertyChange(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            {properties.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
       {/* Grid Controls & Filters */}
-      <div className="space-y-3 rounded-xl border border-border bg-card p-4 print:hidden">
+      <div className="space-y-2.5 rounded-xl border border-border bg-card p-3 sm:p-3.5 print:hidden">
         {/* Top row: Date Range & Presets + Legend */}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Window:
-            </Label>
-            <Input
-              type="date"
-              aria-label="Start Date"
-              value={gridStart}
-              onChange={(e) => {
-                setGridStart(e.target.value)
-                setPage(1)
-              }}
-              className="h-8 w-36 text-xs"
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <Input
-              type="date"
-              aria-label="End Date"
-              value={gridEnd}
-              onChange={(e) => {
-                setGridEnd(e.target.value)
-                setPage(1)
-              }}
-              className="h-8 w-36 text-xs"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => handleDateWindowPreset(7)}
-            >
-              Next 7 Days
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => handleDateWindowPreset(14)}
-            >
-              14 Days
-            </Button>
-          </div>
+          {!hideWindowControls ? (
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Window:
+              </Label>
+              <Input
+                type="date"
+                aria-label="Start Date"
+                value={gridStart}
+                onChange={(e) => {
+                  setGridStart(e.target.value)
+                  setPage(1)
+                }}
+                className="h-8 w-36 text-xs"
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="date"
+                aria-label="End Date"
+                value={gridEnd}
+                onChange={(e) => {
+                  setGridEnd(e.target.value)
+                  setPage(1)
+                }}
+                className="h-8 w-36 text-xs"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => handleDateWindowPreset(7)}
+              >
+                Next 7 Days
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => handleDateWindowPreset(14)}
+              >
+                14 Days
+              </Button>
+            </div>
+          ) : (
+            <div className="text-xs font-semibold text-muted-foreground">
+              Grid Viewport & Allocation Matrix
+            </div>
+          )}
 
           {/* Color Legend */}
           <div className="flex flex-wrap items-center gap-3.5 text-xs text-muted-foreground">

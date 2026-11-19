@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { ChevronRight } from "lucide-react"
 import { PaginationFooter } from "@/components/ui-kit"
 import { formatMoney } from "@/lib/currency"
@@ -10,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { ReceivablesReportDTO } from "@/modules/reports/reports.types"
 import { useReportQuery } from "../use-report-query"
 import { ReportSectionError, TableSkeleton } from "../report-section-shell"
+import { ReportMetricBand } from "../charts"
 
 interface ReceivablesSectionProps {
   propertyId?: string
@@ -17,9 +19,33 @@ interface ReceivablesSectionProps {
 }
 
 export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSectionProps) {
-  const [filter, setFilter] = React.useState<"all" | "in_house" | "departed">("all")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  const urlFilter = searchParams?.get("filter") || searchParams?.get("subtab")
+  const initialFilter: "all" | "in_house" | "departed" =
+    urlFilter === "in_house" || urlFilter === "departed" ? urlFilter : "all"
+
+  const [filter, setFilter] = React.useState<"all" | "in_house" | "departed">(initialFilter)
   const [page, setPage] = React.useState<number>(1)
   const [limit, setLimit] = React.useState<number>(25)
+
+  const handleFilterChange = (newFilter: "all" | "in_house" | "departed") => {
+    setFilter(newFilter)
+    setPage(1)
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(searchParams?.toString() || "")
+      if (newFilter === "all") {
+        sp.delete("filter")
+        sp.delete("subtab")
+      } else {
+        sp.set("filter", newFilter)
+        sp.set("subtab", newFilter)
+      }
+      router.replace(`${pathname}?${sp.toString()}`, { scroll: false })
+    }
+  }
 
   const { data, isLoading, error, refetch } = useReportQuery<ReceivablesReportDTO>({
     endpoint: "/api/reports/receivables",
@@ -35,15 +61,13 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
 
   if (isLoading && !data) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="flex items-center gap-2 py-1">
-          <Skeleton className="h-4 w-32" />
-          <span className="text-muted-foreground/30">·</span>
-          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-28" />
           <span className="text-muted-foreground/30">·</span>
           <Skeleton className="h-4 w-24" />
         </div>
-        <TableSkeleton rows={5} cols={8} />
+        <TableSkeleton rows={6} cols={6} />
       </div>
     )
   }
@@ -51,7 +75,7 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
   if (error && !data) {
     return (
       <ReportSectionError
-        title="Failed to load outstanding receivables"
+        title="Failed to load receivables report"
         error={error}
         onRetry={refetch}
       />
@@ -60,148 +84,54 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
 
   if (!data) return null
 
-  const items = data.items || []
-  const b0to7 = Math.max(0, parseFloat(data.agingSummary.bucket0to7) || 0)
-  const b8to30 = Math.max(0, parseFloat(data.agingSummary.bucket8to30) || 0)
-  const b31to60 = Math.max(0, parseFloat(data.agingSummary.bucket31to60) || 0)
-  const b60Plus = Math.max(0, parseFloat(data.agingSummary.bucket60Plus) || 0)
-  const totalAging = b0to7 + b8to30 + b31to60 + b60Plus
+  const totalReceivablesNum = parseFloat(data.totalReceivables) || 0
+  const inHouseNum = parseFloat(data.inHouseReceivables) || 0
+  const departedNum = parseFloat(data.departedReceivables) || 0
+  const invoiceItems = data.items || []
 
   return (
-    <div className="space-y-5">
-      {/* Inline Stat Summary Row */}
-      <div className="flex flex-wrap items-center gap-x-2 text-xs sm:text-sm text-muted-foreground">
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {formatMoney(parseFloat(data.totalReceivables) || 0)}
-          </strong>{" "}
-          total ({data.totalInvoices} {data.totalInvoices === 1 ? "folio" : "folios"})
-        </span>
-        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {formatMoney(parseFloat(data.inHouseReceivables) || 0)}
-          </strong>{" "}
-          in-house ({data.inHouseCount})
-        </span>
-        <span className="text-muted-foreground/40 select-none" aria-hidden="true">·</span>
-        <span>
-          <strong className="font-bold font-mono text-foreground tabular-nums">
-            {formatMoney(parseFloat(data.departedReceivables) || 0)}
-          </strong>{" "}
-          departed ({data.departedCount})
-        </span>
-      </div>
+    <div className="space-y-4 sm:space-y-5">
+      {/* 1. Curated KPI Metric Band */}
+      <ReportMetricBand
+        metrics={[
+          {
+            label: "Total Receivables",
+            value: totalReceivablesNum,
+            isMoney: true,
+            tone: "danger",
+            subtext: `${data.totalInvoices} uncollected folios`,
+          },
+          {
+            label: "In-House Ledger",
+            value: inHouseNum,
+            isMoney: true,
+            subtext: `${data.inHouseCount} active in-house folios`,
+          },
+          {
+            label: "Departed Ledger Risk",
+            value: departedNum,
+            isMoney: true,
+            tone: departedNum > 0 ? "warning" : "default",
+            subtext: `${data.departedCount} departed with balance`,
+          },
+          {
+            label: "Departed Rate",
+            value: totalReceivablesNum > 0 ? `${((departedNum / totalReceivablesNum) * 100).toFixed(0)}%` : "0%",
+            subtext: "Delinquent risk share",
+          },
+        ]}
+      />
 
-      {/* Card 1: Aging Distribution & Summary */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between border-b border-border pb-2">
-          <h3 className="font-semibold text-foreground">Folio Aging Distribution</h3>
-          <span className="font-mono text-xs text-muted-foreground">
-            Total: {formatMoney(totalAging)}
-          </span>
-        </div>
+      {/* 2. Outstanding Folios Ledger Table */}
+      <div className="rounded-xl border border-border bg-card p-3.5 sm:p-4 space-y-3 shadow-xs">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2.5">
+          <h3 className="font-semibold text-foreground text-sm">Outstanding Folios</h3>
 
-        {/* Aging Distribution Horizontal Stacked Bar */}
-        <div className="space-y-1.5 pb-1">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Aging Spread</span>
-            <span className="font-mono text-[11px] text-muted-foreground/70">
-              {formatMoney(totalAging)} across all aging buckets
-            </span>
-          </div>
-          <div className="h-3 w-full rounded-md bg-muted/60 flex overflow-hidden gap-0.5 p-0.5">
-            {totalAging === 0 ? (
-              <div className="h-full w-full bg-muted/80 rounded-xs" />
-            ) : (
-              <>
-                {b0to7 > 0 && (
-                  <div
-                    className="h-full bg-emerald-500 rounded-xs transition-all"
-                    style={{ width: `${(b0to7 / totalAging) * 100}%` }}
-                    title={`0-7 Days: ${((b0to7 / totalAging) * 100).toFixed(1)}% (${formatMoney(b0to7)})`}
-                  />
-                )}
-                {b8to30 > 0 && (
-                  <div
-                    className="h-full bg-sky-500 rounded-xs transition-all"
-                    style={{ width: `${(b8to30 / totalAging) * 100}%` }}
-                    title={`8-30 Days: ${((b8to30 / totalAging) * 100).toFixed(1)}% (${formatMoney(b8to30)})`}
-                  />
-                )}
-                {b31to60 > 0 && (
-                  <div
-                    className="h-full bg-amber-500 rounded-xs transition-all"
-                    style={{ width: `${(b31to60 / totalAging) * 100}%` }}
-                    title={`31-60 Days: ${((b31to60 / totalAging) * 100).toFixed(1)}% (${formatMoney(b31to60)})`}
-                  />
-                )}
-                {b60Plus > 0 && (
-                  <div
-                    className="h-full bg-rose-500 rounded-xs transition-all"
-                    style={{ width: `${(b60Plus / totalAging) * 100}%` }}
-                    title={`60+ Days: ${((b60Plus / totalAging) * 100).toFixed(1)}% (${formatMoney(b60Plus)})`}
-                  />
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Aging Summary Cards */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
-              <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-              0 - 7 Days (Current)
-            </div>
-            <div className="text-sm font-semibold text-foreground font-mono tabular-nums">
-              {formatMoney(b0to7)}
-            </div>
-          </div>
-          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
-              <span className="size-2 rounded-full bg-sky-500 shrink-0" />
-              8 - 30 Days
-            </div>
-            <div className="text-sm font-semibold text-foreground font-mono tabular-nums">
-              {formatMoney(b8to30)}
-            </div>
-          </div>
-          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
-              <span className="size-2 rounded-full bg-amber-500 shrink-0" />
-              31 - 60 Days
-            </div>
-            <div className="text-sm font-semibold text-amber-600 dark:text-amber-400 font-mono tabular-nums">
-              {formatMoney(b31to60)}
-            </div>
-          </div>
-          <div className="rounded-lg bg-muted/30 border border-border/50 p-2.5 text-center space-y-0.5">
-            <div className="text-[11px] text-muted-foreground flex items-center justify-center gap-1.5 font-medium">
-              <span className="size-2 rounded-full bg-rose-500 shrink-0" />
-              60+ Days (Delinquent)
-            </div>
-            <div className="text-sm font-semibold text-rose-600 dark:text-rose-400 font-mono tabular-nums">
-              {formatMoney(b60Plus)}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Card 2: Receivables Ledger Table */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4 shadow-xs">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-3">
-          <h3 className="font-semibold text-foreground">Outstanding Folios</h3>
-
-          {/* Filter Tabs — Secondary Segmented Pill Style */}
+          {/* Filter Tabs */}
           <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-muted/40 p-1">
             <button
               type="button"
-              onClick={() => {
-                setFilter("all")
-                setPage(1)
-              }}
+              onClick={() => handleFilterChange("all")}
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
                 filter === "all"
@@ -213,10 +143,7 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
             </button>
             <button
               type="button"
-              onClick={() => {
-                setFilter("in_house")
-                setPage(1)
-              }}
+              onClick={() => handleFilterChange("in_house")}
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
                 filter === "in_house"
@@ -228,10 +155,7 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
             </button>
             <button
               type="button"
-              onClick={() => {
-                setFilter("departed")
-                setPage(1)
-              }}
+              onClick={() => handleFilterChange("departed")}
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium transition-all cursor-pointer",
                 filter === "departed"
@@ -244,95 +168,86 @@ export function ReceivablesSection({ propertyId, refreshTrigger }: ReceivablesSe
           </div>
         </div>
 
-        {/* Receivables Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-border bg-muted/40 font-medium text-muted-foreground text-[11px] font-mono uppercase tracking-wider">
-                <th className="px-3 py-1.5">Invoice / Res No</th>
-                <th className="px-3 py-1.5">Guest Name & Phone</th>
-                <th className="px-3 py-1.5">Rooms</th>
-                <th className="px-3 py-1.5">Guest Status</th>
-                <th className="px-3 py-1.5">Aging</th>
-                <th className="px-3 py-1.5">Grand Total</th>
-                <th className="px-3 py-1.5">Balance Due</th>
-                <th className="px-3 py-1.5 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="py-6 text-center text-muted-foreground">
-                    No outstanding balances in this view.
-                  </td>
-                </tr>
-              ) : (
-                items.map((rec) => (
-                  <tr key={rec.invoiceId} className="hover:bg-muted/20">
-                    <td className="px-3 py-1.5">
-                      <div className="font-mono font-medium leading-tight">{rec.invoiceNumber}</div>
-                      <div className="text-[11px] text-muted-foreground leading-tight">{rec.reservationNo}</div>
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <div className="font-medium text-foreground leading-tight">{rec.guestName}</div>
-                      <div className="text-[11px] text-muted-foreground leading-tight">{rec.guestPhone || "No phone"}</div>
-                    </td>
-                    <td className="px-3 py-1.5 font-medium">
-                      {rec.roomNumbers.join(", ") || "N/A"}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      {rec.isGuestInHouse ? (
-                        <span className="inline-flex rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-                          In-House
-                        </span>
-                      ) : (
-                        <span className="inline-flex rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                          Departed
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5">
-                      <span
-                        className={cn(
-                          "font-medium",
-                          rec.daysAging > 30 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground"
-                        )}
-                      >
-                        {rec.daysAging} days ({rec.agingBucket})
-                      </span>
-                    </td>
-                    <td className="px-3 py-1.5 font-mono tabular-nums">{formatMoney(parseFloat(rec.grandTotal) || 0)}</td>
-                    <td className="px-3 py-1.5 font-semibold font-mono tabular-nums text-amber-600 dark:text-amber-400">
-                      {formatMoney(parseFloat(rec.balanceDue) || 0)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right">
-                      <Link
-                        href={`/billing/${rec.invoiceId}`}
-                        className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
-                      >
-                        <span>Folio</span>
-                        <ChevronRight className="size-3" />
-                      </Link>
-                    </td>
+        {invoiceItems.length === 0 ? (
+          <div className="py-8 text-center text-xs text-muted-foreground">
+            No outstanding folios found for the selected filter.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-lg border border-border/70">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-muted/95 backdrop-blur z-10">
+                  <tr className="border-b border-border font-medium text-muted-foreground text-[11px] font-mono uppercase tracking-wider">
+                    <th className="px-3 py-2.5">Invoice / Guest</th>
+                    <th className="px-3 py-2.5">Stay Status</th>
+                    <th className="px-3 py-2.5 text-right">Invoiced</th>
+                    <th className="px-3 py-2.5 text-right">Paid</th>
+                    <th className="px-3 py-2.5 text-right">Balance Due</th>
+                    <th className="px-3 py-2.5 text-right">Action</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {invoiceItems.map((inv) => (
+                    <tr key={inv.invoiceId} className="hover:bg-muted/20">
+                      <td className="px-3 py-2">
+                        <div className="font-semibold text-foreground">{inv.guestName}</div>
+                        <div className="text-[11px] font-mono text-muted-foreground">
+                          {inv.invoiceNumber} {inv.roomNumbers && inv.roomNumbers.length > 0 ? `· Room ${inv.roomNumbers.join(", ")}` : ""}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-mono uppercase font-semibold",
+                            inv.guestStayStatus === "IN_HOUSE"
+                              ? "bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/20"
+                              : inv.guestStayStatus === "DEPARTED"
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20"
+                              : "bg-muted text-muted-foreground border border-border"
+                          )}
+                        >
+                          {inv.guestStayStatus}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">
+                        {formatMoney(parseFloat(inv.grandTotal))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                        {formatMoney(parseFloat(inv.totalPaid))}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
+                        {formatMoney(parseFloat(inv.balanceDue))}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          href={`/billing/${inv.invoiceId}`}
+                          className="inline-flex items-center text-primary hover:underline font-medium"
+                        >
+                          <span>Folio</span>
+                          <ChevronRight className="size-3.5 ml-0.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        {/* Pagination Footer */}
-        {data.pagination && data.pagination.total > 10 && (
-          <PaginationFooter
-            page={page}
-            limit={limit}
-            total={data.pagination.total}
-            onPageChange={setPage}
-            onLimitChange={(newLimit) => {
-              setLimit(newLimit)
-              setPage(1)
-            }}
-          />
+            {data.pagination && data.pagination.total > 0 && (
+              <div className="border-t border-border/80 pt-2">
+                <PaginationFooter
+                  page={page}
+                  limit={limit}
+                  total={data.pagination.total}
+                  totalPages={data.pagination.totalPages}
+                  onPageChange={setPage}
+                  onLimitChange={setLimit}
+                  pageSizeOptions={[10, 15, 25, 50, 100]}
+                  syncUrl={false}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

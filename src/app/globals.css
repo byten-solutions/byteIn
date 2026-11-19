@@ -164,7 +164,48 @@
   [data-nextjs-portal],
   header,
   aside,
+  nav,
   .print\:hidden {
     display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  th,
+  td {
+    border-color: #e2e8f0 !important;
+  }
+
+  .shadow-xs,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg {
+    box-shadow: none !important;
   }
 }

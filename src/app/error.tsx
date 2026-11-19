@@ -28,6 +28,11 @@ export default function GlobalError({
         <p className="mt-2 text-xs text-muted-foreground leading-relaxed max-w-xs">
           An unexpected error occurred while loading this page. You can try refreshing or return to the overview.
         </p>
+        {error.digest && (
+          <p className="mt-1 text-[11px] font-mono text-muted-foreground/60 select-all">
+            Digest: {error.digest}
+          </p>
+        )}
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           <Button
             onClick={() => {

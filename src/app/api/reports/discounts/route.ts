@@ -13,8 +13,8 @@ export async function GET(req: NextRequest) {
 
       const { searchParams } = new URL(req.url);
       const query = discountsReportSchema.parse({
-        startDate: searchParams.get("startDate") || undefined,
-        endDate: searchParams.get("endDate") || undefined,
+        startDate: searchParams.get("startDate") || searchParams.get("from") || undefined,
+        endDate: searchParams.get("endDate") || searchParams.get("to") || undefined,
         propertyId: searchParams.get("propertyId") || undefined,
         page: searchParams.get("page") || undefined,
         limit: searchParams.get("limit") || undefined,

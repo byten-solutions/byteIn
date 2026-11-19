@@ -179,7 +179,10 @@ describe("Cache Invalidation & Scoped Caching Test", () => {
   after(async () => {
     setCacheStub(null);
     if (propA && propB) {
+      await prisma.receipt.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
       await prisma.payment.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
+      await prisma.financialAccount.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
+      await prisma.paymentMethod.deleteMany({ where: { propertyId: { in: [propA.id, propB.id] } } });
       await prisma.invoiceItem.deleteMany({
         where: { invoice: { propertyId: { in: [propA.id, propB.id] } } },
       });
